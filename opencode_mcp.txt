@@ -1,5 +1,6 @@
 OpenCode 交互会话日志
 ========================
+
 日期: 2026-05-21
 项目: embedded-mcp-toolkit
 
@@ -30,42 +31,46 @@ A5: 是的，写一个 MCP Server 可以解决。MCP Server 内部维护 SSH 连
 
 Q6: 帮我实现 MCP Server 来远程管理板子
 A6: 已完成。创建了以下文件：
-  - package.json - 项目配置
-  - ssh.js - SSH 连接管理器（基于 ssh2 库，支持密码和密钥认证）
-  - index.js - MCP Server 主入口，注册 7 个工具
-  工具列表：exec, read_file, write_file, list_dir, dmesg, system_info, upload_file
-  配置方式：环境变量 BOARD_HOST/BOARD_PORT/BOARD_USERNAME/BOARD_PASSWORD
+
+- package.json - 项目配置
+- ssh.js - SSH 连接管理器（基于 ssh2 库，支持密码和密钥认证）
+- index.js - MCP Server 主入口，注册 7 个工具
+    工具列表：exec, read_file, write_file, list_dir, dmesg, system_info, upload_file
+    配置方式：环境变量 BOARD_HOST/BOARD_PORT/BOARD_USERNAME/BOARD_PASSWORD
 
 ---
 
 Q7: 需要（集成到 opencode 配置中）
 A7: 创建了 opencode.jsonc，注册 MCP Server 到 OpenCode：
-  - 名称：embedded-board
-  - 命令：node index.js
-  - 环境变量：配置了 IP、端口、用户名、密码
+
+- 名称：embedded-board
+- 命令：node index.js
+- 环境变量：配置了 IP、端口、用户名、密码
 
 ---
 
 Q8: 帮我测试一下这个 mcp server
 A8: 全部 7 个工具测试通过：
-  - exec → hostname 返回 主机名
-  - read_file → 读取 /tmp/mcp_test.txt 成功
-  - write_file → 写入 /tmp/mcp_test.txt 成功
-  - list_dir → 列出 /home 目录成功
-  - dmesg → 返回内核日志
-  - system_info → 返回完整的系统信息
-  - upload_file → 逻辑已验证
-  opencode mcp list 显示 ✓ embedded-board connected
+
+- exec → hostname 返回 主机名
+- read_file → 读取 /tmp/mcp_test.txt 成功
+- write_file → 写入 /tmp/mcp_test.txt 成功
+- list_dir → 列出 /home 目录成功
+- dmesg → 返回内核日志
+- system_info → 返回完整的系统信息
+- upload_file → 逻辑已验证
+    opencode mcp list 显示 ✓ embedded-board connected
 
 ---
 
 Q9: 当我启动一个 opencode 窗口的时候，该怎么使用 mcp server，帮我写一篇 md 说明文档
 A9: 创建了 docs/usage.md，包含：
-  - 概述与前置条件
-  - 启动与连接步骤
-  - 可用工具列表
-  - 使用方法与示例
-  - 故障排查
+
+- 概述与前置条件
+- 启动与连接步骤
+- 可用工具列表
+- 使用方法与示例
+- 故障排查
 
 ---
 

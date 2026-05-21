@@ -8,7 +8,7 @@
 
 ### 2. 架构说明
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │                  你的终端                        │
 │  ┌───────────────────────────────────────────┐   │
@@ -46,9 +46,9 @@
 
 - **Node.js** >= 18（用于运行 MCP Server）
 - **OpenCode** >= 1.15（用于 AI 交互界面）
-- **目标板卡**已通电并接入网络
+- **目标板卡** 已通电并接入网络
 - **本机与板卡网络互通**（可通过 ping 验证）
-- **SSH 服务**在板卡上已启动（默认已开启）
+- **SSH 服务** 在板卡上已启动（默认已开启）
 
 ### 2. 网络连通性验证
 
@@ -60,7 +60,7 @@ ping -c 4 192.168.16.103
 
 预期输出类似：
 
-```
+```text
 PING 192.168.16.103 (192.168.16.103) 56(84) bytes of data.
 64 字节，来自 192.168.16.103: icmp_seq=1 ttl=64 时间=0.954 毫秒
 64 字节，来自 192.168.16.103: icmp_seq=2 ttl=64 时间=1.01 毫秒
@@ -80,7 +80,7 @@ ssh root@192.168.16.103
 
 密码为 `root`。登录成功后应看到类似输出：
 
-```
+```text
 Linux <板卡主机名> <内核版本> #1 SMP <日期> aarch64 GNU/Linux
 ```
 
@@ -165,7 +165,7 @@ opencode mcp list
 
 如果看到类似以下输出，说明连接成功：
 
-```
+```text
 ┌  MCP Servers
 │
 ●  ✓ embedded-board connected
@@ -174,13 +174,13 @@ opencode mcp list
 └  1 server(s)
 ```
 
-【**注意**】OpenCode TUI 中没有 `/mcp` 这个内置斜杠命令。如果需要查看 MCP 状态，请在终端中使用 `opencode mcp list` 命令。
+【**注意**】如果需要查看 MCP 状态，请在终端中使用 `opencode mcp list` 命令。
 
 ### 5. 验证工具可用性
 
 在 OpenCode 中输入：
 
-```
+```text
 use the embedded-board tools to check if the board is reachable
 ```
 
@@ -237,6 +237,7 @@ MCP Server 注册了以下 7 个工具：
 ### 6. system_info 工具参数
 
 无参数。返回内容包含：
+
 - Hostname（主机名）
 - Kernel 版本
 - Uptime（运行时间）
@@ -255,7 +256,7 @@ MCP Server 注册了以下 7 个工具：
 
 在 OpenCode 中，直接向 AI 描述需求即可，AI 会自动调用对应的 `embedded-board` 工具来操作板卡。
 
-### 1. 验证mcp服务
+### 1. 验证 mcp 服务
 
 ```shell
 opencode mcp list
@@ -267,24 +268,24 @@ opencode mcp list
 
 AI 会自动调用 `exec` 工具在板卡上执行对应的 shell 命令并返回结果。
 
-#### 2.1 查询IP
+#### 2.1 查询 IP
 
 在对话中直接提问即可触发：
 
-```
+```text
 帮我查一下板卡当前的 IP 地址
 ```
 
 AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 
-```
+```text
 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
     inet 192.168.16.103/24 brd 192.168.16.255 scope global eth0
 ```
 
 ![image-20260521220535569](./README/img/image-20260521220535569.png)
 
-板端实际IP：
+板端实际 IP：
 
 ![image-20260521222508020](./README/img/image-20260521222508020.png)
 
@@ -300,7 +301,7 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 
 #### 2.3 列出进程
 
-```
+```text
 板卡上运行了哪些进程，列出来
 ```
 
@@ -308,7 +309,7 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 
 #### 2.4 磁盘分区
 
-```
+```text
 查看板卡的磁盘分区情况（lsblk）
 ```
 
@@ -318,7 +319,7 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 
 #### 2.5 检查进程是否运行
 
-```
+```text
 检查板卡上某个服务是否在运行：systemctl status sshd
 ```
 
@@ -326,17 +327,29 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 
 ![image-20260521221415898](./README/img/image-20260521221415898.png)
 
+#### 2.5 查看 dmesg
+
+```text
+查找板卡dmesg中关于蓝牙的日志
+```
+
+![image-20260522072234977](./README/img/image-20260522072234977.png)
+
+![image-20260522072447515](./README/img/image-20260522072447515.png)
+
+![image-20260522072529677](./README/img/image-20260522072529677.png)
+
 ### 3. 查看系统状态
 
 #### 3.1 系统信息
 
-```
+```text
 板卡的系统信息是什么
 ```
 
 AI 调用 `system_info`，返回完整的系统信息：
 
-```
+```text
 === Hostname ===
 <板卡主机名>
 === Kernel ===
@@ -345,8 +358,8 @@ Linux <板卡主机名> <内核版本> #1 SMP <日期> aarch64 GNU/Linux
   <当前时间> up <运行时长>,  1 user,  load average: 0.00, 0.00, 0.00
 === Memory ===
                total        used        free      shared  buff/cache   available
-Mem:           <总量>       <已用>       <空闲>       <共享>       <缓存>       <可用>
-Swap:             <总量>          <已用>       <空闲>
+Mem:           <总量>       <已用>       <空闲>     <共享>     <缓存>      <可用>
+Swap:          <总量>       <已用>       <空闲>
 === Disk ===
 Filesystem      Size  Used Avail Use% Mounted on
 <设备>   <大小>  <已用> <可用> <使用率> /
@@ -354,7 +367,7 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 #### 3.2 内存使用
 
-```shell
+```text
 板卡的内存使用情况
 ```
 
@@ -362,17 +375,15 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 ![image-20260521223347403](./README/img/image-20260521223347403.png)
 
-#### 3.3其他示例
+#### 3.3 其他示例
 
-```
-看一下板卡最近的内核日志
-```
-
-
-
-```
+```text
 板卡已经运行了多久
 ```
+
+![image-20260522072804896](./README/img/image-20260522072804896.png)
+
+![image-20260522072740352](./README/img/image-20260522072740352.png)
 
 ### 4. 文件操作
 
@@ -380,7 +391,7 @@ Filesystem      Size  Used Avail Use% Mounted on
 
 AI 调用 `read_file`，返回 `/etc/fstab` 文件内容。
 
-```
+```text
 读取板卡上 /etc/fstab 的内容
 ```
 
@@ -392,7 +403,7 @@ AI 调用 `read_file`，返回 `/etc/fstab` 文件内容。
 
 AI 调用 `write_file` 创建文件。
 
-```
+```text
 在板卡上 /root 目录下创建一个 test.txt，内容为 "hello world"
 ```
 
@@ -404,7 +415,7 @@ AI 调用 `write_file` 创建文件。
 
 AI 调用 `list_dir`，返回类似结果：
 
-```
+```text
 看看板卡 /root 目录下有什么
 ```
 
@@ -414,41 +425,53 @@ AI 调用 `list_dir`，返回类似结果：
 
 #### 4.4 上传文件
 
-```
-把本机的 ./config.sh 上传到板卡的 /root/config.sh
+```text
+把本机的 ./opencode_mcp.txt 上传到板卡的 /root/opencode_mcp.txt
 ```
 
-AI 调用 `upload_file` 完成上传。
+AI 调用 `upload_file` 完成上传，主要是通过 SSH (SCP/SFTP) 协议传输，配置中板卡的 IP 为 192.168.16.103，端口 22，使用 root 用户密码认证，底层通过 SSH 的文件传输能力（如 SCP/SFTP）将文件从本机复制到板卡 /root/ 目录下。
+
+![image-20260522073011975](./README/img/image-20260522073011975.png)
+
+![image-20260522073050071](./README/img/image-20260522073050071.png)
 
 ### 5. 编译与调试场景
 
+#### 5.1 查看已加载驱动
+
+```shell
+查看板卡当前加载的内核模块
+```
+
+![image-20260522073449377](./README/img/image-20260522073449377.png)
+
+![image-20260522073434212](./README/img/image-20260522073434212.png)
+
+#### 5.2 其他示例
+
 嵌入式开发常见场景：
 
-```
+```text
 在板卡上编译 /root/test.c 并运行
 ```
 
-```
+```text
 查看板卡上 /var/log/syslog 的最后 50 行
 ```
 
-```
+```text
 抓取板卡的 CPU 温度
-```
-
-```
-查看板卡当前加载的内核模块（lsmod）
 ```
 
 ### 6. 手动指定工具
 
 如果需要强制 AI 使用特定工具，可以在 prompt 中明确提及工具名：
 
-```
+```text
 use the embedded-board exec tool to run: lsblk
 ```
 
-```
+```text
 use the embedded-board dmesg tool to show kernel messages
 ```
 
@@ -456,14 +479,15 @@ use the embedded-board dmesg tool to show kernel messages
 
 AI 会自动判断使用哪个工具，也可以组合多个工具完成复杂任务：
 
-```
-帮我做三件事：
-1. 查看板卡的系统信息
-2. 检查 /root 目录下有哪些文件
-3. 查看最近的内核日志
+```text
+帮我做两件事：
+1. 检查 /root 目录下有哪些文件
+2. 查看最近的内核日志
 ```
 
-AI 会依次调用 `system_info`、`list_dir`、`dmesg` 三个工具并汇总结果。
+AI 会依次调用 `list_dir`、`dmesg` 两个工具并汇总结果。
+
+![image-20260522073639635](./README/img/image-20260522073639635.png)
 
 ## 六、 自定义配置
 
@@ -580,7 +604,7 @@ OpenCode 启动后如果 `embedded-board` 显示断开：
 - **确认板卡资源**：`df -h` 检查磁盘空间，`free -h` 检查内存
 - **查看 SSH 日志**：在板卡上执行 `journalctl -u sshd -n 20`
 - **在 OpenCode 中执行** `/mcp debug embedded-board` 查看详细日志
-- **单独测试工具**：参考"独立运行"章节，直接发 JSON-RPC 请求排查
+- **单独测试工具**：参考 "独立运行" 章节，直接发 JSON-RPC 请求排查
 
 ### 3. SSH 连接被拒绝
 
