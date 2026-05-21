@@ -1,0 +1,21 @@
+# http://editorconfig.org
+# 表示是最顶层的配置文件，发现值为true时，才会停止查找.editorconfig文件
+root = true                  
+
+# Unix-style newlines with a newline ending every file
+[*]
+# 设置编码格式，值为latin1、utf-8、utf-8-bom、utf-16be和utf-16le
+charset = utf-8              
+# 设置换行符，值为 lf、cr和crlf
+end_of_line = lf             
+# 如果设置为true，则文件最后一行也会确保以换行符结尾，会强制换行到下一行
+insert_final_newline = true  
+
+# 用大括号展开符号匹配多个文件，设置所有以.js,.ts结尾的文件
+[*.{js,ts,mts,mjs,json}]
+indent_style = space
+indent_size = 2
+
+[*.code-workspace]
+indent_style = space
+indent_size = 2

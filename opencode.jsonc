@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "embedded-board": {
+      "type": "local",
+      "command": ["./index.js"],
+      "enabled": true,
+      "environment": {
+        "BOARD_HOST": "192.168.16.103",
+        "BOARD_PORT": "22",
+        "BOARD_USERNAME": "root",
+        "BOARD_PASSWORD": "root"
+      }
+    }
+  }
+}
