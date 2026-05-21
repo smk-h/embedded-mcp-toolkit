@@ -261,7 +261,7 @@ MCP Server 注册了以下 7 个工具：
 opencode mcp list
 ```
 
-![image-20260521220433975](./usage/img/image-20260521220433975.png)
+![image-20260521220433975](./README/img/image-20260521220433975.png)
 
 ### 2. 执行命令
 
@@ -282,11 +282,11 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
     inet 192.168.16.103/24 brd 192.168.16.255 scope global eth0
 ```
 
-![image-20260521220535569](./usage/img/image-20260521220535569.png)
+![image-20260521220535569](./README/img/image-20260521220535569.png)
 
 板端实际IP：
 
-![image-20260521222508020](./usage/img/image-20260521222508020.png)
+![image-20260521222508020](./README/img/image-20260521222508020.png)
 
 #### 2.2 查询系统信息
 
@@ -294,9 +294,9 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 查看板卡上 /etc/os-release 的内容
 ```
 
-![image-20260521220806171](./usage/img/image-20260521220806171.png)
+![image-20260521220806171](./README/img/image-20260521220806171.png)
 
-![image-20260521220901131](./usage/img/image-20260521220901131.png)
+![image-20260521220901131](./README/img/image-20260521220901131.png)
 
 #### 2.3 列出进程
 
@@ -304,7 +304,7 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 板卡上运行了哪些进程，列出来
 ```
 
-![image-20260521221041966](./usage/img/image-20260521221041966.png)
+![image-20260521221041966](./README/img/image-20260521221041966.png)
 
 #### 2.4 磁盘分区
 
@@ -312,9 +312,9 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 查看板卡的磁盘分区情况（lsblk）
 ```
 
-![image-20260521221130708](./usage/img/image-20260521221130708.png)
+![image-20260521221130708](./README/img/image-20260521221130708.png)
 
-![image-20260521221217960](./usage/img/image-20260521221217960.png)
+![image-20260521221217960](./README/img/image-20260521221217960.png)
 
 #### 2.5 检查进程是否运行
 
@@ -322,9 +322,9 @@ AI 会调用 `exec` 执行 `ip addr`，返回类似结果：
 检查板卡上某个服务是否在运行：systemctl status sshd
 ```
 
-![image-20260521221344398](./usage/img/image-20260521221344398.png)
+![image-20260521221344398](./README/img/image-20260521221344398.png)
 
-![image-20260521221415898](./usage/img/image-20260521221415898.png)
+![image-20260521221415898](./README/img/image-20260521221415898.png)
 
 ### 3. 查看系统状态
 
@@ -358,9 +358,9 @@ Filesystem      Size  Used Avail Use% Mounted on
 板卡的内存使用情况
 ```
 
-![image-20260521223333933](./usage/img/image-20260521223333933.png)
+![image-20260521223333933](./README/img/image-20260521223333933.png)
 
-![image-20260521223347403](./usage/img/image-20260521223347403.png)
+![image-20260521223347403](./README/img/image-20260521223347403.png)
 
 #### 3.3其他示例
 
@@ -384,9 +384,9 @@ AI 调用 `read_file`，返回 `/etc/fstab` 文件内容。
 读取板卡上 /etc/fstab 的内容
 ```
 
-![image-20260521221651646](./usage/img/image-20260521221651646.png)
+![image-20260521221651646](./README/img/image-20260521221651646.png)
 
-![image-20260521221716766](./usage/img/image-20260521221716766.png)
+![image-20260521221716766](./README/img/image-20260521221716766.png)
 
 #### 4.2 创建文件
 
@@ -396,9 +396,9 @@ AI 调用 `write_file` 创建文件。
 在板卡上 /root 目录下创建一个 test.txt，内容为 "hello world"
 ```
 
-![image-20260521221820221](./usage/img/image-20260521221820221.png)
+![image-20260521221820221](./README/img/image-20260521221820221.png)
 
-![image-20260521222223519](./usage/img/image-20260521222223519.png)
+![image-20260521222223519](./README/img/image-20260521222223519.png)
 
 #### 4.3 查看目录
 
@@ -408,9 +408,9 @@ AI 调用 `list_dir`，返回类似结果：
 看看板卡 /root 目录下有什么
 ```
 
-![image-20260521222353932](./usage/img/image-20260521222353932.png)
+![image-20260521222353932](./README/img/image-20260521222353932.png)
 
-![image-20260521222420928](./usage/img/image-20260521222420928.png)
+![image-20260521222420928](./README/img/image-20260521222420928.png)
 
 #### 4.4 上传文件
 
