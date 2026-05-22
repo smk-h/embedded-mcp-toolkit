@@ -5,7 +5,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { SSHManager } from "./ssh.js";
+import { SSHManager } from "../ssh.js";
 
 const config = {
   host: process.env.BOARD_HOST || "192.168.16.103",

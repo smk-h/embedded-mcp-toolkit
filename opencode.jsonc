@@ -3,7 +3,7 @@
   "mcp": {
     "embedded-board": {
       "type": "local",
-      "command": ["./index.js"],
+      "command": ["./out/index.js"],
       "enabled": true,
       "environment": {
         "BOARD_HOST": "192.168.16.103",
