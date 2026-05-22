@@ -1,0 +1,14 @@
+[Unit]
+Description=Portal Shell Gate Service
+
+[Service]
+ExecStart=-/bin/psh
+Restart=always
+RestartSec=0
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=tty
+Type=idle
+
+[Install]
+WantedBy=getty.target
