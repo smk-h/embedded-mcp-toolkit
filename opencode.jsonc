@@ -11,6 +11,18 @@
         "BOARD_USERNAME": "root",
         "BOARD_PASSWORD": "root"
       }
+    },
+    "board-alpha": {
+      "type": "local",
+      "command": ["./out/index.js"],
+      "enabled": true,
+      "environment": {
+        "SERIAL_PORT": "COM3",
+        "SERIAL_BAUDRATE": "115200",
+        "SERIAL_DATABITS": "8",
+        "SERIAL_STOPBITS": "1",
+        "SERIAL_PARITY": "none"
+      }
     }
   }
 }

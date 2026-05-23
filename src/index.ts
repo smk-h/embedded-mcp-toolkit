@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import { SSHManager } from "./ssh.js";
+import { SerialManager } from "./serial.js";
 import { readFileSync } from "node:fs";
 
 // ── helpers ────────────────────────────────────────────────
@@ -19,9 +20,19 @@ function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function configsEqual(a: SerialConfig, b: Partial<SerialConfig>): boolean {
+  return (
+    a.port === b.port &&
+    a.baudRate === b.baudRate &&
+    (b.dataBits === undefined || a.dataBits === b.dataBits) &&
+    (b.stopBits === undefined || a.stopBits === b.stopBits) &&
+    (b.parity === undefined || a.parity === b.parity)
+  );
+}
+
 // ── config ─────────────────────────────────────────────────
 
-interface Config {
+interface SSHConfig {
   host: string;
   port: number;
   username: string;
@@ -29,22 +40,51 @@ interface Config {
   privateKey: string | null;
 }
 
-const config: Config = {
-  host: process.env.BOARD_HOST || "192.168.16.103",
-  port: parseInt(process.env.BOARD_PORT || "22", 10),
-  username: process.env.BOARD_USERNAME || "root",
-  password: process.env.BOARD_PASSWORD || "root",
-  privateKey: process.env.BOARD_PRIVATE_KEY || null,
-};
+interface SerialConfig {
+  port: string;
+  baudRate: number;
+  dataBits: 8 | 5 | 6 | 7;
+  stopBits: 1 | 1.5 | 2;
+  parity: "none" | "even" | "odd";
+}
+
+const useSSH = process.env.BOARD_HOST !== undefined;
+const useSerial = process.env.SERIAL_PORT !== undefined;
+const useBoth = useSSH && useSerial;
+
+let ssh: SSHManager | null = null;
+let serial: SerialManager | null = null;
+let sshConfig: SSHConfig | null = null;
+let serialConfig: SerialConfig | null = null;
+
+if (useSSH) {
+  sshConfig = {
+    host: process.env.BOARD_HOST!,
+    port: parseInt(process.env.BOARD_PORT || "22", 10),
+    username: process.env.BOARD_USERNAME || "root",
+    password: process.env.BOARD_PASSWORD || "root",
+    privateKey: process.env.BOARD_PRIVATE_KEY || null,
+  };
+  ssh = new SSHManager(sshConfig);
+}
+
+if (useSerial) {
+  serialConfig = {
+    port: process.env.SERIAL_PORT!,
+    baudRate: parseInt(process.env.SERIAL_BAUDRATE || "115200", 10),
+    dataBits: (parseInt(process.env.SERIAL_DATABITS || "8", 10) as 8 | 5 | 6 | 7),
+    stopBits: (parseInt(process.env.SERIAL_STOPBITS || "1", 10) as 1 | 1.5 | 2),
+    parity: (process.env.SERIAL_PARITY || "none") as "none" | "even" | "odd",
+  };
+  serial = new SerialManager(serialConfig);
+}
 
 // ── MCP server ─────────────────────────────────────────────
-
-const ssh = new SSHManager(config);
 
 const server = new Server(
   {
     name: "embedded-mcp-toolkit",
-    version: "0.1.0",
+    version: "0.2.0",
   },
   {
     capabilities: {
@@ -53,86 +93,146 @@ const server = new Server(
   }
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: "exec",
-      description: "Execute a shell command on the remote board",
-      inputSchema: {
-        type: "object",
-        properties: {
-          command: { type: "string", description: "Shell command to execute" },
-          timeout: { type: "number", description: "Command timeout in seconds (default: 30)" },
-        },
-        required: ["command"],
-      },
-    },
-    {
-      name: "read_file",
-      description: "Read the content of a file on the remote board",
-      inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Absolute path to the file" },
-        },
-        required: ["path"],
-      },
-    },
-    {
-      name: "write_file",
-      description: "Write content to a file on the remote board",
-      inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Absolute path to the file" },
-          content: { type: "string", description: "Content to write" },
-        },
-        required: ["path", "content"],
-      },
-    },
-    {
-      name: "list_dir",
-      description: "List contents of a directory on the remote board",
-      inputSchema: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Absolute path to the directory" },
-        },
-        required: ["path"],
-      },
-    },
-    {
-      name: "dmesg",
-      description: "Get kernel ring buffer messages from the remote board",
-      inputSchema: {
-        type: "object",
-        properties: {
-          lines: { type: "number", description: "Number of recent lines to show (default: all)" },
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const tools: {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }[] = [];
+
+  if (useSSH) {
+    tools.push(
+      {
+        name: "exec",
+        description: "Execute a shell command on the remote board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            command: { type: "string", description: "Shell command to execute" },
+            timeout: { type: "number", description: "Command timeout in seconds (default: 30)" },
+          },
+          required: ["command"],
         },
       },
-    },
-    {
-      name: "system_info",
-      description: "Get system information from the remote board (hostname, kernel, uptime, memory, CPU)",
-      inputSchema: {
-        type: "object",
-        properties: {},
-      },
-    },
-    {
-      name: "upload_file",
-      description: "Upload a local file to the remote board",
-      inputSchema: {
-        type: "object",
-        properties: {
-          local_path: { type: "string", description: "Absolute path to local file" },
-          remote_path: { type: "string", description: "Absolute destination path on board" },
+      {
+        name: "read_file",
+        description: "Read the content of a file on the remote board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Absolute path to the file" },
+          },
+          required: ["path"],
         },
-        required: ["local_path", "remote_path"],
       },
-    },
-  ],
-}));
+      {
+        name: "write_file",
+        description: "Write content to a file on the remote board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Absolute path to the file" },
+            content: { type: "string", description: "Content to write" },
+          },
+          required: ["path", "content"],
+        },
+      },
+      {
+        name: "list_dir",
+        description: "List contents of a directory on the remote board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Absolute path to the directory" },
+          },
+          required: ["path"],
+        },
+      },
+      {
+        name: "dmesg",
+        description: "Get kernel ring buffer messages from the remote board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            lines: { type: "number", description: "Number of recent lines to show (default: all)" },
+          },
+        },
+      },
+      {
+        name: "system_info",
+        description: "Get system information from the remote board (hostname, kernel, uptime, memory, CPU)",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "upload_file",
+        description: "Upload a local file to the remote board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            local_path: { type: "string", description: "Absolute path to local file" },
+            remote_path: { type: "string", description: "Absolute destination path on board" },
+          },
+          required: ["local_path", "remote_path"],
+        },
+      },
+    );
+  }
+
+  if (useSerial) {
+    tools.push(
+      {
+        name: "serial_connect",
+        description: "Configure and open a serial connection to the board",
+        inputSchema: {
+          type: "object",
+          properties: {
+            port: { type: "string", description: "Serial port name (e.g., COM3, /dev/ttyUSB0)" },
+            baudRate: { type: "number", description: "Baud rate (e.g., 115200)" },
+            dataBits: { type: "number", description: "Data bits (default: 8)" },
+            stopBits: { type: "number", description: "Stop bits (default: 1)" },
+            parity: { type: "string", description: "Parity: none, even, odd (default: none)" },
+          },
+        },
+      },
+      {
+        name: "serial_disconnect",
+        description: "Close the serial connection to the board",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "serial_exec",
+        description: "Execute a shell command on the board over serial",
+        inputSchema: {
+          type: "object",
+          properties: {
+            command: { type: "string", description: "Shell command to execute" },
+            timeout: { type: "number", description: "Command timeout in milliseconds (default: 5000)" },
+          },
+          required: ["command"],
+        },
+      },
+      {
+        name: "serial_send",
+        description: "Send raw data over the serial connection (useful for control characters like Ctrl+C)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            data: { type: "string", description: "Data to send (supports escape sequences like \\x03 for Ctrl+C)" },
+          },
+          required: ["data"],
+        },
+      },
+    );
+  }
+
+  return { tools };
+});
 
 // ── tool handlers ──────────────────────────────────────────
 
@@ -144,12 +244,20 @@ interface ToolArgs {
   lines?: number;
   local_path?: string;
   remote_path?: string;
+  // serial
+  port?: string;
+  baudRate?: number;
+  dataBits?: number;
+  stopBits?: number;
+  parity?: string;
+  data?: string;
 }
 
 async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolResult> {
   switch (name) {
+    // ── SSH handlers ──
     case "exec": {
-      const result = await ssh.exec(args.command!);
+      const result = await ssh!.exec(args.command!);
       const contents: CallToolResult["content"] = [
         text(result.stdout || "(no output)"),
       ];
@@ -161,24 +269,24 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
     }
 
     case "read_file": {
-      const content = await ssh.readFile(args.path!);
+      const content = await ssh!.readFile(args.path!);
       return { content: [text(content)] };
     }
 
     case "write_file": {
-      await ssh.writeFile(args.path!, args.content!);
+      await ssh!.writeFile(args.path!, args.content!);
       return { content: [text(`File written: ${args.path}`)] };
     }
 
     case "list_dir": {
-      const entries = await ssh.listDir(args.path!);
+      const entries = await ssh!.listDir(args.path!);
       const output = entries.map((e) => e.longname).join("\n") || "(empty directory)";
       return { content: [text(output)] };
     }
 
     case "dmesg": {
       const cmd = args.lines ? `dmesg | tail -${args.lines}` : "dmesg";
-      const result = await ssh.exec(cmd);
+      const result = await ssh!.exec(cmd);
       return { content: [text(result.stdout || "(no output)")] };
     }
 
@@ -191,14 +299,64 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
         "echo '=== CPU ===' && cat /proc/cpuinfo | grep 'model name' | head -1",
         "echo '=== Disk ===' && df -h /",
       ];
-      const result = await ssh.exec(cmds.join(" && "));
+      const result = await ssh!.exec(cmds.join(" && "));
       return { content: [text(result.stdout)] };
     }
 
     case "upload_file": {
       const content = readFileSync(args.local_path!, "utf8");
-      await ssh.writeFile(args.remote_path!, content);
+      await ssh!.writeFile(args.remote_path!, content);
       return { content: [text(`Uploaded ${args.local_path} -> ${args.remote_path}`)] };
+    }
+
+    // ── Serial handlers ──
+    case "serial_connect": {
+      const connectConfig: Partial<SerialConfig> = {};
+      if (args.port) connectConfig.port = args.port;
+      if (args.baudRate) connectConfig.baudRate = args.baudRate;
+      if (args.dataBits) connectConfig.dataBits = args.dataBits as 8 | 5 | 6 | 7;
+      if (args.stopBits) connectConfig.stopBits = args.stopBits as 1 | 1.5 | 2;
+      if (args.parity) connectConfig.parity = args.parity as "none" | "even" | "odd";
+      const hasNewConfig = Object.keys(connectConfig).length > 0;
+
+      const connected = serial!.isConnected;
+      const log = [`isConnected=${connected}`, `hasNewConfig=${hasNewConfig}`];
+
+      if (connected) {
+        if (hasNewConfig && !configsEqual(serialConfig!, connectConfig)) {
+          log.push("config differs, reconnecting");
+          await serial!.disconnect();
+          await new Promise((r) => setTimeout(r, 300));
+          await serial!.connect(connectConfig);
+        } else {
+          log.push("config same, reusing");
+        }
+        return { content: [text(`Serial connected (${log.join(", ")}): ${serialConfig!.port} @ ${serialConfig!.baudRate} baud`)] };
+      }
+
+      log.push("not connected, connecting fresh");
+      await serial!.connect(hasNewConfig ? connectConfig : undefined);
+      return { content: [text(`Serial connected (${log.join(", ")}): ${serialConfig!.port} @ ${serialConfig!.baudRate} baud`)] };
+    }
+
+    case "serial_disconnect": {
+      await serial!.disconnect();
+      return { content: [text("Serial disconnected")] };
+    }
+
+    case "serial_exec": {
+      const timeout = args.timeout || 15000;
+      const result = await serial!.exec(args.command!, timeout);
+      return { content: [text(result || "(no output)")] };
+    }
+
+    case "serial_send": {
+      // Support \xHH hex escape sequences
+      const raw = args.data!.replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+      );
+      serial!.write(raw);
+      return { content: [text(`Sent ${raw.length} bytes`)] };
     }
 
     default:
@@ -221,13 +379,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ── entrypoint ─────────────────────────────────────────────
 
 async function main() {
-  try {
-    console.error(`Connecting to ${config.host}:${config.port} as ${config.username}...`);
-    await ssh.connect();
-    console.error("SSH connection established.");
-  } catch (err: unknown) {
-    console.error(`Warning: Initial SSH connection failed: ${getErrorMessage(err)}`);
-    console.error("Tools will attempt to connect on each call.");
+  if (useSSH) {
+    try {
+      console.error(`Connecting SSH to ${sshConfig!.host}:${sshConfig!.port} as ${sshConfig!.username}...`);
+      await ssh!.connect();
+      console.error("SSH connection established.");
+    } catch (err: unknown) {
+      console.error(`Warning: Initial SSH connection failed: ${getErrorMessage(err)}`);
+      console.error("SSH tools will attempt to connect on each call.");
+    }
+  }
+
+  if (useSerial) {
+    try {
+      console.error(`Connecting serial to ${serialConfig!.port} @ ${serialConfig!.baudRate}...`);
+      await serial!.connect();
+      console.error("Serial connection established.");
+    } catch (err: unknown) {
+      console.error(`Warning: Initial serial connection failed: ${getErrorMessage(err)}`);
+      console.error("Use serial_connect tool to connect manually.");
+    }
   }
 
   const transport = new StdioServerTransport();
@@ -235,7 +406,55 @@ async function main() {
   console.error("MCP server started on stdio.");
 }
 
+// ── graceful shutdown ──────────────────────────────────────
+
+let cleaned = false;
+
+async function cleanup(): Promise<void> {
+  if (cleaned) return;
+  cleaned = true;
+  console.error("Shutting down...");
+
+  if (serial) {
+    try {
+      await serial.disconnect();
+      console.error("Serial disconnected.");
+    } catch (e) {
+      console.error("Serial disconnect error:", getErrorMessage(e));
+    }
+  }
+  if (ssh) {
+    try {
+      await ssh.close();
+      console.error("SSH disconnected.");
+    } catch (e) {
+      console.error("SSH close error:", getErrorMessage(e));
+    }
+  }
+  try {
+    await server.close();
+    console.error("MCP server closed.");
+  } catch (e) {
+    console.error("Server close error:", getErrorMessage(e));
+  }
+}
+
+process.on("SIGINT", () => {
+  cleanup().then(() => process.exit(0));
+});
+process.on("SIGTERM", () => {
+  cleanup().then(() => process.exit(0));
+});
+process.on("SIGBREAK", () => {
+  cleanup().then(() => process.exit(0));
+});
+process.stdin.on("end", () => {
+  cleanup().then(() => process.exit(0));
+});
+
+// ── entry ──────────────────────────────────────────────────
+
 main().catch((err: unknown) => {
   console.error("Fatal error:", getErrorMessage(err));
-  process.exit(1);
+  cleanup().then(() => process.exit(1));
 });
