@@ -12,6 +12,7 @@ export class SerialManager {
   readonly #config: SerialConfig;
   #port: SerialPort | null = null;
   #connecting: Promise<void> | null = null;
+  #disconnecting: Promise<void> | null = null;
   readonly #promptPattern: RegExp = /^.*[@:].*[#$]\s*$/m;
 
   constructor(config: SerialConfig) {
@@ -22,17 +23,46 @@ export class SerialManager {
     return this.#port !== null && this.#port.isOpen;
   }
 
+  get config(): SerialConfig {
+    return { ...this.#config };
+  }
+
+  configsEqual(other: Partial<SerialConfig>): boolean {
+    return (
+      (other.port === undefined || this.#config.port === other.port) &&
+      (other.baudRate === undefined || this.#config.baudRate === other.baudRate) &&
+      (other.dataBits === undefined || this.#config.dataBits === other.dataBits) &&
+      (other.stopBits === undefined || this.#config.stopBits === other.stopBits) &&
+      (other.parity === undefined || this.#config.parity === other.parity)
+    );
+  }
+
   async connect(config?: Partial<SerialConfig>): Promise<void> {
+    // Wait for any ongoing disconnect
+    if (this.#disconnecting) {
+      await this.#disconnecting;
+    }
+
+    // Already connected with same config - reuse
     if (this.isConnected) {
-      if (config) Object.assign(this.#config, config);
-      return;
+      if (config && !this.configsEqual(config)) {
+        // Config differs, need to reconnect
+        await this.#doDisconnect();
+      } else {
+        return;
+      }
     }
-    if (config) {
-      Object.assign(this.#config, config);
-    }
+
+    // Wait for any ongoing connect
     if (this.#connecting) {
       return this.#connecting;
     }
+
+    // Apply new config before connecting
+    if (config) {
+      Object.assign(this.#config, config);
+    }
+
     this.#connecting = this.#doConnect();
     try {
       await this.#connecting;
@@ -48,13 +78,60 @@ export class SerialManager {
   }
 
   async disconnect(): Promise<void> {
-    if (this.#port) {
-      const port = this.#port;
-      this.#port = null;
-      await new Promise<void>((resolve) => {
-        port.close(() => resolve());
-      });
+    // Wait for any ongoing connect
+    if (this.#connecting) {
+      try {
+        await this.#connecting;
+      } catch {
+        // Ignore connect errors during disconnect
+      }
     }
+
+    if (this.#disconnecting) {
+      return this.#disconnecting;
+    }
+
+    this.#disconnecting = this.#doDisconnect();
+    try {
+      await this.#disconnecting;
+    } finally {
+      this.#disconnecting = null;
+    }
+  }
+
+  async #doDisconnect(): Promise<void> {
+    if (!this.#port) {
+      return;
+    }
+
+    const port = this.#port;
+    this.#port = null;
+
+    await new Promise<void>((resolve) => {
+      if (!port.isOpen) {
+        resolve();
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        // Force close if graceful close takes too long
+        try {
+          port.destroy();
+        } catch {
+          // Ignore destroy errors
+        }
+        resolve();
+      }, 2000);
+
+      port.close((err) => {
+        clearTimeout(timeout);
+        if (err) {
+          // Log but don't throw - port might be already closed
+          console.error("Serial close error:", err.message);
+        }
+        resolve();
+      });
+    });
   }
 
   async exec(cmd: string, timeoutMs: number = 5000): Promise<string> {

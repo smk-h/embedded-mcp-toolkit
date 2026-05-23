@@ -20,14 +20,13 @@ function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function configsEqual(a: SerialConfig, b: Partial<SerialConfig>): boolean {
-  return (
-    a.port === b.port &&
-    a.baudRate === b.baudRate &&
-    (b.dataBits === undefined || a.dataBits === b.dataBits) &&
-    (b.stopBits === undefined || a.stopBits === b.stopBits) &&
-    (b.parity === undefined || a.parity === b.parity)
-  );
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${message}`)), ms)
+    ),
+  ]);
 }
 
 // ── config ─────────────────────────────────────────────────
@@ -319,24 +318,28 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
       if (args.parity) connectConfig.parity = args.parity as "none" | "even" | "odd";
       const hasNewConfig = Object.keys(connectConfig).length > 0;
 
-      const connected = serial!.isConnected;
-      const log = [`isConnected=${connected}`, `hasNewConfig=${hasNewConfig}`];
+      const wasConnected = serial!.isConnected;
+      const configChanged = hasNewConfig && !serial!.configsEqual(connectConfig);
 
-      if (connected) {
-        if (hasNewConfig && !configsEqual(serialConfig!, connectConfig)) {
-          log.push("config differs, reconnecting");
-          await serial!.disconnect();
-          await new Promise((r) => setTimeout(r, 300));
-          await serial!.connect(connectConfig);
-        } else {
-          log.push("config same, reusing");
-        }
-        return { content: [text(`Serial connected (${log.join(", ")}): ${serialConfig!.port} @ ${serialConfig!.baudRate} baud`)] };
+      // Build status message
+      const statusParts: string[] = [
+        `isConnected=${wasConnected}`,
+        `hasNewConfig=${hasNewConfig}`,
+      ];
+
+      if (wasConnected && configChanged) {
+        statusParts.push("config differs, reconnecting");
+      } else if (wasConnected) {
+        statusParts.push("config same, reusing");
+      } else {
+        statusParts.push("connecting fresh");
       }
 
-      log.push("not connected, connecting fresh");
+      // Connect (will handle reconnection internally if config changed)
       await serial!.connect(hasNewConfig ? connectConfig : undefined);
-      return { content: [text(`Serial connected (${log.join(", ")}): ${serialConfig!.port} @ ${serialConfig!.baudRate} baud`)] };
+
+      const finalConfig = serial!.config;
+      return { content: [text(`Serial connected (${statusParts.join(", ")}): ${finalConfig.port} @ ${finalConfig.baudRate} baud`)] };
     }
 
     case "serial_disconnect": {
@@ -409,30 +412,48 @@ async function main() {
 // ── graceful shutdown ──────────────────────────────────────
 
 let cleaned = false;
+const CLEANUP_TIMEOUT = 5000; // 5 seconds timeout for cleanup
 
 async function cleanup(): Promise<void> {
   if (cleaned) return;
   cleaned = true;
   console.error("Shutting down...");
 
+  // Cleanup serial with timeout
   if (serial) {
     try {
-      await serial.disconnect();
+      await withTimeout(
+        serial.disconnect(),
+        CLEANUP_TIMEOUT,
+        "serial disconnect"
+      );
       console.error("Serial disconnected.");
     } catch (e) {
       console.error("Serial disconnect error:", getErrorMessage(e));
     }
   }
+
+  // Cleanup SSH with timeout
   if (ssh) {
     try {
-      await ssh.close();
+      await withTimeout(
+        ssh.close(),
+        CLEANUP_TIMEOUT,
+        "SSH close"
+      );
       console.error("SSH disconnected.");
     } catch (e) {
       console.error("SSH close error:", getErrorMessage(e));
     }
   }
+
+  // Close MCP server with timeout
   try {
-    await server.close();
+    await withTimeout(
+      server.close(),
+      CLEANUP_TIMEOUT,
+      "MCP server close"
+    );
     console.error("MCP server closed.");
   } catch (e) {
     console.error("Server close error:", getErrorMessage(e));
