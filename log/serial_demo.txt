@@ -1,0 +1,390 @@
+================================================================================
+  board-alpha (串口) 调试会话记录 — 完整版 (含思考过程)
+  目标板: ATK-IMX6U / Freescale i.MX6U / Linux 4.1.15
+  串口: COM3 @ 115200 baud
+  日期: 2026-05-23
+================================================================================
+
+
+[Q1] 查看 board-alpha 的 IP
+────────────────────────────────────────────────────────────────────────────────
+
+  思路: 板卡通过串口连接(UART)，没有固定 IP。需要先打开串口，然后执行 ip addr 获取 IP。
+
+  执行过程:
+    1. board-alpha_serial_connect(port=COM3, baud=115200)
+       → 第一次报错 "Access denied" (COM3 被其他程序占用)
+    2. 询问用户 → 用户说 COM7
+       → 报错 "File not found" (COM7 不存在)
+    3. 检查本机可用串口: [System.IO.Ports.SerialPort]::GetPortNames() → 仅 COM3
+    4. 让用户关闭占用 COM3 的程序后重试
+    5. board-alpha_serial_connect(port=COM3, baud=115200)
+       → Serial connected (COM3 @ 115200)
+    6. board-alpha_serial_exec("ip addr")
+       → 发现 eth0 的 IP 为 169.254.57.99/16 (链路本地地址/APIPA)
+         这不是配置文件中预期的 192.168.16.105
+
+  思考分析:
+    - 169.254.x.x 是链路本地地址，通常由 DHCP 失败或 zeroconf/APIPA 机制分配
+    - 实际配置的静态 IP 是 192.168.16.105，显然启动时未生效
+    - 需要深入排查为什么静态配置被忽略
+
+
+[Q2] 为什么 /etc/network/interfaces 配置的静态 IP 在启动时未生效？
+────────────────────────────────────────────────────────────────────────────────
+
+  排查步骤:
+
+  Step 1 — 检查 interfaces 文件语法
+    命令: cat /etc/network/interfaces
+    内容:
+      auto lo
+      iface lo inet loopback
+      auto eth0
+      iface eth0 inet static
+          address 192.168.16.105
+          netmask 255.255.255.0
+          gateway 192.168.16.1
+      ...
+    结论: 语法正确，配置本身没问题。
+
+  Step 2 — 检查有无 NetworkManager / dhcpcd 等冲突
+    命令: ps | grep -E "NetworkManager|dhcp|systemd-network"
+    输出: (空) → 没有这些进程，排除常见冲突源。
+
+  Step 3 — 检查系统类型和初始化系统
+    命令: cat /etc/issue; uname -a
+    输出: "Freescale i.MX Release Distro 4.1.15-2.1.0"
+          "Linux ATK-IMX6U 4.1.15-g06f53e4 #1 SMP PREEMPT armv7l"
+    结论: 基于 Yocto 的嵌入式 Linux，内核 4.1.15，ARMv7。
+
+  Step 4 — 检查启动机制 (SysV init)
+    命令: cat /etc/inittab
+    关键内容:
+      id:5:initdefault:           ← 默认运行级别 5
+      si::sysinit:/etc/init.d/rcS  ← 启动时先执行 rcS
+      l5:5:wait:/etc/init.d/rc 5  ← 然后进入 runlevel 5
+    思考: 该系统使用 SysV init，不是 systemd。
+          rcS 会执行 /etc/rcS.d/ 下的脚本，然后 init 执行 /etc/rc5.d/ 下的脚本。
+
+  Step 5 — 检查 rcS.d 和 rc5.d 中网络相关的脚本
+    命令: ls -la /etc/rcS.d/ | grep net
+    输出: (空) → rcS.d 中没有 networking 脚本！
+
+    命令: ls -la /etc/rc5.d/ | grep net
+    输出: S01networking -> ../init.d/networking
+    思考: networking 脚本在 rc5.d 中，但 rcS.d 中没有。
+          networking 脚本的 LSB header 写的是 Default-Start: S，
+          按理说应该在 rcS.d 中有 symlink，但它缺失了。
+          不过因为默认 runlevel 是 5，进入 runlevel 5 时应该还会执行 rc5.d 中的脚本。
+
+  Step 6 — 检查 networking 脚本内容
+    命令: cat /etc/init.d/networking
+    关键内容:
+      start)
+          echo "Configuring network interfaces... "
+          sysctl -e -p /etc/sysctl.conf
+          ifup -a               ← 这才是真正配置网络的命令
+          /usr/bin/setmac.sh &
+          ;;
+    结论: 脚本会执行 ifup -a 来激活所有 auto 标记的接口。逻辑正确。
+
+  Step 7 — 检查内核日志，看网络初始化过程
+    命令: dmesg | grep -iE "eth0|net|phy|dhcp|ifup"
+    关键输出:
+      [1.689930] fec 20b4000.ethernet: Invalid MAC address: 00:00:00:00:00:00
+      [1.700059] Using random MAC address: 2e:7f:46:8e:a4:e1
+      [8.673713] eth0: Freescale FEC PHY driver [SMSC LAN8710/LAN8720]
+      [8.713210] IPv6: ADDRCONF(NETDEV_UP): eth0: link is not ready
+      [9.834003] eth0: link is not ready
+      [13.993809] eth0: Link is Up - 100Mbps/Full - flow control rx/tx
+    分析:
+      - 链路在启动约 14 秒后才 ready
+      - 没有看到 ifup 或 DHCP 相关的内核消息
+      - 实际 MAC 地址 (88:11:c0:90:49:9a) 与随机 MAC (2e:7f:46:8e:a4:e1) 不同，
+        说明 U-Boot 或 setmac.sh 在后续阶段修正了 MAC
+
+  Step 8 — 手动验证 ifup 是否能正常工作
+    命令: ifdown eth0; ifup -v eth0
+    输出:
+      run-parts /etc/network/if-pre-up.d
+      ifconfig eth0 up
+      ifconfig eth0 192.168.16.105 netmask 255.255.255.0
+      route add default gw 192.168.16.1 eth0
+      run-parts /etc/network/if-up.d
+    结论: ifup eth0 工作完全正常，配置本身没问题。
+          问题在于启动时 ifup -a 根本没被执行，或者被执行后被覆盖了。
+
+  Step 9 — 检查 connman (连接管理器) 的存在
+    命令: cat /etc/init.d/connman
+    输出: 存在 connman 服务 (/usr/sbin/connmand)
+
+    命令: ls -la /etc/rc5.d/ (完整列表)
+    关键顺序:
+      S01networking  → ifup -a (设置静态 IP)
+      S01xserver-nodm
+      S02dbus-1
+      S05connman     → ConnMan 启动 (接管网络)
+      S10dropbear    → SSH
+      S15mountnfs.sh
+      S21avahi-daemon
+      ...
+
+    思考: 关键发现！
+          ConnMan 在 S01networking 之后 (S05) 启动。
+          ConnMan 是连接管理器，会接管网络接口并用自己的配置覆盖 ifupdown 的设置。
+
+    命令: cat /var/lib/connman/ethernet_8811c090499a_cable/settings
+    内容:
+      [ethernet_8811c090499a_cable]
+      Name=Wired
+      AutoConnect=true
+      IPv4.method=dhcp        ← DHCP！
+      IPv6.method=auto
+
+    思考: 真相大白！
+          启动流程:
+            1. S01networking → ifup -a → 设静态 IP 192.168.16.105 ✓
+            2. S05connman → ConnMan 启动 → 检测到 eth0 → DHCP
+            3. DHCP 失败 (无 DHCP 服务器) → 退化为链路本地地址 169.254.57.99 ✗
+
+  Step 10 — 确认 ConnMan 在运行
+    命令: ps aux | grep connman
+    输出: PID 529 /usr/sbin/connmand (确实在运行)
+
+  最终结论:
+    根本原因是 ConnMan (Connection Manager) 在 ifupdown 之后启动，
+    其配置为 IPv4.method=dhcp，覆盖了 ifupdown 设置的静态 IP 192.168.16.105，
+    DHCP 失败后回退到 169.254.57.99 (链路本地地址)。
+
+  备选排查路径 (已排除):
+    ❌ 内核 IP 自动配置 (IP_PNP): cmdline 无 ip= 参数，排除
+    ❌ NetworkManager: 未安装
+    ❌ dhcpcd: 未运行
+    ❌ avahi-daemon / zeroconf: 虽安装了 avahi 但无相关进程
+    ❌ ifupdown 配置语法错误: 手动测试 ifup eth0 正常
+
+
+[Q3] 提供修复方案 (用户选择了方案1)
+────────────────────────────────────────────────────────────────────────────────
+
+  提供三个方案:
+
+  方案1 — 配置 ConnMan 使用静态 IP (用户选择)
+  方案2 — 禁止 ConnMan 管理有线网络 ([Wired] Enable=false)
+  方案3 — 彻底禁用 ConnMan (移除 rc5.d symlink)
+
+  执行方案1:
+
+  1) 写入 ConnMan 静态 IP 配置
+     命令: cat > /var/lib/connman/ethernet_8811c090499a_cable/settings << 'EOF'
+           [ethernet_8811c090499a_cable]
+           Name=Wired
+           AutoConnect=true
+           IPv4.method=manual
+           IPv4.address=192.168.16.105
+           IPv4.netmask=255.255.255.0
+           IPv4.gateway=192.168.16.1
+           EOF
+
+  2) 重启 ConnMan
+     命令: /etc/init.d/connman restart
+
+  3) 验证结果 — 第一次检查发现 IP 未生效
+     命令: ip addr show eth0 | grep inet
+     输出: 只有 IPv6，IPv4 地址没了！
+     思考: ConnMan 重启后移除了旧 IP 但新 IP 没有设置成功。
+           可能是配置格式问题，或者 ConnMan 读取配置后未自动连接。
+
+  4) 检查 ConnMan 状态
+     命令: connmanctl technologies
+     输出: Connected = False (未连接)
+
+     命令: connmanctl services
+     输出: *Ac Wired  ethernet_8811c090499a_cable
+           (* = 已保存 / A = 自动连接 / c = 曾连接过)
+
+     命令: connmanctl state
+     输出: State = idle
+
+  5) 尝试手动连接
+     命令: connmanctl connect ethernet_8811c090499a_cable
+     输出: Error "In progress" (正在连接中...)
+     等待后 IP 仍未出现。
+
+  6) 分析问题
+     思考: 可能原因:
+           - ConnMan 缓存了旧的 DHCP 配置
+           - 配置格式不被 ConnMan 1.31 识别
+           - 自动连接逻辑需要触发
+
+  7) 彻底清除 ConnMan 缓存并重启
+     命令:
+        /etc/init.d/connman stop
+        rm -rf /var/lib/connman/ethernet_8811c090499a_cable/
+        mkdir -p /var/lib/connman/ethernet_8811c090499a_cable
+        (写入新的 settings)
+        /etc/init.d/connman start
+
+     结果: 仍然 Connected = False，IP 未生效。
+
+  8) 使用 connmanctl config 命令配置 (最终生效的方法)
+     命令: connmanctl config ethernet_8811c090499a_cable \
+             --ipv4 manual 192.168.16.105 255.255.255.0 192.168.16.1
+
+     命令: connmanctl connect ethernet_8811c090499a_cable
+     输出: Error "Already connected" ← 已经连上了！
+
+     命令: ip addr show eth0 | grep inet
+     输出: inet 192.168.16.105/24 brd 192.168.16.255 scope global eth0  ✓
+
+  思考: connmanctl config 命令写入的配置多了两个字段:
+        IPv4.netmask_prefixlen=24
+        IPv4.local_address=192.168.16.105
+        这些可能是 ConnMan 1.31 要求的额外字段。
+
+  9) 验证最终配置
+     命令: cat /var/lib/connman/ethernet_8811c090499a_cable/settings
+     内容:
+        [ethernet_8811c090499a_cable]
+        Name=Wired
+        AutoConnect=true
+        IPv4.method=manual
+        IPv4.address=192.168.16.105
+        IPv4.netmask=255.255.255.0
+        IPv4.gateway=192.168.16.1
+        IPv6.method=auto
+        IPv6.privacy=disabled
+        IPv4.netmask_prefixlen=24
+        IPv4.local_address=192.168.16.105
+
+  10) 测试网关连通性
+      命令: ping -c 3 192.168.16.1
+      输出: Destination Host Unreachable
+      分析: 网关不可达是正常的，因为当前网络环境可能没有设备在 192.168.16.1。
+            从 ICMP 错误源地址是 192.168.16.105 可以确认本机 IP 已经正确配置。
+
+
+[Q4] 去掉 ifupdown 对 eth0 的管理
+────────────────────────────────────────────────────────────────────────────────
+
+  问题: 即使 ConnMan 配置正确，启动时仍有短暂 IP 抖动:
+        1. S01networking → ifup -a → 设 192.168.16.105
+        2. S05connman → ConnMan → 重新配置为 192.168.16.105 (结果一样，但中间有切换)
+
+  解决方案: 从 /etc/network/interfaces 中移除 auto eth0 和对应 iface 块，
+           让 ifupdown 不再管理 eth0，完全交给 ConnMan。
+
+  命令:
+    cat > /etc/network/interfaces << 'EOF'
+    # /etc/network/interfaces -- configuration file for ifup(8), ifdown(8)
+    auto lo
+    iface lo inet loopback
+    iface wlan0 inet dhcp
+    iface atml0 inet dhcp
+    iface eth1 inet dhcp
+    iface usb0 inet static
+        address 192.168.7.2
+        netmask 255.255.255.0
+        network 192.168.7.0
+        gateway 192.168.7.1
+    iface bnep0 inet dhcp
+    EOF
+
+  验证: cat /etc/network/interfaces → 确认 eth0 已移除。
+
+
+================================================================================
+  最终总结
+================================================================================
+
+  问题: /etc/network/interfaces 配置的静态 IP 在启动时未生效
+  原因: ConnMan (S05connman) 在 ifupdown (S01networking) 之后启动，
+        以 DHCP 模式接管 eth0，DHCP 失败后回退到链路本地地址。
+  修复:
+    1. ConnMan 配置为静态 IP (192.168.16.105/24, gw 192.168.16.1)
+    2. 从 /etc/network/interfaces 移除 auto eth0，避免启动时双重配置
+  关键命令: connmanctl config ethernet_8811c090499a_cable \
+              --ipv4 manual 192.168.16.105 255.255.255.0 192.168.16.1
+  状态: 已修复，重启后会自动使用静态 IP。
+
+
+================================================================================
+  关键文件清单
+================================================================================
+
+  路径                                       | 作用
+  /etc/network/interfaces                    | ifupdown 网络配置 (已移除 eth0)
+  /var/lib/connman/ethernet_8811c090499a_cable/settings | ConnMan 网络配置 (static IP)
+  /etc/init.d/networking                     | ifupdown 启动脚本 (S01networking)
+  /etc/init.d/connman                        | ConnMan 启动脚本 (S05connman)
+  /etc/rc5.d/S01networking                   | 启动链接 → ../init.d/networking
+  /etc/rc5.d/S05connman                      | 启动链接 → ../init.d/connman
+  /proc/cmdline                              | 内核命令行 (无 ip= 参数)
+  /var/log/messages                          | 系统日志
+
+
+================================================================================
+  所有诊断命令
+================================================================================
+
+  # 系统信息
+  cat /etc/issue
+  uname -a
+  cat /proc/cmdline
+
+  # 网络状态
+  ip addr
+  ifconfig eth0
+  route -n
+
+  # 进程检查
+  ps | grep -iE "NetworkManager|dhcp|systemd-network|connman|avahi"
+
+  # 内核日志
+  dmesg | grep -iE "eth0|net|phy|dhcp|ifup"
+
+  # 初始化系统
+  cat /etc/inittab
+  ls -la /etc/rcS.d/
+  ls -la /etc/rc5.d/
+  cat /etc/init.d/rcS
+  cat /etc/init.d/networking
+  cat /etc/init.d/connman
+
+  # 串口调试
+  [System.IO.Ports.SerialPort]::GetPortNames()  (PowerShell)
+
+  # 网络配置
+  cat /etc/network/interfaces
+  cat /etc/sysctl.conf
+
+  # ConnMan 调试
+  which connmand
+  connmanctl technologies
+  connmanctl services
+  connmanctl state
+  connmanctl config ethernet_8811c090499a_cable --ipv4 manual 192.168.16.105 255.255.255.0 192.168.16.1
+  connmanctl connect ethernet_8811c090499a_cable
+  cat /var/lib/connman/ethernet_8811c090499a_cable/settings
+  cat /var/lib/connman/ethernet_8811c090499a_cable/data
+  cat /var/lib/connman/settings
+
+  # 手动网络测试
+  ifdown eth0
+  ifup -v eth0
+
+  # 服务管理
+  /etc/init.d/networking restart
+  /etc/init.d/connman restart
+  /etc/init.d/connman stop
+  /etc/init.d/connman start
+
+  # 日志
+  cat /var/log/messages | grep -i "connman\|eth0\|network"
+  cat /var/log/boot
+
+
+================================================================================
+  会话结束
+================================================================================
