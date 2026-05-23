@@ -188,6 +188,38 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["local_path", "remote_path"],
         },
       },
+      {
+        name: "shell_open",
+        description: "Open an interactive shell session on the remote board (with PTY allocation, supports interactive programs like top, vi)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            term: { type: "string", description: "Terminal type (default: xterm)" },
+            cols: { type: "number", description: "Terminal columns (default: 80)" },
+            rows: { type: "number", description: "Terminal rows (default: 24)" },
+          },
+        },
+      },
+      {
+        name: "shell_send",
+        description: "Send a command to the interactive shell session and wait for output",
+        inputSchema: {
+          type: "object",
+          properties: {
+            command: { type: "string", description: "Command to send" },
+            timeout: { type: "number", description: "Timeout in milliseconds (default: 10000)" },
+          },
+          required: ["command"],
+        },
+      },
+      {
+        name: "shell_close",
+        description: "Close the interactive shell session",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
     );
   }
 
@@ -254,6 +286,9 @@ interface ToolArgs {
   lines?: number;
   local_path?: string;
   remote_path?: string;
+  term?: string;
+  cols?: number;
+  rows?: number;
   // serial
   port?: string;
   baudRate?: number;
@@ -317,6 +352,25 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
       const content = readFileSync(args.local_path!, "utf8");
       await ssh!.writeFile(args.remote_path!, content);
       return { content: [text(`Uploaded ${args.local_path} -> ${args.remote_path}`)] };
+    }
+
+    case "shell_open": {
+      const output = await ssh!.openShell({
+        term: args.term,
+        cols: args.cols,
+        rows: args.rows,
+      });
+      return { content: [text(output || "(shell opened, no initial output)")] };
+    }
+
+    case "shell_send": {
+      const output = await ssh!.shellSend(args.command!, args.timeout);
+      return { content: [text(output || "(no output)")] };
+    }
+
+    case "shell_close": {
+      await ssh!.closeShell();
+      return { content: [text("Shell session closed")] };
     }
 
     // ── Serial handlers ──
