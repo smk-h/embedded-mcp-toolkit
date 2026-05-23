@@ -148,21 +148,25 @@ export class SerialManager {
 
     const raw = await this.#readUntilPrompt(port, timeoutMs);
 
-    if (this.#shellState?.hasUnlockSequence) {
+    if (this.#shellState) {
       const state = this.#shellState.detectState(raw);
+
       if (state === ShellState.LOCKED) {
-        const unlockResult = await this._unlockShell(port);
-        const parsed = JSON.parse(unlockResult);
-        if (parsed.result === "awaiting_key") {
-          return `[SHELL_LOCKED] Auto-unlock initiated but key required.\n${parsed.message}\n\nPartial output before unlock:\n${this.#cleanOutput(cmd, raw)}`;
+        this.#tryUpgradeProfile(raw);
+        if (this.#shellState.hasUnlockSequence) {
+          const unlockResult = await this._unlockShell(port);
+          const parsed = JSON.parse(unlockResult);
+          if (parsed.result === "awaiting_key") {
+            return `[SHELL_LOCKED] Auto-unlock initiated but key required.\n${parsed.message}\n\nPartial output before unlock:\n${this.#cleanOutput(cmd, raw)}`;
+          }
+          if (parsed.result === "error") {
+            return `[UNLOCK_FAILED] ${parsed.message}\n\nPartial output:\n${this.#cleanOutput(cmd, raw)}`;
+          }
+          await this.#drain(port);
+          port.write(cmd + "\r\n");
+          const raw2 = await this.#readUntilPrompt(port, timeoutMs);
+          return this.#cleanOutput(cmd, raw2);
         }
-        if (parsed.result === "error") {
-          return `[UNLOCK_FAILED] ${parsed.message}\n\nPartial output:\n${this.#cleanOutput(cmd, raw)}`;
-        }
-        await this.#drain(port);
-        port.write(cmd + "\r\n");
-        const raw2 = await this.#readUntilPrompt(port, timeoutMs);
-        return this.#cleanOutput(cmd, raw2);
       }
     }
 
@@ -174,6 +178,23 @@ export class SerialManager {
     const port = this.#port!;
 
     await this.#drain(port);
+
+    // ── 串口安全状态检测 ──
+    // 先静默读取已有输出，判断当前是否处于输入等待状态（如 PSH 的 "key>"）。
+    // 若直接发送 echo probe（带 \r\n），会被当成输入提交，导致解锁失败。
+    const pending = await this.#read(port, 500);
+    if (this.#shellState) {
+      const pendingState = this.#shellState.detectState(pending);
+      if (pendingState !== ShellState.UNKNOWN) {
+        return JSON.stringify({
+          state: pendingState,
+          profile: this.#shellState.profile.name,
+          hasUnlockSequence: this.#shellState.hasUnlockSequence,
+          raw: pending.substring(0, 1000),
+          note: "State detected from pending serial output without sending probe",
+        });
+      }
+    }
 
     port.write("echo __PSH_STATE_PROBE__\r\n");
 
@@ -203,12 +224,42 @@ export class SerialManager {
       throw new Error("No ShellStateManager configured. Set BOARD_SHELL_PROFILE or BOARD_UNLOCK_SEQUENCE env.");
     }
 
-    if (!this.#shellState.hasUnlockSequence) {
-      throw new Error(`Profile '${this.#shellState.profile.name}' has no unlock sequence defined.`);
-    }
-
     const port = this.#port!;
     await this.#drain(port);
+
+    if (!this.#shellState.hasUnlockSequence) {
+      const peekRaw = await this.#read(port, 500);
+      this.#tryUpgradeProfile(peekRaw);
+      if (!this.#shellState.hasUnlockSequence) {
+        throw new Error(`Profile '${this.#shellState.profile.name}' has no unlock sequence defined. Use BOARD_SHELL_PROFILE=psh or set BOARD_UNLOCK_SEQUENCE.`);
+      }
+    }
+
+    // ── 串口安全预检测 ──
+    // 先静默读取已有输出判断当前状态。若已处于解锁输入等待（如 "key>"），
+    // 直接跳过 echo probe，避免 probe 被当成输入提交。
+    const prePeek = await this.#read(port, 500);
+    const peekState = this.#shellState.detectState(prePeek);
+
+    if (peekState === ShellState.READY) {
+      return JSON.stringify({ result: "already_unlocked", state: "ready" });
+    }
+
+    // 若已处于解锁等待状态且有 key，直接进入 unlock sequence（跳过 echo probe）
+    if (peekState === ShellState.UNLOCKING && key) {
+      const result = await this._unlockShell(port, key);
+      const parsed = JSON.parse(result);
+      if (parsed.result === "awaiting_key") {
+        return result;
+      }
+      // 验证解锁后状态
+      await this.#drain(port);
+      port.write("echo __PSH_POST_STATE__\r\n");
+      const postRaw = await this.#readUntilPrompt(port, 3000);
+      const postState = this.#shellState.detectState(postRaw);
+      parsed.verifyState = postState;
+      return JSON.stringify(parsed);
+    }
 
     port.write("echo __PSH_PRE_STATE__\r\n");
     const preRaw = await this.#read(port, 2000);
@@ -247,6 +298,16 @@ export class SerialManager {
   }
 
   // ── private ──────────────────────────────────────────────
+
+  #tryUpgradeProfile(raw: string): void {
+    if (!this.#shellState) return;
+    if (this.#shellState.hasUnlockSequence) return;
+    const builtin = ShellStateManager.matchBuiltin(raw);
+    if (builtin) {
+      console.error(`Serial: auto-detected shell profile '${builtin.name}' from output, upgrading from heuristic`);
+      this.#shellState = new ShellStateManager(builtin);
+    }
+  }
 
   #doConnect(): Promise<void> {
     return new Promise<void>((resolve, reject) => {

@@ -500,6 +500,8 @@ ssh-keygen -R 192.168.16.105
 
 #### 3.3 配置串口（/etc/inittab）
 
+##### 3.3.1 方案1
+
 在 inittab 中添加 psh 作为前台登录程序（无需 getty，psh 自带认证和管理终端）：
 
 ```shell
@@ -513,6 +515,57 @@ ssh-keygen -R 192.168.16.105
 - `::sysinit`：系统初始化脚本，在 respawn 之前执行，确保文件系统、网络等就绪
 - `::respawn:-/bin/psh`：以 login shell 方式启动 psh，空 id 字段绑定到 init 控制台；进程退出后 init 自动重启
 - `::restart:/sbin/init`：`kill -HUP 1` 时重新执行 init，热加载 inittab 修改，无需 reboot
+
+##### 3.3.2 方案2
+
+备选方案：通过 getty + autologin + /etc/passwd 使串口进入 psh
+
+上述 `::respawn:-/bin/psh` 是让 init 直接拉起 psh 的方式。另一种更常见的方式是保留标准的 getty 登录流程，通过 **autologin 自动登录** + **/etc/passwd 中 root 的 shell 指向 psh** 来实现串口进入 psh。这种方式的最大优势是不改变系统的登录流程，仅在 passwd 中切换 root shell 即可。
+
+- 步骤一：配置 inittab 使用 getty + autologin
+
+```shell
+# /etc/inittab
+mxc0:12345:respawn:/sbin/getty -l /bin/autologin -n -L 115200 ttymxc0
+```
+
+- `getty`：标准终端管理程序，打开 tty 设备、设置波特率
+- `-l /bin/autologin`：指定 autologin 作为登录程序，无需输入用户名密码，直接以 root 身份登录
+- `ttymxc0`：指定串口设备，此处以 i.MX6 平台为例
+
+- 步骤二：修改 /etc/passwd 中 root 的 shell 为 /bin/psh
+
+```shell
+# /etc/passwd
+root:x:0:0:root:/home/root:/bin/psh
+```
+
+【**工作机制**】
+
+```
+init (inittab)
+  │
+  │ mxc0:12345:respawn:/sbin/getty -l /bin/autologin ...
+  ▼
+getty ──► /bin/autologin ──► 自动以 root 登录
+                                │
+                                │ 读取 /etc/passwd
+                                │ root shell = /bin/psh
+                                ▼
+                              /bin/psh (gate prog)
+                                │
+                                │ 锁定界面
+                                ▼
+```
+
+与直接 `respawn:-/bin/psh` 的区别：
+
+| 方式 | inittab 配置 | 依赖项 | 优势 |
+|------|-------------|--------|------|
+| 直接 bind psh | `::respawn:-/bin/psh` | 无 | 最简单，psh 直接接管终端 |
+| getty + autologin + passwd | `mxc0:12345:respawn:/sbin/getty -l /bin/autologin ...` | autologin、/etc/passwd | 不改登录流程，仅切换 root shell，**与 SSH 共用同一配置** |
+
+> **关键点**：方式二中，串口和 SSH 共享同一个配置源头——`/etc/passwd` 中 root 的 shell 设置。一旦将 root shell 改为 `/bin/psh`，所有登录通道（串口、SSH）都会自动经过 psh 认证。非交互式 SSH 命令仍由 psh 的 `isatty()` 检测透明透传，不受影响。
 
 #### 3.4 配置 SSH（/etc/passwd + /etc/shells）
 

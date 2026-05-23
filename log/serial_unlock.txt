@@ -1,0 +1,270 @@
+# 串口 PSH 解锁问题分析与修复日志
+# 导出时间: 2026-05-23
+# 涉及文件: src/serial.ts, src/shell-state.ts, .opencode/skills/embedded-toolkit/SKILL.md
+
+================================================================================
+## 问题一: 登录 board-alpha (串口)
+================================================================================
+
+[用户] 登录board-alpha
+
+[AI 操作] 加载 embedded-toolkit 技能, 调用 board-alpha_serial_connect
+[结果] Serial connected (isConnected=true, hasNewConfig=false, config same, reusing): COM3 @ 115200 baud
+
+[AI] 串口连接成功, COM3 @ 115200。如需执行命令, 请告知。
+
+================================================================================
+## 问题二: 为什么 MobaXterm 登录串口会进入 PSH
+================================================================================
+
+[用户] (粘贴 MobaXterm 输出, 包含 PSH 启动界面和解锁过程)
+启动 Telephony daemon
+...
+╔════════════════════════════════════════╗
+║         Protect Shell v2.1             ║
+╠════════════════════════════════════════╣
+║  System is LOCKED                      ║
+║  Type 'help' for available commands    ║
+║  Type 'debug' to unlock full shell     ║
+╚════════════════════════════════════════╝
+locked> debug
+...Challenge Code: PSH-2C80-D7A9-8CB8-CDEB...
+Enter key to unlock: key> 123456
+[PSH] Access Granted! Unlocking shell...
+root@ATK-IMX6U:~#
+
+[用户] 为什么mobaxterm登录串口的时候会进入psh
+
+[AI 分析] 因为系统的 root 用户登录 shell 被设置为 PSH(Protect Shell), 
+定义在 /etc/passwd 中。PSH 作为登录 shell 启动后直接接管控制台。
+用户用 key 123456 解锁后进入了正常 shell。
+
+================================================================================
+## 问题三: 为什么 MCP 登录不会进入 PSH
+================================================================================
+
+[用户] 那为什么mcp登录的时候不会进入psh
+
+[AI 分析] MCP 的 exec 命令通过 SSH exec channel(无 TTY)直接执行命令,
+绕过登录 shell, 不会触发 PSH。而串口/MobaXterm 分配了 PTY,
+触发交互式登录流程, 于是 /bin/psh(root 的登录 shell)被启动。
+
+================================================================================
+## 问题四: 当前串口终端状态
+================================================================================
+
+[用户] 现在连接的串口终端是什么
+
+[AI 操作] 调用 board-alpha_shell_detect_state
+[结果] {"state":"ready","profile":"heuristic","hasUnlockSequence":false,
+        "raw":"root@ATK-IMX6U:~# "}
+
+[AI] 串口终端已处于正常 shell 状态, 提示符为 root@ATK-IMX6U:~#, 可以执行命令。
+
+[用户] 为什么串口这里登录直接就是正常shell状态,和前面分析的不符
+
+[AI 分析] 串口是独占式物理连接,但 shell 状态保存在板卡上。
+前面 MobaXterm 输出中已经完成了 PSH 解锁流程:
+1. MobaXterm 发送 debug -> 显示 Challenge Code -> 输入 123456 -> Access Granted
+2. 板卡进入了正常 shell root@ATK-IMX6U:~#
+3. MobaXterm 断开串口后,板卡上的 shell 并没有重新锁定
+4. MCP 后续连接 COM3 只是重新 attach 到了已经解锁的会话上
+
+这不是"绕过",而是"连接到了已解锁的会话"。
+如果重启板卡,再用 MCP 连接串口,依然会看到 PSH 锁定界面。
+
+================================================================================
+## 问题五: 重启后重新连接串口
+================================================================================
+
+[用户] 我已重启设备,重新连接board-alpha
+
+[AI 操作] board-alpha_serial_connect (COM3, 115200)
+[结果] Serial connected (isConnected=true, hasNewConfig=true, config same, reusing)
+
+[AI 操作] board-alpha_serial_exec 执行 echo test
+[结果] [PSH] in locked mode. [PSH] Available: help, debug, free, ps, top, dmesg, exit
+
+[AI 操作] board-alpha_serial_exec 执行 debug
+[结果] 显示 DEBUG MODE 界面, Challenge Code: PSH-D3CB-22DF-4CC0-BFEF
+        然后 Cancelled. Returning to locked mode.
+
+[AI 操作] board-alpha_serial_send 发送 "debug" (无换行符)
+[结果] Sent 5 bytes
+
+[AI 操作] board-alpha_serial_exec 执行 echo test (读取状态)
+[结果] 显示 DEBUG MODE 界面, Challenge Code: PSH-FB8E-B10D-F6AF-B953
+        然后 Cancelled. Returning to locked mode.
+
+[AI 操作] board-alpha_serial_exec 执行 debug
+[结果] 显示 DEBUG MODE 界面, Challenge Code: PSH-967A-DF63-3218-E342
+
+[AI] 当前设备处于 PSH 锁定状态, Challenge Code: PSH-967A-DF63-3218-E342
+   请输入对应的解锁密钥。
+
+[用户] 123456
+
+[AI 操作] board-alpha_serial_send 发送 "debug\n123456" (12字节,末尾无换行符)
+[结果] Sent 12 bytes
+
+[AI 操作] board-alpha_shell_detect_state
+[结果] {"state":"error", ... "raw":"[PSH] Invalid key! Returning to locked mode.\n\nlocked> "}
+
+[AI] 密钥 123456 不正确,PSH 返回了 Invalid key!
+
+[AI 操作] board-alpha_serial_exec 执行 debug
+[结果] 显示新的 Challenge Code: PSH-1572-A10E-DB9B-8AA5
+        然后 Cancelled. Returning to locked mode.
+
+================================================================================
+## 问题六: 为什么密钥不正确?
+================================================================================
+
+[用户] 分析日志,为什么密钥不正确,我确认密钥就是123456
+
+[AI 分析] 问题根源在于:之前发送的 123456 没有带换行符提交,
+被后续的 shell_detect_state 干扰了。
+
+事件时间线还原:
+
+| 时间 | 动作 | PSH 状态 |
+|------|------|----------|
+| T0 | serial_send 发送 "debug\n123456"(12 字节,无末尾换行符) | 收到 debug,显示 Challenge Code,进入 key> |
+| T1 | PSH 收到 "123456",但没有收到 \n,停留在等待输入状态 | key> 等待 |
+| T2 | shell_detect_state 发送 "echo __PSH_STATE_PROBE__\r\n" | 将 echo __PSH_STATE_PROBE__ 当作 key 提交 |
+| T3 | PSH 判定 Invalid key,返回 locked mode | locked> |
+
+关键结论:
+1. 密钥 123456 本身是正确的
+2. 失败原因是提交方式错误 - serial_send 发送 123456 后没有追加换行符,
+   key 一直悬停在 key> 输入缓冲区中
+3. shell_detect_state 的 echo probe 抢占了输入窗口 - 
+   这是 shell_detect_state 的设计(发送 echo __PSH_STATE_PROBE__ 来检测状态),
+   但在 PSH 的 key> 等待状态下,任何带换行符的数据都会被当作 key 读入
+
+[验证] AI 重新发送 "debug\n123456\n"(13 字节,包含换行符)
+[操作] board-alpha_serial_send 发送 "debug\n123456\n"
+[结果] Sent 13 bytes
+[操作] board-alpha_serial_exec 执行 echo test
+[结果] test
+
+结论: 密钥 123456 是正确的,问题出在提交方式。
+
+================================================================================
+## 问题七: 是否需要修改源码/技能来明确串口解锁过程
+================================================================================
+
+[用户] 那是否需要修改源码或者技能来明确个串口的解锁过程,
+      这里看起来和ssh是有些不一样的
+
+[AI 分析] 需要同时修改源码和技能文档。核心问题是:
+1. serial.ts 的 detectState 和 unlockShell 会在串口上发送 echo probe
+   (echo __PSH_STATE_PROBE__\r\n),当 PSH 正处于 key> 等待输入状态时,
+   任何带 \r\n 的数据都会被当成 key 提交,导致 Invalid key。
+2. 技能文档完全没有串口解锁流程,只写了 SSH 的解锁方式。
+
+### 源码修改: src/serial.ts
+
+修复 detectState:
+- 发送 echo probe 之前,先静默读取已有输出判断状态
+- 若已能判断状态(如 key>/locked>),直接返回,跳过 echo probe
+
+修复 unlockShell:
+- 若串口已有输出表明处于 key> 解锁等待状态,跳过 echo probe
+- 直接用用户提供的 key 继续解锁流程
+
+### 技能文档修改: SKILL.md
+
+1. 新增「串口与 SSH 解锁流程差异」章节
+2. 新增「board-alpha 串口 PSH 解锁流程」章节
+3. 更新「echo 标记冲突说明」,拆分为 SSH 和串口两个子节
+4. 更新「自动调用规则」,新增串口解锁规则
+
+### 实际执行的修改
+
+#### 修改一: src/serial.ts - detectState
+
+修改前:
+    port.write("echo __PSH_STATE_PROBE__\r\n");
+    const raw = await this.#read(port, timeoutMs);
+
+修改后:
+    // 先静默读取已有输出,判断当前是否处于输入等待状态
+    const pending = await this.#read(port, 500);
+    if (this.#shellState) {
+      const pendingState = this.#shellState.detectState(pending);
+      if (pendingState !== ShellState.UNKNOWN) {
+        return JSON.stringify({
+          state: pendingState,
+          ...,
+          note: "State detected from pending serial output without sending probe",
+        });
+      }
+    }
+    port.write("echo __PSH_STATE_PROBE__\r\n");
+
+#### 修改二: src/serial.ts - unlockShell
+
+修改前:
+    port.write("echo __PSH_PRE_STATE__\r\n");
+    const preRaw = await this.#read(port, 2000);
+
+修改后:
+    // 先静默读取已有输出判断当前状态
+    const prePeek = await this.#read(port, 500);
+    const peekState = this.#shellState.detectState(prePeek);
+
+    if (peekState === ShellState.READY) {
+      return JSON.stringify({ result: "already_unlocked", state: "ready" });
+    }
+
+    // 若已处于解锁等待状态且有 key,直接进入 unlock sequence
+    if (peekState === ShellState.UNLOCKING && key) {
+      const result = await this._unlockShell(port, key);
+      ...
+    }
+
+    port.write("echo __PSH_PRE_STATE__\r\n");
+
+#### 修改三: SKILL.md
+
+- 新增「串口与 SSH 解锁流程差异」对比表格
+- 新增「board-alpha 串口 PSH 解锁流程」章节(方式一/二/三)
+- 更新「echo 标记冲突与串口输入污染说明」
+- 更新「自动调用规则」第7条
+
+### 核心差异总结
+
+| 差异点 | SSH (board-beta) | 串口 (board-alpha) |
+|--------|-----------------|-------------------|
+| detectState | 读取已有 shellBuffer,不发送数据 | 需发送数据;若在 key> 状态会污染输入 |
+| 交互方式 | shell_open → shell_send/shell_unlock | serial_connect → serial_exec/serial_send/shell_unlock |
+| 自动追加换行 | shell_send 自动追加 \n | serial_exec 自动追加 \r\n; serial_send 不追加 |
+| echo 标记 | shell_send 追加 echo "__END_MARKER__" | serial_exec 按 prompt 模式读取,无 echo 标记 |
+| 输入污染风险 | 无(SSH channel 隔离) | 高(任何 \r\n 在 key> 时会被当 key) |
+
+### 根本原因
+
+前面 123456 解锁失败的完整链条:
+1. serial_send 发送 "debug\n123456" (12字节,末尾无换行符)
+2. PSH 进入 key>, 123456 悬停在缓冲区(未提交,因为缺 \n)
+3. shell_detect_state 发送 "echo __PSH_STATE_PROBE__\r\n"
+4. PSH 将 "echo __PSH_STATE_PROBE__" 当成 key 提交
+5. PSH 判定 Invalid key!
+
+修复后,detectState 会先静默读取 500ms 的已有输出。
+若检测到 key> 状态,直接返回 unlocking,不再发送 echo probe。
+
+================================================================================
+## 验证结果
+================================================================================
+
+TypeScript 编译检查通过: npx tsc --noEmit (no output)
+
+修改文件清单:
+- src/serial.ts (已修改 detectState 和 unlockShell 方法)
+- .opencode/skills/embedded-toolkit/SKILL.md (已更新串口解锁文档)
+
+================================================================================
+END OF LOG
+================================================================================
