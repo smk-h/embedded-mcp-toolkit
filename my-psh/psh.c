@@ -14,9 +14,6 @@
  * 编译: gcc -o psh psh.c
  * =====================================================
  */
-
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,9 +86,8 @@ static void print_debug_info(void)
     printf("║  %s             ║\n", current_challenge);
     printf("║                                        ║\n");
     printf("╠════════════════════════════════════════╣\n");
-    printf("║  Fixed Key: 123456                     ║\n");
+    printf("║  Key: 123456                           ║\n");
     printf("║                                        ║\n");
-    printf("║  usages:                               ║\n");
     printf("║  Enter '123456' to unlock shell        ║\n");
     printf("║                                        ║\n");
     printf("╚════════════════════════════════════════╝\n");
@@ -134,10 +130,10 @@ static int is_allowed_command(const char *cmd)
     }
 
     /* 白名单命令匹配 */
-    if (strcmp(trimmed, "dmesg") == 0) {
-        return 1;
-    }
-    if (strcmp(trimmed, "ps") == 0) {
+    if (strcmp(trimmed, "dmesg") == 0 ||
+        strcmp(trimmed, "ps") == 0 ||
+        strcmp(trimmed, "free") == 0 ||
+        strcmp(trimmed, "top") == 0) {
         return 1;
     }
 
@@ -178,7 +174,7 @@ static int execute_allowed_command(const char *cmd)
 static void print_unsupported(void)
 {
     printf("[PSH] Command not supported in locked mode.\n");
-    printf("[PSH] Available commands: dmesg, ps, debug\n\n");
+    printf("[PSH] Available: help, debug, free, ps, top, dmesg, exit\n\n");
     fflush(stdout);
 }
 
@@ -200,14 +196,12 @@ static void run_portal_shell(void)
     /* 显示启动横幅 */
     printf("\n");
     printf("╔════════════════════════════════════════╗\n");
-    printf("║         Portal Shell v2.0              ║\n");
+    printf("║         Protect Shell v2.1             ║\n");
     printf("╠════════════════════════════════════════╣\n");
     printf("║  System is LOCKED                      ║\n");
     printf("║                                        ║\n");
-    printf("║  Available commands:                   ║\n");
-    printf("║  - dmesg   View kernel log             ║\n");
-    printf("║  - ps      Show process list           ║\n");
-    printf("║  - debug   Get unlock code             ║\n");
+    printf("║  Type 'help' for available commands    ║\n");
+    printf("║  Type 'debug' to unlock full shell     ║\n");
     printf("║                                        ║\n");
     printf("╚════════════════════════════════════════╝\n\n");
 
@@ -238,6 +232,30 @@ static void run_portal_shell(void)
                 || strcasecmp(input, "unlock") == 0) {
                 print_debug_info();
                 mode = MODE_UNLOCKING;
+                continue;
+            }
+
+            /* exit / quit: 退出 psh */
+            if (strcasecmp(input, "exit") == 0
+                || strcasecmp(input, "quit") == 0) {
+                printf("[PSH] Goodbye.\n");
+                break;
+            }
+
+            /* help 命令 */
+            if (strcasecmp(input, "help") == 0) {
+                printf("\n");
+                printf("╔════════════════════════════════════════╗\n");
+                printf("║         PSH - Available Commands       ║\n");
+                printf("╠════════════════════════════════════════╣\n");
+                printf("║  help   Show this help                 ║\n");
+                printf("║  debug  Enter unlock mode             ║\n");
+                printf("║  free   Show memory usage              ║\n");
+                printf("║  ps     Show process list              ║\n");
+                printf("║  top    Show process snapshot          ║\n");
+                printf("║  dmesg  View kernel ring buffer        ║\n");
+                printf("║  exit   Exit psh (respawns by init)    ║\n");
+                printf("╚════════════════════════════════════════╝\n\n");
                 continue;
             }
 
@@ -276,11 +294,12 @@ static void run_portal_shell(void)
  */
 static void launch_shell(void)
 {
-    const char *shell = getenv("SHELL") ?: DEFAULT_SHELL;
-    char *argv[2];
+    const char *shell = DEFAULT_SHELL;
+    char *argv[3];
 
     argv[0] = (char *)shell;
-    argv[1] = NULL;
+    argv[1] = "-l";
+    argv[2] = NULL;
 
     /* 设置环境变量标识 */
     setenv("PSH_AUTH", "1", 1);
@@ -395,7 +414,19 @@ int main(int argc, char *argv[])
 
     /* 检查是否为终端设备 */
     if (!isatty(STDIN_FILENO)) {
-        fprintf(stderr, "psh: not a terminal\n");
+        /* 非交互模式(SSH命令/SCP等): 透传到 /bin/sh, 转发所有参数 */
+        char **sh_argv = malloc((argc + 1) * sizeof(char *));
+        if (!sh_argv) {
+            fprintf(stderr, "psh: malloc failed\n");
+            return 1;
+        }
+        sh_argv[0] = DEFAULT_SHELL;
+        for (i = 1; i < argc; i++)
+            sh_argv[i] = argv[i];
+        sh_argv[argc] = NULL;
+        execvp(DEFAULT_SHELL, sh_argv);
+        perror("psh: execvp failed");
+        free(sh_argv);
         return 1;
     }
 

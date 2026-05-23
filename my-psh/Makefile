@@ -1,6 +1,6 @@
 # psh v2.0 Makefile
 
-CC      = gcc
+CC      = arm-linux-gnueabihf-gcc
 CFLAGS  = -Wall -Wextra -O2 -D_GNU_SOURCE
 
 .PHONY: all clean install uninstall test help
