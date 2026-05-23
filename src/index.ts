@@ -37,6 +37,7 @@ interface SSHConfig {
   username: string;
   password: string;
   privateKey: string | null;
+  hostKeyAlgorithms: string[] | undefined;
 }
 
 interface SerialConfig {
@@ -57,12 +58,22 @@ let sshConfig: SSHConfig | null = null;
 let serialConfig: SerialConfig | null = null;
 
 if (useSSH) {
+  const hostKeyAlgorithmsStr = process.env.BOARD_HOST_KEY_ALGORITHMS || "";
+  const hostKeyAlgorithms = hostKeyAlgorithmsStr
+    ? hostKeyAlgorithmsStr.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+  // 旧版内核(4.x)的 SSH 服务仅支持 ssh-rsa 主机密钥算法，
+  // 而新版 ssh2 客户端默认已禁用此算法，
+  // 通过 BOARD_HOST_KEY_ALGORITHMS 环境变量可显式指定算法列表，
+  // 避免 "no matching host key type found" 错误。
+
   sshConfig = {
     host: process.env.BOARD_HOST!,
     port: parseInt(process.env.BOARD_PORT || "22", 10),
     username: process.env.BOARD_USERNAME || "root",
     password: process.env.BOARD_PASSWORD || "root",
     privateKey: process.env.BOARD_PRIVATE_KEY || null,
+    hostKeyAlgorithms,
   };
   ssh = new SSHManager(sshConfig);
 }

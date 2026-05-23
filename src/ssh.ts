@@ -1,4 +1,4 @@
-import { Client, type ClientChannel, type ConnectConfig, type SFTPWrapper } from "ssh2";
+import { Client, type ClientChannel, type ConnectConfig, type SFTPWrapper, type ServerHostKeyAlgorithm } from "ssh2";
 import { readFileSync } from "node:fs";
 
 interface SSHConfig {
@@ -8,6 +8,7 @@ interface SSHConfig {
   password?: string | null;
   privateKey?: string | null;
   passphrase?: string;
+  hostKeyAlgorithms?: string[];
 }
 
 interface ExecResult {
@@ -161,6 +162,14 @@ export class SSHManager {
       }
     } else if (this.#config.password) {
       connConfig.password = this.#config.password;
+    }
+
+    // 旧版内核(4.x)的 SSH 服务仅支持 ssh-rsa 主机密钥算法，
+    // 新版 ssh2 客户端默认已禁用此算法，需通过 algorithms.serverHostKey 显式启用。
+    if (this.#config.hostKeyAlgorithms && this.#config.hostKeyAlgorithms.length > 0) {
+      connConfig.algorithms = {
+        serverHostKey: this.#config.hostKeyAlgorithms as ServerHostKeyAlgorithm[],
+      };
     }
 
     return new Promise<void>((resolve, reject) => {

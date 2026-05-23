@@ -12,6 +12,18 @@
         "BOARD_PASSWORD": "root"
       }
     },
+    "board-beta": {
+      "type": "local",
+      "command": ["./out/index.js"],
+      "enabled": true,
+      "environment": {
+        "BOARD_HOST": "192.168.16.105",
+        "BOARD_PORT": "22",
+        "BOARD_USERNAME": "root",
+        "BOARD_PASSWORD": "root",
+        "BOARD_HOST_KEY_ALGORITHMS": "ssh-rsa"
+      }
+    },
     "board-alpha": {
       "type": "local",
       "command": ["./out/index.js"],
