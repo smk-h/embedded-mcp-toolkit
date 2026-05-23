@@ -8,7 +8,7 @@
  *                1. 启动后，终端可正常显示系统输出(syslog、内核消息等)
  *                2. 但无法执行普通命令，输入会提示"unsupported"
  *                3. 仅允许 dmesg、ps 两个只读诊断命令
- *                4. 输入 debug 显示 challenge 字符串和固定解锁密钥
+ *                4. 输入 debug 显示 challenge 字符串
  *                5. 输入密钥正确即可解锁 shell
  *
  * 编译: gcc -o psh psh.c
@@ -71,7 +71,7 @@ static int verify_key(const char *user_key)
 }
 
 /** @fn static void print_debug_info(void)
- *  @brief 打印 challenge 信息和解锁密钥提示.
+ *  @brief 打印 challenge 信息.
  */
 static void print_debug_info(void)
 {
@@ -86,9 +86,7 @@ static void print_debug_info(void)
     printf("║  %s             ║\n", current_challenge);
     printf("║                                        ║\n");
     printf("╠════════════════════════════════════════╣\n");
-    printf("║  Key: 123456                           ║\n");
-    printf("║                                        ║\n");
-    printf("║  Enter '123456' to unlock shell        ║\n");
+    printf("║  Contact your admin to get the key     ║\n");
     printf("║                                        ║\n");
     printf("╚════════════════════════════════════════╝\n");
     printf("\n");

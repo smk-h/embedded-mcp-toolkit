@@ -382,18 +382,17 @@ init (inittab)               sshd
 
 #### 3.2 编译与部署
 
+##### 3.2.1 编译
+
 ```bash
 # ARM 交叉编译
 CC=arm-linux-gnueabihf-gcc
 CFLAGS="-Wall -Wextra -O2 -D_GNU_SOURCE"
 $CC $CFLAGS -o psh psh.c
 
-# 上传到板卡
-scp psh root@192.168.16.105:/tmp/psh
-ssh root@192.168.16.105 "cp -f /tmp/psh /bin/psh && chmod +x /bin/psh"
 ```
 
-windows下可以使用docker编译：
+若是在windows下可以使用docker编译：
 
 ```shell
 # PowerShell script for building psh using Docker cross-compiler
@@ -463,6 +462,41 @@ if ($LASTEXITCODE -eq 0) {
 ```
 
 主要逻辑就是，挂载my-psh到容器中，直接编译。
+
+##### 3.2.2 上传
+
+```powershell
+# 上传到板卡
+scp psh root@192.168.16.105:/tmp/psh
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa psh root@192.168.16.105:/tmp/psh
+ssh root@192.168.16.105 "cp -f /tmp/psh /bin/psh && chmod +x /bin/psh"
+```
+
+在旧版内核(4.x)的 SSH 服务仅支持 ssh-rsa 主机密钥算法，而新版 ssh2 客户端默认已禁用此算法，通过 BOARD_HOST_KEY_ALGORITHMS 环境变量可显式指定算法列表，避免 "no matching host key type found" 错误。有时候改完还会报下面问题：
+
+```powershell
+E:\AI\embedded-mcp-toolkit\my-psh [main ≡ +0 ~1 -0 | +1 ~7 -0 !]> scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa psh root@192.168.16.105:/tmp/psh
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the RSA key sent by the remote host is
+SHA256:Bvp2Hy5C2hdm1KoEtAoRWInu1pEZgIqDmAGx+L3t2m0.
+Please contact your system administrator.
+Add correct host key in C:\\Users\\username/.ssh/known_hosts to get rid of this message.
+Offending RSA key in C:\\Users\\username/.ssh/known_hosts:24
+Host key for 192.168.16.105 has changed and you have requested strict checking.
+Host key verification failed.
+C:\WINDOWS\System32\OpenSSH\scp.exe: Connection closed
+```
+
+这个一般是设备的主机密钥已更改，需要先删除旧的密钥记录，可以执行：
+
+```powershell
+ssh-keygen -R 192.168.16.105
+```
 
 #### 3.3 配置串口（/etc/inittab）
 

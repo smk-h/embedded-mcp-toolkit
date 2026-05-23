@@ -53,6 +53,8 @@ MCP 工具的完整名称格式为 `{服务器名}_{工具名}`：
 | `board-alpha_serial_disconnect` | 关闭串口 | 无 |
 | `board-alpha_serial_exec` | 串口执行命令 | `command`, `timeout?`(毫秒) |
 | `board-alpha_serial_send` | 发送原始数据 | `data`（支持 `\x03` 等） |
+| `{server}_shell_unlock` | 执行解锁序列 | `timeout?`(毫秒) |
+| `{server}_shell_detect_state` | 检测 shell 状态 | `timeout?`(毫秒) |
 
 ---
 
@@ -205,6 +207,117 @@ MCP 工具的完整名称格式为 `{服务器名}_{工具名}`：
 
 ---
 
+## board-beta 交互 shell 解锁流程
+
+board-beta 的 root 登录 shell 为 `/bin/psh`（Protect Shell v2.1），打开交互 shell 后会显示锁定界面：
+
+```
+╔════════════════════════════════════════╗
+║         Protect Shell v2.1             ║
+╠════════════════════════════════════════╣
+║  System is LOCKED                      ║
+║  Type 'help' for available commands    ║
+║  Type 'debug' to unlock full shell     ║
+╚════════════════════════════════════════╝
+locked>
+```
+
+输入 `debug` 后，PSH 会生成一个 Challenge Code：
+
+```
+╔════════════════════════════════════════╗
+║             DEBUG MODE                 ║
+╠════════════════════════════════════════╣
+║  Challenge Code:                       ║
+║  PSH-A4BB-9166-E413-71B4             ║
+╠════════════════════════════════════════╣
+║  Contact your admin to get the key     ║
+╚════════════════════════════════════════╝
+Enter key to unlock: key>
+```
+
+### 解锁方式
+
+#### 方式一：自动解锁（推荐，使用 `shell_unlock` 工具）
+
+此为两阶段解锁流程：
+
+**阶段一：获取 Challenge Code 并展示给用户**
+
+\```json
+{"name": "board-beta_shell_unlock", "arguments": {"timeout": 30000}}
+\```
+
+响应中包含 `challenge_code`（格式 `PSH-XXXX-XXXX-XXXX-XXXX`）和 `challenge_raw`（板卡调试输出）。**AI 必须将 Challenge Code 展示在 opencode 交互窗口中，让用户据此生成解锁密钥。**
+
+**阶段二：用户提供密钥后完成解锁**
+
+\```json
+{"name": "board-beta_shell_unlock", "arguments": {"timeout": 15000, "key": "用户输入的密钥"}}
+\```
+
+用户看到 Challenge Code 后，联系管理员获取对应的解锁密钥（或使用 keygen 工具生成），然后 AI 将密钥传入 `shell_unlock` 完成解锁。
+
+#### 方式二：手动解锁（一次性发送 debug + key）
+
+**注意**：`shell_send` 工具在每条命令后自动追加 echo 结束标记（`echo "__END_MARKER_xxx__"`）。若单独发送 `debug`，echo 标记将在 PSH 进入 `key>` 等待时被当作密钥读入，导致 `Invalid key!`。**必须将 `debug` 和密钥合并到一次 `shell_send` 调用中发送。**
+
+1. `shell_open` 打开交互会话
+2. 使用 `question` 工具向用户索要解锁密钥
+3. **单次** `shell_send` 合并发送 `debug\n{key}`（不可分两次调用）
+
+此方式适用于密钥已知/固定的场景，不展示 Challenge Code。
+
+#### 方式三：SSH exec 绕过（无 TTY）
+
+`board-beta_exec` 通过 SSH exec（无 TTY）执行命令，可绕过 psh 直接执行命令，无需解锁。适用于无需交互 shell 的场景。
+
+### shell_unlock 响应字段说明
+
+| 字段 | 含义 |
+|------|------|
+| `result` | `"awaiting_key"` / `"unlocked"` / `"already_unlocked"` / `"error"` |
+| `state` | `"locked"` / `"unlocking"` / `"ready"` / `"error"` / `"unknown"` |
+| `challenge_code` | Challenge Code（如 `PSH-A4BB-9166-E413-71B4`），仅在 `result=awaiting_key` 时出现 |
+| `challenge_raw` | `debug` 步骤的板卡原始输出，包含完整的 DEBUG MODE 界面 |
+| `steps` | 已执行的解锁步骤日志 |
+| `message` | 人类可读的状态描述 |
+| `verifyState` | 解锁后的状态验证结果（`result=unlocked` 时） |
+
+### echo 标记冲突说明
+
+`shell_send` 自动追加 `echo "__END_MARKER__"` 作为输出边界标记。发送 `debug` 后，PSH 进入 `key>` 等待状态，此标记会被当作密钥读入，导致 `[PSH] Invalid key!`。
+
+| 方法 | echo 标记冲突 | 推荐场景 |
+|------|:---:|------|
+| `shell_unlock`（无 key）→ `shell_unlock`（带 key） | 无 | 需要显示 Challenge Code |
+| `shell_send "debug\n{key}"` 合并发送 | 无（合并后 marker 在 key 后面） | 密钥已知 |
+| `shell_send "debug"` 单独发送 | **有** | 不推荐 |
+
+**安全规则：AI 永远不得自动发送解锁密钥。** 密钥必须由用户通过以下方式提供：
+1. AI 通过 `shell_unlock` 获取 Challenge Code，展示给用户
+2. 使用 `question` 工具询问用户输入密钥
+3. 用户提供密钥后，AI 调用 `shell_unlock {"key": "用户输入的密钥"}` 完成解锁
+
+### 自定义保护 Shell 配置
+
+未知保护壳可通过环境变量定义解锁序列（无需修改代码）：
+
+```
+BOARD_UNLOCK_SEQUENCE=send1=>expect1||send2=>expect2||send3=>expect3
+BOARD_LOCKED_PROMPT=locked>|System is LOCKED
+BOARD_UNLOCKING_PROMPT=key>|Enter key
+BOARD_READY_PROMPT=.*[@:].*[#$]\s*$
+BOARD_ERROR_PROMPT=Invalid key|access denied
+```
+
+- `=>`: 分隔发送内容和期望的响应正则
+- `||`: 分隔多个解锁步骤
+- `|`: 在 Prompt 变量中分隔多个匹配模式
+- 若步骤的 `send` 部分留空（如 `=>expect`），则该步骤标记为需要用户输入密钥
+
+---
+
 ## 重要提示
 
 1. **路径必须使用绝对路径**：正确 `/root/test.txt`，错误 `./test.txt`、`~/test.txt`
@@ -228,6 +341,7 @@ MCP 工具的完整名称格式为 `{服务器名}_{工具名}`：
 3. 命令执行（网络可用）→ `exec`
 4. 命令执行（无网络）→ `serial_exec`
 5. 控制字符 → `serial_send`
+6. 交互 shell 解锁（board-beta）→ `shell_open` → `shell_send "debug\n{key}"` 合并发送（不可分两次 `shell_send` 发送 debug 和 key，否则 echo 标记抢占 key> 输入窗口）
 
 ---
 

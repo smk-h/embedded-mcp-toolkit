@@ -8,6 +8,7 @@ import {
 import type { CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import { SSHManager } from "./ssh.js";
 import { SerialManager } from "./serial.js";
+import { ShellStateManager } from "./shell-state.js";
 import { readFileSync } from "node:fs";
 
 // ── helpers ────────────────────────────────────────────────
@@ -50,12 +51,12 @@ interface SerialConfig {
 
 const useSSH = process.env.BOARD_HOST !== undefined;
 const useSerial = process.env.SERIAL_PORT !== undefined;
-const useBoth = useSSH && useSerial;
 
 let ssh: SSHManager | null = null;
 let serial: SerialManager | null = null;
 let sshConfig: SSHConfig | null = null;
 let serialConfig: SerialConfig | null = null;
+let shellState: ShellStateManager | null = null;
 
 if (useSSH) {
   const hostKeyAlgorithmsStr = process.env.BOARD_HOST_KEY_ALGORITHMS || "";
@@ -87,6 +88,25 @@ if (useSerial) {
     parity: (process.env.SERIAL_PARITY || "none") as "none" | "even" | "odd",
   };
   serial = new SerialManager(serialConfig);
+}
+
+// ── Shell State Manager ─────────────────────────────────────
+
+shellState = ShellStateManager.fromEnv();
+if (ssh) {
+  ssh.setShellStateManager(shellState);
+}
+if (serial) {
+  serial.setShellStateManager(shellState);
+}
+
+if (shellState.profile.name !== "heuristic") {
+  console.error(`ShellStateManager: using profile '${shellState.profile.name}' (${shellState.profile.description})`);
+  if (shellState.hasUnlockSequence) {
+    console.error(`ShellStateManager: auto-unlock enabled (${shellState.unlockSequence.length} steps)`);
+  }
+} else {
+  console.error("ShellStateManager: heuristic mode (no profile configured)");
 }
 
 // ── MCP server ─────────────────────────────────────────────
@@ -254,7 +274,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           type: "object",
           properties: {
             command: { type: "string", description: "Shell command to execute" },
-            timeout: { type: "number", description: "Command timeout in milliseconds (default: 5000)" },
+            timeout: { type: "number", description: "Command timeout in milliseconds (default: 15000)" },
           },
           required: ["command"],
         },
@@ -268,6 +288,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             data: { type: "string", description: "Data to send (supports escape sequences like \\x03 for Ctrl+C)" },
           },
           required: ["data"],
+        },
+      },
+    );
+  }
+
+  if (useSSH || useSerial) {
+    tools.push(
+      {
+        name: "shell_detect_state",
+        description: "Detect the current state of the remote shell (ready, locked, unlocking, error, unknown)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            timeout: { type: "number", description: "Detection timeout in milliseconds (default: 5000)" },
+          },
+        },
+      },
+      {
+        name: "shell_unlock",
+        description: "Execute the unlock sequence if the remote shell is protected (e.g., psh). If the shell requires a key/password, provide it via the 'key' parameter. Without a key, only automatic steps are performed.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            timeout: { type: "number", description: "Unlock timeout in milliseconds (default: 30000)" },
+            key: { type: "string", description: "Unlock key/password (required if the shell prompts for it)" },
+          },
         },
       },
     );
@@ -296,6 +342,7 @@ interface ToolArgs {
   stopBits?: number;
   parity?: string;
   data?: string;
+  key?: string;
 }
 
 async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolResult> {
@@ -386,7 +433,6 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
       const wasConnected = serial!.isConnected;
       const configChanged = hasNewConfig && !serial!.configsEqual(connectConfig);
 
-      // Build status message
       const statusParts: string[] = [
         `isConnected=${wasConnected}`,
         `hasNewConfig=${hasNewConfig}`,
@@ -400,7 +446,6 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
         statusParts.push("connecting fresh");
       }
 
-      // Connect (will handle reconnection internally if config changed)
       await serial!.connect(hasNewConfig ? connectConfig : undefined);
 
       const finalConfig = serial!.config;
@@ -425,6 +470,40 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
       );
       serial!.write(raw);
       return { content: [text(`Sent ${raw.length} bytes`)] };
+    }
+
+    // ── Shell state tools ──
+    case "shell_detect_state": {
+      const timeout = args.timeout || 5000;
+
+      if (serial && serial.isConnected) {
+        const result = await serial.detectState(timeout);
+        return { content: [text(result)] };
+      }
+
+      if (ssh) {
+        const result = await ssh.detectState();
+        return { content: [text(result)] };
+      }
+
+      throw new Error("No active connection for state detection.");
+    }
+
+    case "shell_unlock": {
+      const timeout = args.timeout || 30000;
+      const key = args.key;
+
+      if (serial && serial.isConnected) {
+        const result = await serial.unlockShell(timeout, key);
+        return { content: [text(result)] };
+      }
+
+      if (ssh) {
+        const result = await ssh.unlockShell(timeout, key);
+        return { content: [text(result)] };
+      }
+
+      throw new Error("No active connection for shell unlock.");
     }
 
     default:

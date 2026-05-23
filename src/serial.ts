@@ -1,4 +1,5 @@
 import { SerialPort } from "serialport";
+import { ShellStateManager, ShellState } from "./shell-state.js";
 
 interface SerialConfig {
   port: string;
@@ -13,10 +14,14 @@ export class SerialManager {
   #port: SerialPort | null = null;
   #connecting: Promise<void> | null = null;
   #disconnecting: Promise<void> | null = null;
-  readonly #promptPattern: RegExp = /^.*[@:].*[#$]\s*$/m;
+  #shellState: ShellStateManager | null = null;
 
   constructor(config: SerialConfig) {
     this.#config = config;
+  }
+
+  setShellStateManager(sm: ShellStateManager | null): void {
+    this.#shellState = sm;
   }
 
   get isConnected(): boolean {
@@ -37,28 +42,30 @@ export class SerialManager {
     );
   }
 
+  get #promptPattern(): RegExp {
+    if (this.#shellState) {
+      return this.#shellState.buildPromptPattern();
+    }
+    return /^.*[@:].*[#$]\s*$/m;
+  }
+
   async connect(config?: Partial<SerialConfig>): Promise<void> {
-    // Wait for any ongoing disconnect
     if (this.#disconnecting) {
       await this.#disconnecting;
     }
 
-    // Already connected with same config - reuse
     if (this.isConnected) {
       if (config && !this.configsEqual(config)) {
-        // Config differs, need to reconnect
         await this.#doDisconnect();
       } else {
         return;
       }
     }
 
-    // Wait for any ongoing connect
     if (this.#connecting) {
       return this.#connecting;
     }
 
-    // Apply new config before connecting
     if (config) {
       Object.assign(this.#config, config);
     }
@@ -78,7 +85,6 @@ export class SerialManager {
   }
 
   async disconnect(): Promise<void> {
-    // Wait for any ongoing connect
     if (this.#connecting) {
       try {
         await this.#connecting;
@@ -114,7 +120,6 @@ export class SerialManager {
       }
 
       const timeout = setTimeout(() => {
-        // Force close if graceful close takes too long
         try {
           port.destroy();
         } catch {
@@ -126,7 +131,6 @@ export class SerialManager {
       port.close((err) => {
         clearTimeout(timeout);
         if (err) {
-          // Log but don't throw - port might be already closed
           console.error("Serial close error:", err.message);
         }
         resolve();
@@ -143,33 +147,96 @@ export class SerialManager {
     port.write(cmd + "\r\n");
 
     const raw = await this.#readUntilPrompt(port, timeoutMs);
+
+    if (this.#shellState?.hasUnlockSequence) {
+      const state = this.#shellState.detectState(raw);
+      if (state === ShellState.LOCKED) {
+        const unlockResult = await this._unlockShell(port);
+        const parsed = JSON.parse(unlockResult);
+        if (parsed.result === "awaiting_key") {
+          return `[SHELL_LOCKED] Auto-unlock initiated but key required.\n${parsed.message}\n\nPartial output before unlock:\n${this.#cleanOutput(cmd, raw)}`;
+        }
+        if (parsed.result === "error") {
+          return `[UNLOCK_FAILED] ${parsed.message}\n\nPartial output:\n${this.#cleanOutput(cmd, raw)}`;
+        }
+        await this.#drain(port);
+        port.write(cmd + "\r\n");
+        const raw2 = await this.#readUntilPrompt(port, timeoutMs);
+        return this.#cleanOutput(cmd, raw2);
+      }
+    }
+
     return this.#cleanOutput(cmd, raw);
+  }
+
+  async detectState(timeoutMs: number = 2000): Promise<string> {
+    await this.ensureConnected();
+    const port = this.#port!;
+
+    await this.#drain(port);
+
+    port.write("echo __PSH_STATE_PROBE__\r\n");
+
+    const raw = await this.#read(port, timeoutMs);
+
+    if (!this.#shellState) {
+      return JSON.stringify({
+        state: "unknown",
+        reason: "No ShellStateManager configured",
+        raw: raw.substring(0, 1000),
+      });
+    }
+
+    const state = this.#shellState.detectState(raw);
+    return JSON.stringify({
+      state,
+      profile: this.#shellState.profile.name,
+      hasUnlockSequence: this.#shellState.hasUnlockSequence,
+      raw: raw.substring(0, 1000),
+    });
+  }
+
+  async unlockShell(timeoutMs: number = 30000, key?: string): Promise<string> {
+    await this.ensureConnected();
+
+    if (!this.#shellState) {
+      throw new Error("No ShellStateManager configured. Set BOARD_SHELL_PROFILE or BOARD_UNLOCK_SEQUENCE env.");
+    }
+
+    if (!this.#shellState.hasUnlockSequence) {
+      throw new Error(`Profile '${this.#shellState.profile.name}' has no unlock sequence defined.`);
+    }
+
+    const port = this.#port!;
+    await this.#drain(port);
+
+    port.write("echo __PSH_PRE_STATE__\r\n");
+    const preRaw = await this.#read(port, 2000);
+    const preState = this.#shellState.detectState(preRaw);
+
+    if (preState === ShellState.READY) {
+      return JSON.stringify({ result: "already_unlocked", state: "ready" });
+    }
+
+    const result = await this._unlockShell(port, key);
+
+    await this.#drain(port);
+    port.write("echo __PSH_POST_STATE__\r\n");
+    const postRaw = await this.#readUntilPrompt(port, 3000);
+    const postState = this.#shellState.detectState(postRaw);
+
+    const parsed = JSON.parse(result);
+    if (parsed.result !== "awaiting_key") {
+      parsed.verifyState = postState;
+    }
+
+    return JSON.stringify(parsed);
   }
 
   async read(timeoutMs: number = 2000): Promise<string> {
     await this.ensureConnected();
     const port = this.#port!;
-
-    return new Promise<string>((resolve) => {
-      let data = "";
-
-      const onData = (chunk: Buffer) => {
-        data += chunk.toString();
-      };
-
-      port.on("data", onData);
-
-      const timer = setTimeout(() => {
-        port.removeListener("data", onData);
-        resolve(data);
-      }, timeoutMs);
-
-      // Reset timer on each data chunk (keep waiting while data flows)
-      port.on("data", () => {
-        clearTimeout(timer);
-        timer.refresh();
-      });
-    });
+    return this.#read(port, timeoutMs);
   }
 
   write(data: string): void {
@@ -219,14 +286,31 @@ export class SerialManager {
     });
   }
 
-  #readUntilPrompt(port: SerialPort, timeoutMs: number): Promise<string> {
+  #read(port: SerialPort, timeoutMs: number): Promise<string> {
     return new Promise<string>((resolve) => {
       let data = "";
 
       const onData = (chunk: Buffer) => {
         data += chunk.toString();
-        if (this.#promptPattern.test(data)) {
-          // Got prompt — wait a tick for trailing data, then resolve
+      };
+
+      port.on("data", onData);
+
+      setTimeout(() => {
+        port.removeListener("data", onData);
+        resolve(data);
+      }, timeoutMs);
+    });
+  }
+
+  #readUntilPrompt(port: SerialPort, timeoutMs: number): Promise<string> {
+    return new Promise<string>((resolve) => {
+      let data = "";
+      const pattern = this.#promptPattern;
+
+      const onData = (chunk: Buffer) => {
+        data += chunk.toString();
+        if (pattern.test(data)) {
           setTimeout(() => {
             port.removeListener("data", onData);
             resolve(data);
@@ -243,11 +327,99 @@ export class SerialManager {
     });
   }
 
-  #cleanOutput(cmd: string, raw: string): string {
-    // Remove all prompt-like lines (global replace with multiline mode)
-        let cleaned = raw.replace(/^.*[@:].*[#$]\s*$/gm, "");
+  #waitForPattern(port: SerialPort, pattern: RegExp, timeoutMs: number): Promise<string> {
+    return new Promise<string>((resolve) => {
+      let data = "";
 
-    // Remove leading echo — the first non-empty line is typically the echoed command
+      const onData = (chunk: Buffer) => {
+        data += chunk.toString();
+        if (pattern.test(data)) {
+          setTimeout(() => {
+            port.removeListener("data", onData);
+            resolve(data);
+          }, 150);
+        }
+      };
+
+      port.on("data", onData);
+
+      setTimeout(() => {
+        port.removeListener("data", onData);
+        resolve(data);
+      }, timeoutMs);
+    });
+  }
+
+  async _unlockShell(port: SerialPort, key?: string): Promise<string> {
+    const steps = this.#shellState!.unlockSequence;
+    const logs: string[] = [];
+    let userInputNeeded = false;
+    let challengeRaw = "";
+
+    for (const step of steps) {
+      if (step.userInput && !key) {
+        userInputNeeded = true;
+        logs.push(`[${step.description}] WAITING_FOR_USER_KEY`);
+        break;
+      }
+
+      const send = step.userInput ? key! : step.send;
+
+      await this.#drain(port);
+      port.write(send + "\r\n");
+
+      const raw = await this.#waitForPattern(
+        port,
+        new RegExp(step.expectPattern, "im"),
+        step.timeoutMs
+      );
+
+      if (!step.userInput) {
+        challengeRaw = raw;
+      }
+
+      const state = this.#shellState!.detectState(raw);
+      logs.push(`[${step.description}] send='${step.userInput ? "***" : send}' state=${state}`);
+
+      if (state === ShellState.ERROR) {
+        return JSON.stringify({
+          result: "error",
+          message: `Unlock failed at step "${step.description}": got state=${state}`,
+          raw: raw.substring(0, 500),
+        });
+      }
+
+      if (state === ShellState.READY) {
+        console.error(`Serial _unlockShell: ${logs.join(", ")} -> READY (early)`);
+        return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
+      }
+    }
+
+    if (userInputNeeded) {
+      const challengeCode = this.#shellState!.extractChallengeCode(challengeRaw);
+      console.error(`Serial _unlockShell: ${logs.join(", ")}`);
+      return JSON.stringify({
+        result: "awaiting_key",
+        state: "unlocking",
+        steps: logs,
+        message: "Shell is waiting for unlock key. Call shell_unlock with the 'key' parameter.",
+        challenge_code: challengeCode,
+        challenge_raw: challengeRaw.substring(0, 500),
+      });
+    }
+
+    console.error(`Serial _unlockShell: ${logs.join(", ")}`);
+    return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
+  }
+
+  #cleanOutput(cmd: string, raw: string): string {
+    let cleaned = raw.replace(/^.*[@:].*[#$]\s*$/gm, "");
+
+    if (this.#shellState) {
+      const pp = this.#shellState.buildPromptPattern();
+      cleaned = cleaned.replace(new RegExp(pp.source, "gm"), "");
+    }
+
     const lines = cleaned.split(/\r?\n/);
     if (lines.length > 0) {
       const first = lines[0].trim();
@@ -256,7 +428,6 @@ export class SerialManager {
       }
     }
 
-    // Trim leading and trailing empty lines
     while (lines.length > 0 && lines[0].trim() === "") {
       lines.shift();
     }

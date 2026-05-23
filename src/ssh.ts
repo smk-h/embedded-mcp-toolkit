@@ -1,5 +1,6 @@
 import { Client, type ClientChannel, type ConnectConfig, type SFTPWrapper, type ServerHostKeyAlgorithm } from "ssh2";
 import { readFileSync } from "node:fs";
+import { ShellStateManager, ShellState } from "./shell-state.js";
 
 interface SSHConfig {
   host: string;
@@ -49,9 +50,14 @@ export class SSHManager {
   #connecting: Promise<void> | null = null;
   #shellStream: ClientChannel | null = null;
   #shellBuffer: string = "";
+  #shellState: ShellStateManager | null = null;
 
   constructor(config: SSHConfig) {
     this.#config = config;
+  }
+
+  setShellStateManager(sm: ShellStateManager | null): void {
+    this.#shellState = sm;
   }
 
   async connect(): Promise<void> {
@@ -152,6 +158,7 @@ export class SSHManager {
    * 在已打开的交互式 shell 中发送一条命令并等待输出。
    * 命令在同一 shell 进程中执行，状态（cd 目录、环境变量等）保持。
    * 内部使用唯一标记 `echo` 命令来定位输出边界。
+   * 若配置了 ShellStateManager 且检测到 shell 处于锁定状态，会自动尝试解锁后重试。
    */
   async shellSend(cmd: string, timeoutMs: number = 10000): Promise<string> {
     if (!this.#shellStream) {
@@ -173,10 +180,113 @@ export class SSHManager {
           .filter((l) => !l.includes(marker) && l.trim() !== cmd);
         return lines.join("\n").trim();
       }
+
+      if (this.#shellState?.hasUnlockSequence) {
+        const recentBuf = this.#shellBuffer.substring(beforeLen);
+        const state = this.#shellState.detectState(recentBuf);
+        if (state === ShellState.LOCKED) {
+          const result = await this._unlockShell();
+          const parsed = JSON.parse(result);
+          if (parsed.result === "awaiting_key") {
+            const cc = parsed.challenge_code ? `\nChallenge Code: ${parsed.challenge_code}` : "";
+            throw new Error(`Shell is locked. ${parsed.message}${cc}`);
+          }
+          if (parsed.result === "error") {
+            throw new Error(`Unlock failed: ${parsed.message}`);
+          }
+          this.#shellStream.write(`${cmd}\necho "${marker}"\n`);
+        }
+      }
+
       await new Promise((r) => setTimeout(r, 50));
     }
 
+    if (this.#shellState) {
+      const recentBuf = this.#shellBuffer.substring(beforeLen);
+      const state = this.#shellState.detectState(recentBuf);
+      if (state === ShellState.LOCKED && this.#shellState.hasUnlockSequence) {
+        const result = await this._unlockShell();
+        const parsed = JSON.parse(result);
+        if (parsed.result === "awaiting_key") {
+          const cc = parsed.challenge_code ? `\nChallenge Code: ${parsed.challenge_code}` : "";
+          throw new Error(`Shell is locked. ${parsed.message}${cc}`);
+        }
+        if (parsed.result === "error") {
+          throw new Error(`Unlock failed: ${parsed.message}`);
+        }
+        const retryMarker = `__END_MARKER_RETRY_${Date.now()}__`;
+        const retryBefore = this.#shellBuffer.length;
+        this.#shellStream.write(`${cmd}\necho "${retryMarker}"\n`);
+
+        const retryDeadline = Date.now() + timeoutMs;
+        while (Date.now() < retryDeadline) {
+          const idx = this.#shellBuffer.indexOf(retryMarker, retryBefore);
+          if (idx !== -1) {
+            let output = this.#shellBuffer.substring(retryBefore, idx);
+            const lines = output
+              .split("\n")
+              .filter((l) => !l.includes(retryMarker) && l.trim() !== cmd);
+            return lines.join("\n").trim();
+          }
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+    }
+
     throw new Error(`shellSend timed out after ${timeoutMs}ms`);
+  }
+
+  async detectState(): Promise<string> {
+    if (!this.#shellStream) {
+      throw new Error("No shell session open. Call openShell() first.");
+    }
+
+    if (!this.#shellState) {
+      return JSON.stringify({
+        state: "unknown",
+        reason: "No ShellStateManager configured",
+        raw: this.#shellBuffer.substring(Math.max(0, this.#shellBuffer.length - 1000)),
+      });
+    }
+
+    const bufferSnapshot = this.#shellBuffer;
+    const state = this.#shellState.detectState(bufferSnapshot);
+
+    return JSON.stringify({
+      state,
+      profile: this.#shellState.profile.name,
+      hasUnlockSequence: this.#shellState.hasUnlockSequence,
+      raw: bufferSnapshot.substring(Math.max(0, bufferSnapshot.length - 1000)),
+    });
+  }
+
+  async unlockShell(timeoutMs: number = 30000, key?: string): Promise<string> {
+    if (!this.#shellStream) {
+      throw new Error("No shell session open. Call openShell() first.");
+    }
+
+    if (!this.#shellState) {
+      throw new Error("No ShellStateManager configured. Set BOARD_SHELL_PROFILE or BOARD_UNLOCK_SEQUENCE env.");
+    }
+
+    if (!this.#shellState.hasUnlockSequence) {
+      throw new Error(`Profile '${this.#shellState.profile.name}' has no unlock sequence defined.`);
+    }
+
+    const preState = this.#shellState.detectState(this.#shellBuffer);
+    if (preState === ShellState.READY) {
+      return JSON.stringify({ result: "already_unlocked", state: "ready" });
+    }
+
+    const result = await this._unlockShell(key);
+
+    const postState = this.#shellState.detectState(this.#shellBuffer);
+    const parsed = JSON.parse(result);
+    if (parsed.result !== "awaiting_key") {
+      parsed.verifyState = postState;
+    }
+
+    return JSON.stringify(parsed);
   }
 
   /**
@@ -262,6 +372,8 @@ export class SSHManager {
     }
   }
 
+  // ── private ──────────────────────────────────────────────
+
   /** Internal: perform the actual SSH connection handshake */
   #doConnect(): Promise<void> {
     const client = new Client();
@@ -305,5 +417,93 @@ export class SSHManager {
       });
       client.connect(connConfig);
     });
+  }
+
+  _sendForUnlock(cmd: string, expectPattern: RegExp, timeoutMs: number): Promise<string> {
+    if (!this.#shellStream) {
+      throw new Error("No shell session open");
+    }
+
+    const beforeLen = this.#shellBuffer.length;
+    this.#shellStream.write(`${cmd}\n`);
+
+    const deadline = Date.now() + timeoutMs;
+    return new Promise<string>((resolve) => {
+      const check = () => {
+        const recent = this.#shellBuffer.substring(beforeLen);
+        if (expectPattern.test(recent)) {
+          setTimeout(() => {
+            resolve(this.#shellBuffer.substring(beforeLen));
+          }, 200);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          resolve(this.#shellBuffer.substring(beforeLen));
+          return;
+        }
+        setTimeout(check, 50);
+      };
+      check();
+    });
+  }
+
+  async _unlockShell(key?: string): Promise<string> {
+    const steps = this.#shellState!.unlockSequence;
+    const logs: string[] = [];
+    let userInputNeeded = false;
+    let challengeRaw = "";
+
+    for (const step of steps) {
+      if (step.userInput && !key) {
+        userInputNeeded = true;
+        logs.push(`[${step.description}] WAITING_FOR_USER_KEY`);
+        break;
+      }
+
+      const send = step.userInput ? key! : step.send;
+      const mask = step.userInput ? "***" : send;
+
+      const output = await this._sendForUnlock(
+        send,
+        new RegExp(step.expectPattern, "im"),
+        step.timeoutMs
+      );
+
+      if (!step.userInput) {
+        challengeRaw = output;
+      }
+
+      const state = this.#shellState!.detectState(output);
+      logs.push(`[${step.description}] send='${mask}' state=${state}`);
+
+      if (state === ShellState.ERROR) {
+        return JSON.stringify({
+          result: "error",
+          message: `Unlock failed at step "${step.description}": got state=${state}`,
+          raw: output.substring(0, 500),
+        });
+      }
+
+      if (state === ShellState.READY) {
+        console.error(`SSH _unlockShell: ${logs.join(", ")} -> READY (early)`);
+        return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
+      }
+    }
+
+    if (userInputNeeded) {
+      const challengeCode = this.#shellState!.extractChallengeCode(challengeRaw);
+      console.error(`SSH _unlockShell: ${logs.join(", ")}`);
+      return JSON.stringify({
+        result: "awaiting_key",
+        state: "unlocking",
+        steps: logs,
+        message: "Shell is waiting for unlock key. Call shell_unlock with the 'key' parameter.",
+        challenge_code: challengeCode,
+        challenge_raw: challengeRaw.substring(0, 500),
+      });
+    }
+
+    console.error(`SSH _unlockShell: ${logs.join(", ")}`);
+    return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
   }
 }
