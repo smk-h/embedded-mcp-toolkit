@@ -502,6 +502,8 @@ export class SSHManager {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
 
+        // For steps that need user input but we don't have the key yet,
+        // first save challenge and wait for key before sending anything
         if (step.userInput && !key) {
           // Save challenge to file if configured
           this.#saveChallengeToFile(challengeRaw);
@@ -538,6 +540,7 @@ export class SSHManager {
           }
         }
 
+        // Now we have the key (if needed), send the command
         const send = step.userInput ? key! : step.send;
         const mask = step.userInput ? "***" : send;
 
@@ -547,6 +550,7 @@ export class SSHManager {
           step.timeoutMs
         );
 
+        // Capture output from non-user-input steps for challenge code extraction
         if (!step.userInput) {
           challengeRaw = output;
         }
