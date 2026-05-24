@@ -1,0 +1,13 @@
+# Claude Code 启动脚本
+# 设置环境变量并启动 Claude Code
+
+$env:ANTHROPIC_AUTH_TOKEN = "sk-sp-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+$env:ANTHROPIC_BASE_URL = "https://coding.dashscope.aliyuncs.com/apps/anthropic"
+$env:API_TIMEOUT_MS = "3000000"
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+$env:ANTHROPIC_DEFAULT_HAIKU_MODEL = "glm-5"
+$env:ANTHROPIC_DEFAULT_SONNET_MODEL = "glm-5"
+$env:ANTHROPIC_DEFAULT_OPUS_MODEL = "glm-5"
+
+Write-Host "environment set success! Starting Claude Code..."
+claude

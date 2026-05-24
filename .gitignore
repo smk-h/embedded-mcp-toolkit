@@ -2,3 +2,6 @@ node_modules
 out
 my-psh/keygen
 my-psh/psh
+.claude/.env
+.claude/start-claude.ps1
+.claude/start-claude.bat
