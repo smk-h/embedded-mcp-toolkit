@@ -41,40 +41,44 @@ type CompiledPatterns = {
 const BUILTIN_PROFILES: Record<string, ShellProfile> = {
   psh: {
     name: "psh",
-    description: "Protect Shell v2.1 - Terminal door security system",
+    description: "Protect Shell - Davinci system locked shell, requires 'debug' command + password to unlock",
     statePatterns: {
       ready: [
         ".*[@:].*[#$]\\s*$",
         "PSH_AUTH=1",
+        "built-in shell \\(ash\\)",
       ],
       locked: [
         "Protect Shell",
         "System is LOCKED",
         "^locked>\\s*$",
         "Command not supported in locked mode",
+        "davinci system commands",
       ],
       unlocking: [
         "Enter key to unlock",
         "^key>\\s*$",
+        "Password:\\s*$",
       ],
       error: [
         "Invalid key",
         "Returning to locked mode",
+        "Access denied",
       ],
     },
     challengeCodePattern: "PSH-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}",
     unlockSequence: [
       {
         send: "debug",
-        expectPattern: "key>|Enter key",
-        timeoutMs: 5000,
-        description: "Enter debug/unlocking mode",
+        expectPattern: "Password:|key>|Enter key",
+        timeoutMs: 10000,
+        description: "Enter debug mode to trigger password prompt",
       },
       {
         send: "",
-        expectPattern: "Access Granted|[@:].*[#$]",
+        expectPattern: "Access Granted|built-in shell|[@:].*[#$]",
         timeoutMs: 15000,
-        description: "Submit unlock key",
+        description: "Submit unlock password",
         userInput: true,
       },
     ],

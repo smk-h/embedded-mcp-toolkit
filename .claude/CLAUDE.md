@@ -7,8 +7,8 @@
 | 服务器名 | 连接方式 | 用途 |
 |---------|---------|------|
 | **embedded-board** | SSH (192.168.16.103:22) | 远程命令执行、文件操作 |
-| **board-beta** | SSH (192.168.16.105:22) | 远程命令执行、文件操作（ssh-rsa 主机密钥） |
-| **board-alpha** | 串口 (COM3, 115200) | U-Boot 交互、底层调试 |
+| **board-beta** | SSH (192.168.16.105:22) | 远程命令执行、文件操作（ssh-rsa 主机密钥，文件 IPC 解锁） |
+| **board-alpha** | 串口 (COM12, 115200) | U-Boot 交互、底层调试 |
 
 ## 可用工具
 
@@ -80,3 +80,20 @@
 ### 发送控制字符
 ```json
 {"name": "serial_send", "arguments": {"data": "\x03"}}
+```
+
+## 快捷技能（Slash Commands）
+
+| 技能 | 用途 | 调用方式 |
+|------|------|---------|
+| **board-status** | 查看板卡系统状态 | `/board-status [板卡名]` |
+| **board-shell** | 打开交互式 shell | `/board-shell <板卡名>` |
+| **board-deploy** | 部署文件到板卡 | `/board-deploy <板卡名> <本地路径> <远程路径>` |
+| **board-unlock** | 解锁受保护 shell | `/board-unlock <板卡名> [密钥]` |
+
+## 文件 IPC 解锁
+
+board-beta 配置了文件 IPC 用于动态密钥交换：
+- 挑战信息保存到 `challenge.txt`，供外部工具读取
+- 外部工具将密钥写入 `password_input.txt`
+- 系统自动轮询并读取密钥，读取后删除密码文件

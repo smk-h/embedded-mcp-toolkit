@@ -1,4 +1,5 @@
 import { SerialPort } from "serialport";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { ShellStateManager, ShellState } from "./shell-state.js";
 
 interface SerialConfig {
@@ -7,6 +8,8 @@ interface SerialConfig {
   dataBits?: 8 | 5 | 6 | 7;
   stopBits?: 1 | 1.5 | 2;
   parity?: "none" | "even" | "odd";
+  challengeFile?: string | null;
+  passwordFile?: string | null;
 }
 
 export class SerialManager {
@@ -247,7 +250,7 @@ export class SerialManager {
 
     // 若已处于解锁等待状态且有 key，直接进入 unlock sequence（跳过 echo probe）
     if (peekState === ShellState.UNLOCKING && key) {
-      const result = await this._unlockShell(port, key);
+      const result = await this._unlockShell(port, key, timeoutMs);
       const parsed = JSON.parse(result);
       if (parsed.result === "awaiting_key") {
         return result;
@@ -269,7 +272,7 @@ export class SerialManager {
       return JSON.stringify({ result: "already_unlocked", state: "ready" });
     }
 
-    const result = await this._unlockShell(port, key);
+    const result = await this._unlockShell(port, key, timeoutMs);
 
     await this.#drain(port);
     port.write("echo __PSH_POST_STATE__\r\n");
@@ -277,9 +280,7 @@ export class SerialManager {
     const postState = this.#shellState.detectState(postRaw);
 
     const parsed = JSON.parse(result);
-    if (parsed.result !== "awaiting_key") {
-      parsed.verifyState = postState;
-    }
+    parsed.verifyState = postState;
 
     return JSON.stringify(parsed);
   }
@@ -297,7 +298,55 @@ export class SerialManager {
     this.#port.write(data);
   }
 
-  // ── private ──────────────────────────────────────────────
+  // ── private: file IPC ──────────────────────────────────────
+
+  #saveChallengeToFile(content: string): void {
+    if (!this.#config.challengeFile) return;
+    try {
+      writeFileSync(this.#config.challengeFile, content);
+      console.error(`[INFO] Challenge saved to ${this.#config.challengeFile}`);
+    } catch (e: unknown) {
+      console.error(`[ERROR] Failed to write challenge file: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  #readPasswordFromFile(): string | null {
+    if (!this.#config.passwordFile) return null;
+    try {
+      if (existsSync(this.#config.passwordFile)) {
+        const pwd = readFileSync(this.#config.passwordFile, "utf8").trim();
+        if (pwd) {
+          writeFileSync(this.#config.passwordFile, "");
+          return pwd;
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  #clearIpcFiles(): void {
+    if (!this.#config.challengeFile) return;
+    try {
+      if (existsSync(this.#config.challengeFile)) {
+        writeFileSync(this.#config.challengeFile, "");
+        console.error(`[INFO] Cleared challenge file: ${this.#config.challengeFile}`);
+      }
+    } catch (e: unknown) {
+      console.error(`[ERROR] Failed to remove challenge file: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async #pollPasswordFile(timeoutMs: number): Promise<string | null> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const pwd = this.#readPasswordFromFile();
+      if (pwd) return pwd;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return null;
+  }
+
+  // ── private: serial helpers ──────────────────────────────
 
   #tryUpgradeProfile(raw: string): void {
     if (!this.#shellState) return;
@@ -411,66 +460,88 @@ export class SerialManager {
     });
   }
 
-  async _unlockShell(port: SerialPort, key?: string): Promise<string> {
+  async _unlockShell(port: SerialPort, key?: string, timeoutMs: number = 30000): Promise<string> {
     const steps = this.#shellState!.unlockSequence;
     const logs: string[] = [];
-    let userInputNeeded = false;
     let challengeRaw = "";
 
-    for (const step of steps) {
-      if (step.userInput && !key) {
-        userInputNeeded = true;
-        logs.push(`[${step.description}] WAITING_FOR_USER_KEY`);
-        break;
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+
+        if (step.userInput && !key) {
+          // Save challenge to file if configured
+          this.#saveChallengeToFile(challengeRaw);
+
+          // If passwordFile is configured, poll for the key
+          if (this.#config.passwordFile) {
+            console.error(`[INFO] Polling ${this.#config.passwordFile} for unlock key...`);
+
+            const polledKey = await this.#pollPasswordFile(timeoutMs);
+            if (polledKey) {
+              key = polledKey;
+              logs.push(`[${step.description}] key_from_file`);
+            } else {
+              // Timeout waiting for file input
+              logs.push(`[${step.description}] FILE_POLL_TIMEOUT`);
+              console.error(`Serial _unlockShell: ${logs.join(", ")}`);
+              return JSON.stringify({
+                result: "awaiting_key",
+                state: "unlocking",
+                steps: logs,
+                message: "Timed out waiting for key in password file. Write the key to the password file or call shell_unlock with the 'key' parameter.",
+              });
+            }
+          } else {
+            // No file IPC configured, fall back to MCP tool call
+            logs.push(`[${step.description}] WAITING_FOR_USER_KEY`);
+            console.error(`Serial _unlockShell: ${logs.join(", ")}`);
+            return JSON.stringify({
+              result: "awaiting_key",
+              state: "unlocking",
+              steps: logs,
+              message: "Shell is waiting for unlock key. Call shell_unlock with the 'key' parameter.",
+            });
+          }
+        }
+
+        const send = step.userInput ? key! : step.send;
+
+        await this.#drain(port);
+        port.write(send + "\r\n");
+
+        const raw = await this.#waitForPattern(
+          port,
+          new RegExp(step.expectPattern, "im"),
+          step.timeoutMs
+        );
+
+        if (!step.userInput) {
+          challengeRaw = raw;
+        }
+
+        const state = this.#shellState!.detectState(raw);
+        logs.push(`[${step.description}] send='${step.userInput ? "***" : send}' state=${state}`);
+
+        if (state === ShellState.ERROR) {
+          return JSON.stringify({
+            result: "error",
+            message: `Unlock failed at step "${step.description}": got state=${state}`,
+            raw: raw.substring(0, 500),
+          });
+        }
+
+        if (state === ShellState.READY) {
+          console.error(`Serial _unlockShell: ${logs.join(", ")} -> READY (early)`);
+          return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
+        }
       }
 
-      const send = step.userInput ? key! : step.send;
-
-      await this.#drain(port);
-      port.write(send + "\r\n");
-
-      const raw = await this.#waitForPattern(
-        port,
-        new RegExp(step.expectPattern, "im"),
-        step.timeoutMs
-      );
-
-      if (!step.userInput) {
-        challengeRaw = raw;
-      }
-
-      const state = this.#shellState!.detectState(raw);
-      logs.push(`[${step.description}] send='${step.userInput ? "***" : send}' state=${state}`);
-
-      if (state === ShellState.ERROR) {
-        return JSON.stringify({
-          result: "error",
-          message: `Unlock failed at step "${step.description}": got state=${state}`,
-          raw: raw.substring(0, 500),
-        });
-      }
-
-      if (state === ShellState.READY) {
-        console.error(`Serial _unlockShell: ${logs.join(", ")} -> READY (early)`);
-        return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
-      }
-    }
-
-    if (userInputNeeded) {
-      const challengeCode = this.#shellState!.extractChallengeCode(challengeRaw);
       console.error(`Serial _unlockShell: ${logs.join(", ")}`);
-      return JSON.stringify({
-        result: "awaiting_key",
-        state: "unlocking",
-        steps: logs,
-        message: "Shell is waiting for unlock key. Call shell_unlock with the 'key' parameter.",
-        challenge_code: challengeCode,
-        challenge_raw: challengeRaw.substring(0, 500),
-      });
+      return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
+    } finally {
+      this.#clearIpcFiles();
     }
-
-    console.error(`Serial _unlockShell: ${logs.join(", ")}`);
-    return JSON.stringify({ result: "unlocked", state: "ready", steps: logs });
   }
 
   #cleanOutput(cmd: string, raw: string): string {

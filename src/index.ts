@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolve } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -39,6 +40,8 @@ interface SSHConfig {
   password: string;
   privateKey: string | null;
   hostKeyAlgorithms: string[] | undefined;
+  challengeFile: string | null;
+  passwordFile: string | null;
 }
 
 interface SerialConfig {
@@ -47,10 +50,17 @@ interface SerialConfig {
   dataBits: 8 | 5 | 6 | 7;
   stopBits: 1 | 1.5 | 2;
   parity: "none" | "even" | "odd";
+  challengeFile: string | null;
+  passwordFile: string | null;
 }
 
 const useSSH = process.env.BOARD_HOST !== undefined;
 const useSerial = process.env.SERIAL_PORT !== undefined;
+
+function resolveFilePath(p: string | null | undefined): string | null {
+  if (!p) return null;
+  return resolve(p);
+}
 
 let ssh: SSHManager | null = null;
 let serial: SerialManager | null = null;
@@ -75,6 +85,8 @@ if (useSSH) {
     password: process.env.BOARD_PASSWORD || "root",
     privateKey: process.env.BOARD_PRIVATE_KEY || null,
     hostKeyAlgorithms,
+    challengeFile: resolveFilePath(process.env.BOARD_CHALLENGE_FILE),
+    passwordFile: resolveFilePath(process.env.BOARD_PASSWORD_FILE),
   };
   ssh = new SSHManager(sshConfig);
 }
@@ -86,6 +98,8 @@ if (useSerial) {
     dataBits: (parseInt(process.env.SERIAL_DATABITS || "8", 10) as 8 | 5 | 6 | 7),
     stopBits: (parseInt(process.env.SERIAL_STOPBITS || "1", 10) as 1 | 1.5 | 2),
     parity: (process.env.SERIAL_PARITY || "none") as "none" | "even" | "odd",
+    challengeFile: resolveFilePath(process.env.BOARD_CHALLENGE_FILE),
+    passwordFile: resolveFilePath(process.env.BOARD_PASSWORD_FILE),
   };
   serial = new SerialManager(serialConfig);
 }

@@ -19,7 +19,10 @@
         "BOARD_PORT": "22",
         "BOARD_USERNAME": "root",
         "BOARD_PASSWORD": "root",
-        "BOARD_HOST_KEY_ALGORITHMS": "ssh-rsa"
+        "BOARD_HOST_KEY_ALGORITHMS": "ssh-rsa",
+        "BOARD_SHELL_PROFILE": "psh",
+        "BOARD_CHALLENGE_FILE": "./challenge.txt",
+        "BOARD_PASSWORD_FILE": "./password_input.txt"
       }
     },
     "board-alpha": {
@@ -30,7 +33,10 @@
         "SERIAL_BAUDRATE": "115200",
         "SERIAL_DATABITS": "8",
         "SERIAL_STOPBITS": "1",
-        "SERIAL_PARITY": "none"
+        "SERIAL_PARITY": "none",
+        "BOARD_SHELL_PROFILE": "psh",
+        "BOARD_CHALLENGE_FILE": "./challenge.txt",
+        "BOARD_PASSWORD_FILE": "./password_input.txt"
       }
     }
   }
