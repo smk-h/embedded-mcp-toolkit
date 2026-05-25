@@ -30,16 +30,11 @@ export enum PshState {
  *   步骤2: send=密钥(userInput) → 期望匹配 "Enter Debug Mode"
  */
 export interface PshUnlockStep {
-  /** 要发送的命令（userInput 步骤留空，由 unlock() 的 key 参数填充） */
-  send: string;
-  /** 发送后期望匹配的正则（用于判断该步是否成功） */
-  expectPattern: string;
-  /** 本步超时（毫秒） */
-  timeoutMs: number;
-  /** 步骤描述 */
-  description: string;
-  /** 是否为用户输入步骤（密钥），true 时 send 字段忽略，改用 key 参数 */
-  userInput?: boolean;
+  send: string;             // 要发送的命令（userInput 步骤留空，由 unlock() 的 key 参数填充）
+  expectPattern: string;    // 发送后期望匹配的正则（用于判断该步是否成功）
+  timeoutMs: number;        // 本步超时（毫秒）
+  description: string;      // 步骤描述
+  userInput?: boolean;      // 是否为用户输入步骤（密钥），true 时 send 字段忽略，改用 key 参数
 }
 
 /**
@@ -49,10 +44,8 @@ export interface PshUnlockStep {
  * 让解锁逻辑根据特性做条件分支，而非硬编码设备名判断。
  */
 export interface PshFeatures {
-  /** 非 TTY 环境下是否可绕过（某些 PSH 在非交互终端下行为不同） */
-  bypassOnNonTty?: boolean;
-  /** 输出中是否含信号干扰字符（串口连接时某些设备会混入控制字符） */
-  signalResistant?: boolean;
+  bypassOnNonTty?: boolean;   // 非 TTY 环境下是否可绕过（某些 PSH 在非交互终端下行为不同）
+  signalResistant?: boolean;  // 输出中是否含信号干扰字符（串口连接时某些设备会混入控制字符）
 }
 
 /**
@@ -65,25 +58,16 @@ export interface PshFeatures {
 export interface PshProfile {
   name: string;
   description: string;
-  /** 各状态的正则匹配模式，用于从终端输出中识别当前 PSH 状态 */
-  statePatterns: {
-    /** 已解锁的特征（如 "built-in shell (ash)"、"Enter Debug Mode"） */
-    ready: string[];
-    /** 锁定状态的特征（如 "Protect Shell (psh)"、"Not Supported"） */
-    locked: string[];
-    /** 等待密码输入的特征（如 "Password:"、"key>"） */
-    unlocking: string[];
-    /** 解锁失败的特征（如 "Incorrect Password"、"Invalid key"） */
-    error: string[];
+  statePatterns: {                       // 各状态的正则匹配模式，用于从终端输出中识别当前 PSH 状态
+    ready: string[];                     // 已解锁的特征（如 "built-in shell (ash)"、"Enter Debug Mode"）
+    locked: string[];                    // 锁定状态的特征（如 "Protect Shell (psh)"、"Not Supported"）
+    unlocking: string[];                 // 等待密码输入的特征（如 "Password:"、"key>"）
+    error: string[];                     // 解锁失败的特征（如 "Incorrect Password"、"Invalid key"）
   };
-  /** 解锁交互步骤序列 */
-  unlockSequence: PshUnlockStep[];
-  /** Challenge Code 提取正则（psh: PSH-XXXX 格式；psh_busybox: Base64 字符串） */
-  challengeCodePattern?: string;
-  /** 行为特性开关，处理不同设备的细微差异 */
-  features?: PshFeatures;
-  /** 锁定状态下允许执行的命令列表（如 help、dmesg、debug） */
-  allowedCommands?: string[];
+  unlockSequence: PshUnlockStep[];       // 解锁交互步骤序列
+  challengeCodePattern?: string;         // Challenge Code 提取正则（psh: PSH-XXXX 格式；psh_busybox: Base64 字符串）
+  features?: PshFeatures;                // 行为特性开关，处理不同设备的细微差异
+  allowedCommands?: string[];            // 锁定状态下允许执行的命令列表（如 help、dmesg、debug）
 }
 
 /**
@@ -103,17 +87,14 @@ export interface PshUnlockResult {
   success: boolean;
   state: PshState;
   output: string;
-  /** 提取到的 Challenge Code（psh: PSH-XXXX；psh_busybox: Base64 字符串） */
-  challengeCode: string | null;
-  /** 剩余尝试次数（如 "4 Times Left" 中的 4），密码错误时有效 */
-  attemptsLeft: number | null;
+  challengeCode: string | null;   // 提取到的 Challenge Code（psh: PSH-XXXX；psh_busybox: Base64 字符串）
+  attemptsLeft: number | null;    // 剩余尝试次数（如 "4 Times Left" 中的 4），密码错误时有效
   error?: string;
 }
 
 /** PSH 状态检测结果 */
 export interface PshDetectResult {
-  /** 当前终端是否为 PSH（通过 locked 特征判断） */
-  isPsh: boolean;
+  isPsh: boolean;         // 当前终端是否为 PSH（通过 locked 特征判断）
   state: PshState;
   output: string;
   challengeCode: string | null;
