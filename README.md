@@ -6,6 +6,8 @@
 
 `embedded-mcp-toolkit` 是一个基于 MCP（Model Context Protocol）协议的嵌入式板卡远程管理工具。它通过 SSH 连接到远程开发板，向 AI 编程助手（如 OpenCode）暴露一组管理工具，使 AI 可以直接对板卡执行命令、读写文件、查看系统状态等，无需手动 SSH 登录。
 
+>MCP协议官网：[https://modelcontextprotocol.io](https://modelcontextprotocol.io/docs/getting-started/intro)
+
 ### 2. 架构说明
 
 ```text

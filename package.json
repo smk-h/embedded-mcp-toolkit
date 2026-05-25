@@ -11,14 +11,16 @@
     "build": "tsc",
     "clean": "rimraf out",
     "start": "node out/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "inspector": "mcp-inspector node bin/embedded-mcp-toolkit-cli.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.8.0",
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/inspector": "^0.21.2",
+    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
     "js-yaml": "^4.1.1",
     "serialport": "^13.0.0",
-    "ssh2": "^1.16.0",
-    "zod": "^3.24.0"
+    "ssh2": "^1.16.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

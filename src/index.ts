@@ -1,10 +1,18 @@
 import { interactiveShell, pshDemoSsh } from "./ssh.js";
 import { interactiveSerialShell, pshDemoSerial } from "./serial.js";
 import { getSSHConfig, getSerialConfig, getAllConfig } from "./config.js";
+import { startMcpServer } from "./mcp.js";
 
-const mode = process.argv[2];
+const mode = process.argv[2] || "mcp";   // 默认无参数时为 MCP 服务器模式
 
 switch (mode) {
+  case "mcp": {
+    startMcpServer().catch((err: unknown) => {
+      console.error("MCP Server fatal:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    });
+    break;
+  }
   case "ssh": {
     interactiveShell(getSSHConfig()).catch((err: unknown) => {
       console.error("Fatal:", err instanceof Error ? err.message : err);
@@ -51,10 +59,11 @@ switch (mode) {
     break;
   }
   default:
-    console.error("Usage: node index.js <ssh|serial|psh-demo-ssh|psh-demo-serial|config>");
+    console.error("Usage: node index.js [mcp|ssh|serial|psh-demo-ssh|psh-demo-serial|config]");
     console.error("");
-    console.error("  ssh              启动 SSH 交互式 shell");
-    console.error("  serial           启动串口交互式 shell");
+    console.error("  mcp              MCP 服务器模式（默认）");
+    console.error("  ssh              SSH 交互式 shell");
+    console.error("  serial           串口交互式 shell");
     console.error("  psh-demo-ssh     SSH 方式 PSH 探测 + 解锁演示");
     console.error("  psh-demo-serial  串口方式 PSH 探测 + 解锁演示");
     console.error("  config           打印当前默认设备的配置信息");
