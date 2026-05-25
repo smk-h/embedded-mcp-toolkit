@@ -1,7 +1,8 @@
 import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
-import { MAX_BUFFER_SIZE, interactiveLoop, sanitizeTerminalOutput } from "./common.js";
-import { PshHandler, PshState } from "./psh.js";
-import { KeyProvider } from "./key-provider.js";
+import { MAX_BUFFER_SIZE, interactiveLoop } from "./common.js";
+import { sanitize } from "./helper/terminal_helper.js";
+import { PshHandler, PshState } from "./common/psh.js";
+import { KeyProvider } from "./common/key-provider.js";
 import { getKeyProviderConfig } from "./config.js";
 
 /**
@@ -235,7 +236,7 @@ export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
   console.log(`[Step 1] Connecting to ${config.host}:${config.port ?? 22} ...`);
   const shell = new SSHShell(config);
   const banner = await shell.open();
-  console.log("[Step 1] --- SSH Banner ---\n%s\n---", sanitizeTerminalOutput(banner));
+  console.log("[Step 1] --- SSH Banner ---\n%s\n---", sanitize(banner));
 
   // ===== 步骤 2：自动识别 PSH profile =====
   const handler = PshHandler.matchFromOutput(banner);

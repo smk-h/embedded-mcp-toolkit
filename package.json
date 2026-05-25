@@ -12,7 +12,9 @@
     "clean": "rimraf out",
     "start": "node out/index.js",
     "dev": "tsc --watch",
-    "inspector": "mcp-inspector node bin/embedded-mcp-toolkit-cli.js"
+    "inspector": "mcp-inspector node bin/embedded-mcp-toolkit-cli.js",
+    "psh-demo-ssh": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-ssh",
+    "psh-demo-serial": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-serial"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

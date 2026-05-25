@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { load } from "js-yaml";
 import type { SSHShellConfig } from "./ssh.js";
 import type { SerialShellConfig } from "./serial.js";
-import type { KeyProviderConfig } from "./key-provider.js";
+import type { KeyProviderConfig } from "./common/key-provider.js";
 
 /** KeyProvider 配置片段（YAML 中可选项） */
 interface KeyProviderYaml {

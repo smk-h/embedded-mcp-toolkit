@@ -1,7 +1,8 @@
 import { SerialPort } from "serialport";
-import { MAX_BUFFER_SIZE, interactiveLoop, sanitizeTerminalOutput } from "./common.js";
-import { PshHandler, PshState } from "./psh.js";
-import { KeyProvider } from "./key-provider.js";
+import { MAX_BUFFER_SIZE, interactiveLoop } from "./common.js";
+import { sanitize } from "./helper/terminal_helper.js";
+import { PshHandler, PshState } from "./common/psh.js";
+import { KeyProvider } from "./common/key-provider.js";
 import { getKeyProviderConfig } from "./config.js";
 
 /**
@@ -239,7 +240,7 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
   console.log(`[Step 1] Opening ${config.port} @ ${config.baudRate ?? 115200} ...`);
   const shell = new SerialShell(config);
   const banner = await shell.open();
-  console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitizeTerminalOutput(banner));
+  console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitize(banner));
   shell.write("exit", 1); // 会清空之前的内容
 
   // ===== 步骤 2：自动识别 PSH profile =====
@@ -253,7 +254,7 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
     shell.write("echo __PSH_PROBE__", 1);
     await new Promise((r) => setTimeout(r, 1500));
     const probeOutput = shell.read(1);
-    console.log("[Step 2] probeOutput =", sanitizeTerminalOutput(probeOutput));
+    console.log("[Step 2] probeOutput =", sanitize(probeOutput));
     detectOutput = banner + "\n" + probeOutput;
     handler = PshHandler.matchFromOutput(detectOutput);
   }
