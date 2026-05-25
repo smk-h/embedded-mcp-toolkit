@@ -4,6 +4,9 @@
   "description": "MCP Server for remote management of embedded Linux boards via SSH",
   "type": "module",
   "main": "out/index.js",
+  "bin": {
+    "embedded-mcp-toolkit": "./bin/embedded-mcp-toolkit-cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "clean": "rimraf out",
