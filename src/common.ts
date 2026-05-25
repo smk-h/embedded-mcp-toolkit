@@ -1,5 +1,5 @@
 /** @brief 输出缓冲区最大容量（字节） */
-export const MAX_BUFFER_SIZE = 16 * 1024; // 16KB
+export const MAX_BUFFER_SIZE = 1024 * 1024; // 16KB
 
 /**
  * @brief 清洗串口/SSH 输出中的控制字符，防止终端显示错乱

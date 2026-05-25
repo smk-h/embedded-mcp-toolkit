@@ -1,0 +1,161 @@
+import { readFileSync } from "fs";
+import { load } from "js-yaml";
+import type { SSHShellConfig } from "./ssh.js";
+import type { SerialShellConfig } from "./serial.js";
+import type { KeyProviderConfig } from "./key-provider.js";
+
+/** KeyProvider 配置片段（YAML 中可选项） */
+interface KeyProviderYaml {
+  mode?: "file" | "terminal";
+  challengeFilePath?: string;
+  keyFilePath?: string;
+  pollInterval?: number;
+  timeout?: number;
+}
+
+interface DeviceConfig {
+  ssh?: {
+    host?: string;               // SSH 主机地址
+    port?: number;               // SSH 端口，默认 22
+    username?: string;           // SSH 登录用户名
+    password?: string;           // 密码认证（与 privateKey 二选一）
+    privateKey?: string;         // 密钥认证（与 password 二选一）
+    passphrase?: string;         // 密钥解密口令
+    keyProvider?: KeyProviderYaml;  // SSH 侧密钥提供配置
+  };
+  serial?: {
+    port?: string;               // 串口设备路径（如 COM3、/dev/ttyUSB0）
+    baudRate?: number;           // 波特率，默认 115200
+    dataBits?: number;           // 数据位（5/6/7/8），默认 8
+    stopBits?: number;           // 停止位（1/1.5/2），默认 1
+    parity?: "none" | "even" | "odd"; // 校验位，默认 none
+    lineEnding?: string;         // 命令追加的换行符（\n, \r\n），默认 \n
+    keyProvider?: KeyProviderYaml;  // 串口侧密钥提供配置
+  };
+}
+
+interface RootConfig {
+  default?: string;                               // 默认设备名
+  devices?: Record<string, DeviceConfig>;         // 设备配置字典，key 为设备名
+}
+
+let _cached: RootConfig | null = null;
+
+function loadConfig(): RootConfig {
+  if (_cached) return _cached;
+  try {
+    _cached = load(readFileSync("config.yaml", "utf8")) as RootConfig;
+  } catch {
+    _cached = {};
+  }
+  return _cached!;
+}
+
+/**
+ * @brief 解析当前设备名
+ *
+ * 优先级: DEVICE 环境变量 > config.yaml 中的 default 字段 > "board-a"
+ *
+ * 可通过命令行传入，如:
+ *   DEVICE=board-b node out/index.js ssh
+ */
+export function resolveDeviceName(): string {
+  return process.env.DEVICE ?? loadConfig().default ?? "board-a";
+}
+
+/**
+ * @brief 根据设备名获取设备配置
+ *
+ * 配置优先级: YAML 设备配置 > 环境变量 > 硬编码兜底
+ *
+ * @param name 设备名
+ */
+function getDeviceConfig(name: string): DeviceConfig {
+  return loadConfig().devices?.[name] ?? {};
+}
+
+/**
+ * @brief 获取 SSH 连接配置
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ */
+export function getSSHConfig(name?: string): SSHShellConfig {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const yaml = device.ssh ?? {};
+  return {
+    host: yaml.host ?? process.env.BOARD_HOST ?? "10.29.78.13",
+    port: yaml.port ?? parseInt(process.env.BOARD_PORT ?? "22", 10),
+    username: yaml.username ?? process.env.BOARD_USERNAME ?? "root",
+    password: yaml.password ?? process.env.BOARD_PASSWORD ?? "abcd1245",
+  };
+}
+
+/**
+ * @brief 获取串口连接配置
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ */
+export function getSerialConfig(name?: string): SerialShellConfig {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const yaml = device.serial ?? {};
+  return {
+    port: yaml.port ?? process.env.SERIAL_PORT ?? "COM4",
+    baudRate: yaml.baudRate ?? parseInt(process.env.SERIAL_BAUDRATE ?? "115200", 10),
+    dataBits: yaml.dataBits as 8 | 5 | 6 | 7 | undefined,
+    stopBits: yaml.stopBits as 1 | 1.5 | 2 | undefined,
+    parity: yaml.parity,
+    lineEnding: yaml.lineEnding,
+  };
+}
+
+/**
+ * @brief 获取 KeyProvider 配置
+ *
+ * SSH 侧和串口侧各自独立配置，互不影响。
+ * 配置优先级: YAML 设备配置 > 环境变量 > 硬编码兜底
+ *
+ * @param scope "ssh" 或 "serial"，选择从哪个配置段读取
+ * @param name  设备名（可选，默认使用 resolveDeviceName() 解析）
+ */
+export function getKeyProviderConfig(scope: "ssh" | "serial", name?: string): KeyProviderConfig {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const yaml: KeyProviderYaml = scope === "ssh" ? (device.ssh?.keyProvider ?? {}) : (device.serial?.keyProvider ?? {});
+  return {
+    mode: yaml.mode ?? (process.env.KEY_PROVIDER as "file" | "terminal") ?? "terminal",
+    challengeFilePath: yaml.challengeFilePath ?? process.env.CHALLENGE_FILE ?? "challenge.txt",
+    keyFilePath: yaml.keyFilePath ?? process.env.KEY_FILE ?? "password_input.txt",
+    pollInterval: yaml.pollInterval,
+    timeout: yaml.timeout,
+  };
+}
+
+/**
+ * @brief 获取设备的全部配置信息（SSH + 串口 + 各自 KeyProvider）
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ * @returns 包含设备名、SSH、串口及各自 KeyProvider 配置的对象
+ */
+export function getAllConfig(name?: string): {
+  deviceName: string;
+  ssh: ReturnType<typeof getSSHConfig>;
+  serial: ReturnType<typeof getSerialConfig>;
+  sshKeyProvider: ReturnType<typeof getKeyProviderConfig>;
+  serialKeyProvider: ReturnType<typeof getKeyProviderConfig>;
+} {
+  const deviceName = name ?? resolveDeviceName();
+  return {
+    deviceName,
+    ssh: getSSHConfig(deviceName),
+    serial: getSerialConfig(deviceName),
+    sshKeyProvider: getKeyProviderConfig("ssh", deviceName),
+    serialKeyProvider: getKeyProviderConfig("serial", deviceName),
+  };
+}
+
+/**
+ * @brief 列出所有可用设备名
+ */
+export function listDevices(): string[] {
+  const devices = loadConfig().devices;
+  return devices ? Object.keys(devices) : [];
+}

@@ -1,5 +1,8 @@
 import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
-import { MAX_BUFFER_SIZE, interactiveLoop } from "./common.js";
+import { MAX_BUFFER_SIZE, interactiveLoop, sanitizeTerminalOutput } from "./common.js";
+import { PshHandler, PshState } from "./psh.js";
+import { KeyProvider } from "./key-provider.js";
+import { getKeyProviderConfig } from "./config.js";
 
 /**
  * @brief SSH Shell 连接配置
@@ -165,6 +168,7 @@ export class SSHShell {
     if (clear) {
       this.#buffer = "";
       this.#overflow = false;
+      this.#collecting = false;
     }
     return data;
   }
@@ -205,4 +209,93 @@ export async function interactiveShell(config: SSHShellConfig): Promise<void> {
   console.log("\n--- SSH shell ready. Send commands with write(), read() to get output. ---\n");
 
   await interactiveLoop(shell, "ssh");
+}
+
+/**
+ * @brief PSH 探测 + 解锁演示（SSH 方式）
+ *
+ * 流程：
+ *   1. 连接 SSH，读取 banner
+ *   2. 自动匹配 PSH profile（psh / psh_busybox）
+ *   3. 探测当前 PSH 状态
+ *   4. 如状态为 LOCKED，发送 debug 命令，
+ *      将 QR 码 + Base64 Challenge 显示在终端
+ *   5. 用户从终端输入密钥
+ *   6. 发送密钥完成解锁，输出结果
+ *
+ * 环境变量：
+ *   BOARD_HOST, BOARD_PORT, BOARD_USERNAME, BOARD_PASSWORD
+ *
+ * @param config SSH 连接配置
+ */
+export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
+  // ===== 步骤 1：连接 SSH，读取启动信息（banner） =====
+  console.log("[Step 1] === PSH Unlock Demo (SSH) ===\n");
+
+  console.log(`[Step 1] Connecting to ${config.host}:${config.port ?? 22} ...`);
+  const shell = new SSHShell(config);
+  const banner = await shell.open();
+  console.log("[Step 1] --- SSH Banner ---\n%s\n---", sanitizeTerminalOutput(banner));
+
+  // ===== 步骤 2：自动识别 PSH profile =====
+  const handler = PshHandler.matchFromOutput(banner);
+  if (!handler) {
+    console.log("[Step 2] No PSH profile matched — shell may already be unlocked or not a PSH device.");
+    await shell.close();
+    return;
+  }
+  console.log("[Step 2] Matched profile: %s (%s)\n", handler.profile.name, handler.profile.description);
+
+  // ===== 步骤 3：探测当前状态 =====
+  let detect = handler.detect(banner);
+  console.log("[Step 3] Initial state : %s", detect.state);
+  console.log("[Step 3] Is PSH        : %s", detect.isPsh);
+  console.log("[Step 3] Challenge     : %s\n", detect.challengeCode ?? "(none)");
+
+  if (detect.state === PshState.UNKNOWN) {
+    console.log("[Step 3] State is UNKNOWN, sending probe command...");
+    detect = await handler.probeState(shell);
+    console.log("[Step 3] After probe   : %s", detect.state);
+  }
+
+  // ===== 步骤 4：根据状态执行对应操作 =====
+  if (detect.state === PshState.LOCKED) {
+    console.log("[Step 4] === Starting unlock sequence ===\n");
+
+    const keyProvider = new KeyProvider(getKeyProviderConfig("ssh"));
+
+    const result = await handler.unlock(
+      shell,
+      "", // key 参数用不到（走 onKeyRequest 回调）
+      1500,
+      (output: string) => keyProvider.getKey(output),
+    );
+
+    console.log("[Step 4] Unlock result:");
+    console.log("            success      : %s", result.success);
+    console.log("            state        : %s", result.state);
+    console.log("            challenge    : %s", result.challengeCode ?? "(none)");
+    console.log("            attemptsLeft : %s", result.attemptsLeft ?? "(none)");
+    console.log("            error        : %s", result.error ?? "(none)");
+
+    if (result.success) {
+      console.log("[Step 4] Unlock succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n");
+      await interactiveLoop(shell, "ssh");
+    } else if (result.attemptsLeft && result.attemptsLeft > 0) {
+      console.log("[Step 4] Hint: wrong password, %d attempt(s) remaining. Re-run to try again.", result.attemptsLeft);
+    }
+  } else if (detect.state === PshState.READY) {
+    console.log("[Step 4] Shell is already unlocked, no action needed.");
+  } else if (detect.state === PshState.ERROR) {
+    console.log("[Step 4] Shell is in ERROR state (previous unlock may have failed).");
+  } else if (detect.state === PshState.UNLOCKING) {
+    console.log("[Step 4] Shell is in UNLOCKING state — a password prompt was left dangling.");
+  }
+
+  // ===== 步骤 5：解锁后验证（已在步骤 4 内完成） =====
+  console.log("[Step 5] Post-unlock verification done");
+
+  // ===== 步骤 6：关闭 SSH 连接，演示结束 =====
+  console.log("[Step 6] === Demo complete ===");
+  await shell.close();
 }

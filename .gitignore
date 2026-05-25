@@ -2,6 +2,7 @@ node_modules
 out
 my-psh/keygen
 my-psh/psh
+config.yaml
 .claude/.env
 .claude/start-claude.ps1
 .claude/start-claude.bat

@@ -1,5 +1,8 @@
 import { SerialPort } from "serialport";
-import { MAX_BUFFER_SIZE, interactiveLoop } from "./common.js";
+import { MAX_BUFFER_SIZE, interactiveLoop, sanitizeTerminalOutput } from "./common.js";
+import { PshHandler, PshState } from "./psh.js";
+import { KeyProvider } from "./key-provider.js";
+import { getKeyProviderConfig } from "./config.js";
 
 /**
  * @brief 串口 Shell 连接配置
@@ -157,6 +160,7 @@ export class SerialShell {
     if (clear) {
       this.#buffer = "";
       this.#overflow = false;
+      this.#collecting = false;
     }
     return data;
   }
@@ -208,4 +212,109 @@ export async function interactiveSerialShell(config: SerialShellConfig): Promise
   console.log("\n--- Serial shell ready. Send commands with write(), read() to get output. ---\n");
 
   await interactiveLoop(shell, "serial");
+}
+
+/**
+ * @brief PSH 探测 + 解锁演示（串口方式）
+ *
+ * 流程：
+ *   1. 打开串口连接，读取 banner
+ *   2. 自动匹配 PSH profile（psh / psh_busybox）
+ *   3. 探测当前 PSH 状态
+ *   4. 如状态为 LOCKED，发送 debug 命令，
+ *      将 QR 码 + Base64 Challenge 写入 challenge.txt
+ *   5. 轮询 password_input.txt 等待外部工具写入密钥
+ *   6. 发送密钥完成解锁，输出结果
+ *
+ * 环境变量：
+ *   SERIAL_PORT, SERIAL_BAUDRATE
+ *   KEY_PROVIDER (file|terminal), CHALLENGE_FILE, KEY_FILE
+ *
+ * @param config 串口连接配置（可选，未提供时从环境变量读取默认值）
+ */
+export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
+  // ===== 步骤 1：打开串口连接，读取启动信息（banner） =====
+  console.log("[Step 1] === PSH Unlock Demo (Serial) ===\n");
+
+  console.log(`[Step 1] Opening ${config.port} @ ${config.baudRate ?? 115200} ...`);
+  const shell = new SerialShell(config);
+  const banner = await shell.open();
+  console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitizeTerminalOutput(banner));
+  shell.write("exit", 1); // 会清空之前的内容
+
+  // ===== 步骤 2：自动识别 PSH profile =====
+  // 串口设备可能已运行很久，banner 只有内核日志，没有 PSH 特征
+  // 用 echo 命令探测：PSH 锁定状态下会返回 "Not Supported" 之类的错误
+  let handler = PshHandler.matchFromOutput(banner);
+  let detectOutput = banner;
+
+  if (!handler) {
+    console.log("[Step 2] No PSH profile matched from banner, probing with echo...");
+    shell.write("echo __PSH_PROBE__", 1);
+    await new Promise((r) => setTimeout(r, 1500));
+    const probeOutput = shell.read(1);
+    console.log("[Step 2] probeOutput =", sanitizeTerminalOutput(probeOutput));
+    detectOutput = banner + "\n" + probeOutput;
+    handler = PshHandler.matchFromOutput(detectOutput);
+  }
+
+  if (!handler) {
+    console.log("[Step 2] No PSH profile matched — shell may already be unlocked or not a PSH device.");
+    await shell.close();
+    return;
+  }
+  console.log("[Step 2] Matched profile: %s (%s)\n", handler.profile.name, handler.profile.description);
+
+  // ===== 步骤 3：探测 PSH 当前状态 =====
+  let detect = handler.detect(detectOutput);
+  console.log("[Step 3] Detected state : %s", detect.state);
+  console.log("[Step 3] Is PSH         : %s", detect.isPsh);
+  console.log("[Step 3] Challenge      : %s\n", detect.challengeCode ?? "(none)");
+
+  if (detect.state === PshState.UNKNOWN) {
+    console.log("[Step 3] State is UNKNOWN, sending probe command...");
+    detect = await handler.probeState(shell);
+    console.log("[Step 3] After probe    : %s", detect.state);
+  }
+
+  // ===== 步骤 4：根据状态执行对应操作 =====
+  if (detect.state === PshState.LOCKED) {
+    console.log("[Step 4] === Starting unlock sequence ===\n");
+
+    const keyProvider = new KeyProvider(getKeyProviderConfig("serial"));
+
+    const result = await handler.unlock(
+      shell,
+      "", // key 参数用不到（走 onKeyRequest 回调）
+      1500,
+      (output: string) => keyProvider.getKey(output),
+    );
+
+    console.log("[Step 4] Unlock result:");
+    console.log("            success      : %s", result.success);
+    console.log("            state        : %s", result.state);
+    console.log("            challenge    : %s", result.challengeCode ?? "(none)");
+    console.log("            attemptsLeft : %s", result.attemptsLeft ?? "(none)");
+    console.log("            error        : %s", result.error ?? "(none)");
+
+    if (result.success) {
+      console.log("[Step 4] Unlock succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n");
+      await interactiveLoop(shell, "serial");
+    } else if (result.attemptsLeft && result.attemptsLeft > 0) {
+      console.log("[Step 4] Hint: wrong password, %d attempt(s) remaining. Re-run to try again.", result.attemptsLeft);
+    }
+  } else if (detect.state === PshState.READY) {
+    console.log("[Step 4] Shell is already unlocked, no action needed.");
+  } else if (detect.state === PshState.ERROR) {
+    console.log("[Step 4] Shell is in ERROR state (previous unlock may have failed).");
+  } else if (detect.state === PshState.UNLOCKING) {
+    console.log("[Step 4] Shell is in UNLOCKING state — a password prompt was left dangling.");
+  }
+
+  // ===== 步骤 5：解锁后验证（已在步骤 4 内完成解锁后验证） =====
+  console.log("[Step 5] Post-unlock verification done");
+
+  // ===== 步骤 6：关闭串口，演示结束 =====
+  console.log("[Step 6] === Demo complete ===");
+  await shell.close();
 }
