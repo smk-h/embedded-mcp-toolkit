@@ -8,3 +8,4 @@ config.yaml
 .claude/start-claude.bat
 
 !.claude/settings.local.json
+*.log

@@ -5,6 +5,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 
+import { logger } from "./common/logger.js";
 import { mcpBasicTools } from "./mcp_basic/index.js";
 import { mcpSshTools } from "./mcp_ssh/index.js";
 import { mcpSerialTools } from "./mcp_serial/index.js";
@@ -38,6 +39,7 @@ for (const { name, config, handler } of mcpSerialTools) {
 // ── 启动入口 ───────────────────────────────────────────────
 
 export async function startMcpServer() {
+  logger.info("MCP server starting...");
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

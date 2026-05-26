@@ -1,5 +1,6 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../helper/mcp_helper.js";
+import { logger } from "../common/logger.js";
 import { SerialShell, type SerialShellConfig } from "../serial.js";
 import { getSerialConfig, getKeyProviderConfig } from "../config.js";
 import { PshHandler, PshState } from "../common/psh.js";
@@ -97,6 +98,9 @@ export async function serialOpenHandler(args: {
   stopBits?: number;
   parity?: string;
 }) {
+  logger.info(
+    `[serial_open] device=${args.device ?? "(default)"} port=${args.port ?? "(auto)"} baudRate=${args.baudRate ?? 115200}`
+  );
   // 获取设备配置，显式参数覆盖设备配置
   const baseConfig: SerialShellConfig = getSerialConfig(args.device);
   const config: SerialShellConfig = {
@@ -192,6 +196,7 @@ export const serialCloseConfig = {
  * @return MCP 响应，确认会话已关闭
  */
 export async function serialCloseHandler(args: { session_id: string }) {
+  logger.info(`[serial_close] session_id=${args.session_id}`);
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -259,6 +264,9 @@ export function serialWriteHandler(args: {
   command: string;
   clear?: number;
 }) {
+  logger.info(
+    `[serial_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
+  );
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -312,6 +320,9 @@ export function serialReadHandler(args: {
   session_id: string;
   clear?: number;
 }) {
+  logger.info(
+    `[serial_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
+  );
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -345,6 +356,7 @@ export const serialListConfig = {
  * @return MCP 响应，包含活跃会话列表或"无活跃会话"提示
  */
 export function serialListHandler() {
+  logger.info("[serial_list]");
   if (sessions.size === 0) {
     return { content: [text("No active serial sessions.")] };
   }
@@ -418,6 +430,9 @@ export async function serialExecHandler(args: {
   delay?: number;
   clear?: number;
 }) {
+  logger.info(
+    `[serial_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
+  );
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -502,6 +517,9 @@ export async function serialShellLoginHandler(args: {
   key?: string;
   timeout?: number;
 }) {
+  logger.info(
+    `[serial_shell_login] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 1500} key=${args.key ? "***" : "(none)"}`
+  );
   // 获取设备配置
   const baseConfig: SerialShellConfig = getSerialConfig(args.device);
   const stepDelay = args.timeout ?? 1500;

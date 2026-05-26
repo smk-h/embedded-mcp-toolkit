@@ -1,5 +1,6 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../helper/mcp_helper.js";
+import { logger } from "../common/logger.js";
 import { SSHShell, type SSHShellConfig } from "../ssh.js";
 import { getSSHConfig, getKeyProviderConfig } from "../config.js";
 import { PshHandler, PshState } from "../common/psh.js";
@@ -62,6 +63,9 @@ export async function sshShellOpenHandler(args: {
   device?: string;
   timeout?: number;
 }) {
+  logger.info(
+    `[ssh_shell_open] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 10}`
+  );
   const config: SSHShellConfig = getSSHConfig(args.device);
 
   const shell = new SSHShell(config);
@@ -111,6 +115,7 @@ export const sshShellCloseConfig = {
  * @return MCP 响应，确认会话已关闭
  */
 export async function sshShellCloseHandler(args: { session_id: string }) {
+  logger.info(`[ssh_shell_close] session_id=${args.session_id}`);
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -174,6 +179,9 @@ export function sshShellWriteHandler(args: {
   command: string;
   clear?: number;
 }) {
+  logger.info(
+    `[ssh_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
+  );
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -227,6 +235,9 @@ export function sshShellReadHandler(args: {
   session_id: string;
   clear?: number;
 }) {
+  logger.info(
+    `[ssh_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
+  );
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -260,6 +271,7 @@ export const sshShellListConfig = {
  * @return MCP 响应，包含活跃会话列表或"无活跃会话"提示
  */
 export function sshShellListHandler() {
+  logger.info("[ssh_shell_list]");
   const ids = [...sessions.keys()];
 
   if (ids.length === 0) {
@@ -330,6 +342,9 @@ export async function sshShellExecHandler(args: {
   delay?: number;
   clear?: number;
 }) {
+  logger.info(
+    `[ssh_shell_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
+  );
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -378,6 +393,7 @@ export const sshConnectionsConfig = {
  * @return MCP 响应，包含 SSH 连接信息
  */
 export async function sshConnectionsHandler(args: { session_id: string }) {
+  logger.info(`[ssh_shell_connection] session_id=${args.session_id}`);
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
@@ -474,6 +490,9 @@ export async function sshShellLoginHandler(args: {
   key?: string;
   timeout?: number;
 }) {
+  logger.info(
+    `[ssh_shell_login] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 1500} key=${args.key ? "***" : "(none)"}`
+  );
   const config: SSHShellConfig = getSSHConfig(args.device);
   const stepDelay = args.timeout ?? 1500;
 

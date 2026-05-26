@@ -4,7 +4,13 @@
     "embedded-board": {
       "type": "local",
       "command": ["node", "./bin/embedded-mcp-toolkit-cli.js"],
-      "enabled": true
+      "enabled": true,
+      "environment": {
+        "DEVICE": "board-b",
+        "BOARD_CONFIG_PATH": "./.opencode/config.yaml",
+        "LOG_SAVE": "1",
+        "LOG_DIR": "./log"
+      }
     }
   }
 }

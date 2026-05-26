@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { text } from "../helper/mcp_helper.js";
+import { logger } from "../common/logger.js";
 
 // ── 读取 package.json 获取版本信息 ──
 
@@ -25,6 +26,7 @@ export const versionConfig = {
 // ── 实现 ──
 
 export async function versionHandler() {
+  logger.info("[version_tool]");
   const info = [
     `Name:    ${pkg.name}`,
     `Version: ${pkg.version}`,

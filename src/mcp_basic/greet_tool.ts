@@ -1,5 +1,6 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../helper/mcp_helper.js";
+import { logger } from "../common/logger.js";
 
 // ── 声明 ──
 
@@ -15,5 +16,6 @@ export const greetConfig = {
 // ── 实现 ──
 
 export async function greetHandler(args: { name: string }) {
+  logger.info(`[greet_tool] name=${args.name}`);
   return { content: [text(`Hello, ${args.name}!`)] };
 }

@@ -8,7 +8,9 @@
       ],
       "env": {
         "DEVICE": "board-b",
-        "BOARD_CONFIG_PATH": "./.claude/config.yaml"
+        "BOARD_CONFIG_PATH": "./.claude/config.yaml",
+        "LOG_SAVE": "0",
+        "LOG_DIR": "./log"
       }
     }
   }

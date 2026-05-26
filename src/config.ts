@@ -1,5 +1,7 @@
 import { readFileSync } from "fs";
+import { resolve } from "path";
 import { load } from "js-yaml";
+import { logger } from "./common/logger.js";
 import type { SSHShellConfig } from "./ssh.js";
 import type { SerialShellConfig } from "./serial.js";
 import type { KeyProviderConfig } from "./common/key-provider.js";
@@ -44,10 +46,13 @@ let _cached: RootConfig | null = null;
 function loadConfig(): RootConfig {
   if (_cached) return _cached;
   const configPath = process.env.BOARD_CONFIG_PATH ?? "config.yaml";
+  const absPath = resolve(configPath);
   try {
-    _cached = load(readFileSync(configPath, "utf8")) as RootConfig;
+    _cached = load(readFileSync(absPath, "utf8")) as RootConfig;
+    logger.info(`Config loaded: ${absPath}`);
   } catch {
     _cached = {};
+    logger.warn(`Config not found or invalid: ${absPath}`);
   }
   return _cached!;
 }
@@ -61,7 +66,9 @@ function loadConfig(): RootConfig {
  *   DEVICE=board-b node out/index.js ssh
  */
 export function resolveDeviceName(): string {
-  return process.env.DEVICE ?? loadConfig().default ?? "board-a";
+  const deviceName = process.env.DEVICE ?? loadConfig().default ?? "board-a";
+  logger.info(`Device resolved: ${deviceName}`);
+  return deviceName;
 }
 
 /**
@@ -84,10 +91,10 @@ export function getSSHConfig(name?: string): SSHShellConfig {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   const yaml = device.ssh ?? {};
   return {
-    host: process.env.BOARD_HOST ?? yaml.host ?? "10.29.78.13",
+    host: process.env.BOARD_HOST ?? yaml.host ?? "0.0.0.0",
     port: parseInt(process.env.BOARD_PORT ?? String(yaml.port ?? 22), 10),
     username: process.env.BOARD_USERNAME ?? yaml.username ?? "root",
-    password: process.env.BOARD_PASSWORD ?? yaml.password ?? "abcd1245",
+    password: process.env.BOARD_PASSWORD ?? yaml.password ?? "root",
   };
 }
 
@@ -102,7 +109,7 @@ export function getSerialConfig(name?: string): SerialShellConfig {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   const yaml = device.serial ?? {};
   return {
-    port: process.env.SERIAL_PORT ?? yaml.port ?? "COM4",
+    port: process.env.SERIAL_PORT ?? yaml.port ?? "COM0",
     baudRate: parseInt(process.env.SERIAL_BAUDRATE ?? String(yaml.baudRate ?? 115200), 10),
     dataBits: yaml.dataBits as 8 | 5 | 6 | 7 | undefined,
     stopBits: yaml.stopBits as 1 | 1.5 | 2 | undefined,

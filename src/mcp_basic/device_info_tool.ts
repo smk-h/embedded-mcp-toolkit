@@ -1,6 +1,7 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { getAllConfig, listDevices } from "../config.js";
 import { text } from "../helper/mcp_helper.js";
+import { logger } from "../common/logger.js";
 
 // ── 声明 ──
 
@@ -20,6 +21,7 @@ export const deviceInfoConfig = {
 // ── 实现 ──
 
 export async function deviceInfoHandler(args: { device?: string }) {
+  logger.info(`[device_info_tool] device=${args.device ?? "(default)"}`);
   const devices = listDevices();
 
   // 若传入了设备名，校验其是否存在
