@@ -94,11 +94,11 @@ class Logger {
       .join(" ");
   }
 
-  /** 普通信息日志 */
+  /** 普通信息日志（终端输出到 stderr，避免污染 MCP stdio 协议通道） */
   info(...args: unknown[]): void {
     const msg = this.format(args);
     this.write("INFO", msg);
-    console.log(...args);
+    process.stderr.write(`${msg}\n`);
   }
 
   /** 错误日志 */
