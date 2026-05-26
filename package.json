@@ -1,5 +1,5 @@
 {
-  "name": "embedded-mcp-toolkit",
+  "name": "@smai-kit/embedded-mcp-toolkit",
   "version": "0.1.0",
   "description": "MCP Server for remote management of embedded Linux boards via SSH",
   "type": "module",
@@ -17,7 +17,10 @@
     "psh-demo-serial": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-serial",
     "format:check": "prettier ./src --check",
     "format:fix": "prettier ./src --write",
-    "eslint:fix": "eslint --fix -c eslint.config.ts src"
+    "eslint:fix": "eslint --fix -c eslint.config.ts src",
+    "pack-dry-run": "npm pack --dry-run",
+    "pack-tgz": "npm pack",
+    "pack-list": "tar -tzf smai-kit-embedded-mcp-toolkit-0.1.0.tgz"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
@@ -41,5 +44,8 @@
     "rimraf": "^6.1.3",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.60.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

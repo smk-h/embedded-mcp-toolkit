@@ -9,3 +9,7 @@ config.yaml
 
 !.claude/settings.local.json
 *.log
+
+# npm token — 禁止提交含认证信息的 .npmrc
+.npmrc
+*embedded-mcp-toolkit*.tgz

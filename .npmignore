@@ -1,0 +1,27 @@
+# npm 发布忽略的文件
+.env
+.cnb
+.roo
+.vscode
+
+client
+my-psh
+node_modules
+src
+test
+
+.cnb.yml
+.editorconfig
+.prettierignore
+.prettierrc.cjs
+.npmignore
+eslint.config.ts
+tsconfig.json
+
+.claude/start-claude.bat
+.claude/start-claude.ps1
+
+configs/config.yaml
+*.log
+
+*embedded-mcp-toolkit*.tgz
