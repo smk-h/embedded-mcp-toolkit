@@ -139,15 +139,21 @@ export function getKeyProviderConfig(
     scope === "ssh"
       ? (device.ssh?.keyProvider ?? {})
       : (device.serial?.keyProvider ?? {});
+  const challengeFilePath =
+    process.env.CHALLENGE_FILE ?? yaml.challengeFilePath ?? "challenge.txt";
+  const keyFilePath =
+    process.env.KEY_FILE ?? yaml.keyFilePath ?? "password_input.txt";
+
+  logger.info(`[KeyProvider/${scope}] challenge file: ${resolve(challengeFilePath)}`);
+  logger.info(`[KeyProvider/${scope}] key file:       ${resolve(keyFilePath)}`);
+
   return {
     mode:
       (process.env.KEY_PROVIDER as "file" | "terminal") ??
       yaml.mode ??
       "terminal",
-    challengeFilePath:
-      process.env.CHALLENGE_FILE ?? yaml.challengeFilePath ?? "challenge.txt",
-    keyFilePath:
-      process.env.KEY_FILE ?? yaml.keyFilePath ?? "password_input.txt",
+    challengeFilePath,
+    keyFilePath,
     pollInterval: yaml.pollInterval,
     timeout: yaml.timeout,
   };

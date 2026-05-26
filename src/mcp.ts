@@ -39,7 +39,7 @@ for (const { name, config, handler } of mcpSerialTools) {
 // ── 启动入口 ───────────────────────────────────────────────
 
 export async function startMcpServer() {
-  logger.info("MCP server starting...");
+  logger.info(`MCP server starting... cwd: ${process.cwd()}`);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
