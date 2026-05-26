@@ -1,0 +1,35 @@
+# IDEs
+.idea/
+.vscode/
+.claude/
+.cnb/
+.opencode/
+.roo/
+
+# Project files
+LICENSE
+README.md
+bin
+out
+test
+js
+src-old
+docs
+log
+my-psh
+
+# For development
+.gitignore
+.prettierignore
+.prettierrc
+.mcp.json
+
+node_modules/
+
+package.json
+package-lock.json
+
+tsconfig.json
+tsconfig.prod.json
+
+eslint.config.mjs

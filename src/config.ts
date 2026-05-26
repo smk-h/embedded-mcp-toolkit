@@ -110,7 +110,10 @@ export function getSerialConfig(name?: string): SerialShellConfig {
   const yaml = device.serial ?? {};
   return {
     port: process.env.SERIAL_PORT ?? yaml.port ?? "COM0",
-    baudRate: parseInt(process.env.SERIAL_BAUDRATE ?? String(yaml.baudRate ?? 115200), 10),
+    baudRate: parseInt(
+      process.env.SERIAL_BAUDRATE ?? String(yaml.baudRate ?? 115200),
+      10
+    ),
     dataBits: yaml.dataBits as 8 | 5 | 6 | 7 | undefined,
     stopBits: yaml.stopBits as 1 | 1.5 | 2 | undefined,
     parity: yaml.parity,
@@ -127,13 +130,24 @@ export function getSerialConfig(name?: string): SerialShellConfig {
  * @param scope "ssh" 或 "serial"，选择从哪个配置段读取
  * @param name  设备名（可选，默认使用 resolveDeviceName() 解析）
  */
-export function getKeyProviderConfig(scope: "ssh" | "serial", name?: string): KeyProviderConfig {
+export function getKeyProviderConfig(
+  scope: "ssh" | "serial",
+  name?: string
+): KeyProviderConfig {
   const device = getDeviceConfig(name ?? resolveDeviceName());
-  const yaml: KeyProviderYaml = scope === "ssh" ? (device.ssh?.keyProvider ?? {}) : (device.serial?.keyProvider ?? {});
+  const yaml: KeyProviderYaml =
+    scope === "ssh"
+      ? (device.ssh?.keyProvider ?? {})
+      : (device.serial?.keyProvider ?? {});
   return {
-    mode: (process.env.KEY_PROVIDER as "file" | "terminal") ?? yaml.mode ?? "terminal",
-    challengeFilePath: process.env.CHALLENGE_FILE ?? yaml.challengeFilePath ?? "challenge.txt",
-    keyFilePath: process.env.KEY_FILE ?? yaml.keyFilePath ?? "password_input.txt",
+    mode:
+      (process.env.KEY_PROVIDER as "file" | "terminal") ??
+      yaml.mode ??
+      "terminal",
+    challengeFilePath:
+      process.env.CHALLENGE_FILE ?? yaml.challengeFilePath ?? "challenge.txt",
+    keyFilePath:
+      process.env.KEY_FILE ?? yaml.keyFilePath ?? "password_input.txt",
     pollInterval: yaml.pollInterval,
     timeout: yaml.timeout,
   };
