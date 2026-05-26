@@ -25,6 +25,7 @@
 | `upload_file` | 上传文件 | `local_path`, `remote_path` |
 | `shell_unlock` | 执行解锁序列 | `timeout?`(毫秒) |
 | `shell_detect_state` | 检测 shell 状态 | `timeout?`(毫秒) |
+| `ssh_shell_login` | 一键登录（连接+检测+解锁） | `device?`, `key?`, `timeout?`(毫秒) |
 
 ### 串口工具（board-alpha）
 
@@ -80,6 +81,21 @@
 ### 发送控制字符
 ```json
 {"name": "serial_send", "arguments": {"data": "\x03"}}
+```
+
+### 一键登录（自动连接+PSH检测+解锁）
+```json
+{"name": "ssh_shell_login", "arguments": {}}
+```
+
+带密钥一键登录：
+```json
+{"name": "ssh_shell_login", "arguments": {"key": "my_unlock_password"}}
+```
+
+指定设备一键登录：
+```json
+{"name": "ssh_shell_login", "arguments": {"device": "board-b", "key": "my_unlock_password"}}
 ```
 
 ## 快捷技能（Slash Commands）

@@ -24,7 +24,6 @@ export interface SerialShellConfig {
   lineEnding?: string;
 }
 
-
 /**
  * @brief 串口交互式 Shell 管理器
  *
@@ -36,8 +35,8 @@ export class SerialShell {
   #serialPort: SerialPort | null = null;
   #buffer = "";
 
-  #collecting = false;     // 是否开启输出收集，open/write 控制
-  #overflow = false;       // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
+  #collecting = false; // 是否开启输出收集，open/write 控制
+  #overflow = false; // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
   #config: SerialShellConfig; // 串口连接配置
 
   /**
@@ -46,6 +45,11 @@ export class SerialShell {
    */
   constructor(config: SerialShellConfig) {
     this.#config = config;
+  }
+
+  /** @brief 获取当前串口设备路径 */
+  getPort(): string {
+    return this.#config.port;
   }
 
   /**
@@ -181,7 +185,11 @@ export class SerialShell {
           return;
         }
         const timeout = setTimeout(() => {
-          try { port.destroy(); } catch { /* ignore */ }
+          try {
+            port.destroy();
+          } catch {
+            /* ignore */
+          }
           resolve();
         }, 2000);
         port.close((err) => {
@@ -205,12 +213,16 @@ export class SerialShell {
  *
  * @param config 串口连接配置
  */
-export async function interactiveSerialShell(config: SerialShellConfig): Promise<void> {
+export async function interactiveSerialShell(
+  config: SerialShellConfig
+): Promise<void> {
   const shell = new SerialShell(config);
 
   const banner = await shell.open();
   if (banner) process.stdout.write(banner);
-  console.log("\n--- Serial shell ready. Send commands with write(), read() to get output. ---\n");
+  console.log(
+    "\n--- Serial shell ready. Send commands with write(), read() to get output. ---\n"
+  );
 
   await interactiveLoop(shell, "serial");
 }
@@ -237,7 +249,9 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
   // ===== 步骤 1：打开串口连接，读取启动信息（banner） =====
   console.log("[Step 1] === PSH Unlock Demo (Serial) ===\n");
 
-  console.log(`[Step 1] Opening ${config.port} @ ${config.baudRate ?? 115200} ...`);
+  console.log(
+    `[Step 1] Opening ${config.port} @ ${config.baudRate ?? 115200} ...`
+  );
   const shell = new SerialShell(config);
   const banner = await shell.open();
   console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitize(banner));
@@ -250,7 +264,9 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
   let detectOutput = banner;
 
   if (!handler) {
-    console.log("[Step 2] No PSH profile matched from banner, probing with echo...");
+    console.log(
+      "[Step 2] No PSH profile matched from banner, probing with echo..."
+    );
     shell.write("echo __PSH_PROBE__", 1);
     await new Promise((r) => setTimeout(r, 1500));
     const probeOutput = shell.read(1);
@@ -260,17 +276,26 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
   }
 
   if (!handler) {
-    console.log("[Step 2] No PSH profile matched — shell may already be unlocked or not a PSH device.");
+    console.log(
+      "[Step 2] No PSH profile matched — shell may already be unlocked or not a PSH device."
+    );
     await shell.close();
     return;
   }
-  console.log("[Step 2] Matched profile: %s (%s)\n", handler.profile.name, handler.profile.description);
+  console.log(
+    "[Step 2] Matched profile: %s (%s)\n",
+    handler.profile.name,
+    handler.profile.description
+  );
 
   // ===== 步骤 3：探测 PSH 当前状态 =====
   let detect = handler.detect(detectOutput);
   console.log("[Step 3] Detected state : %s", detect.state);
   console.log("[Step 3] Is PSH         : %s", detect.isPsh);
-  console.log("[Step 3] Challenge      : %s\n", detect.challengeCode ?? "(none)");
+  console.log(
+    "[Step 3] Challenge      : %s\n",
+    detect.challengeCode ?? "(none)"
+  );
 
   if (detect.state === PshState.UNKNOWN) {
     console.log("[Step 3] State is UNKNOWN, sending probe command...");
@@ -288,28 +313,43 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
       shell,
       "", // key 参数用不到（走 onKeyRequest 回调）
       1500,
-      (output: string) => keyProvider.getKey(output),
+      (output: string) => keyProvider.getKey(output)
     );
 
     console.log("[Step 4] Unlock result:");
     console.log("            success      : %s", result.success);
     console.log("            state        : %s", result.state);
-    console.log("            challenge    : %s", result.challengeCode ?? "(none)");
-    console.log("            attemptsLeft : %s", result.attemptsLeft ?? "(none)");
+    console.log(
+      "            challenge    : %s",
+      result.challengeCode ?? "(none)"
+    );
+    console.log(
+      "            attemptsLeft : %s",
+      result.attemptsLeft ?? "(none)"
+    );
     console.log("            error        : %s", result.error ?? "(none)");
 
     if (result.success) {
-      console.log("[Step 4] Unlock succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n");
+      console.log(
+        "[Step 4] Unlock succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n"
+      );
       await interactiveLoop(shell, "serial");
     } else if (result.attemptsLeft && result.attemptsLeft > 0) {
-      console.log("[Step 4] Hint: wrong password, %d attempt(s) remaining. Re-run to try again.", result.attemptsLeft);
+      console.log(
+        "[Step 4] Hint: wrong password, %d attempt(s) remaining. Re-run to try again.",
+        result.attemptsLeft
+      );
     }
   } else if (detect.state === PshState.READY) {
     console.log("[Step 4] Shell is already unlocked, no action needed.");
   } else if (detect.state === PshState.ERROR) {
-    console.log("[Step 4] Shell is in ERROR state (previous unlock may have failed).");
+    console.log(
+      "[Step 4] Shell is in ERROR state (previous unlock may have failed)."
+    );
   } else if (detect.state === PshState.UNLOCKING) {
-    console.log("[Step 4] Shell is in UNLOCKING state — a password prompt was left dangling.");
+    console.log(
+      "[Step 4] Shell is in UNLOCKING state — a password prompt was left dangling."
+    );
   }
 
   // ===== 步骤 5：解锁后验证（已在步骤 4 内完成解锁后验证） =====

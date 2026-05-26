@@ -12,7 +12,7 @@ end_of_line = lf
 insert_final_newline = true  
 
 # 用大括号展开符号匹配多个文件，设置所有以.js,.ts结尾的文件
-[*.{js,ts,mts,mjs,json}]
+[*.{js,cjs,ts,mts,mjs,json}]
 indent_style = space
 indent_size = 2
 

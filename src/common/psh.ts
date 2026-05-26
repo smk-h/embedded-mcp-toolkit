@@ -30,11 +30,11 @@ export enum PshState {
  *   步骤2: send=密钥(userInput) → 期望匹配 "Enter Debug Mode"
  */
 export interface PshUnlockStep {
-  send: string;             // 要发送的命令（userInput 步骤留空，由 unlock() 的 key 参数填充）
-  expectPattern: string;    // 发送后期望匹配的正则（用于判断该步是否成功）
-  timeoutMs: number;        // 本步超时（毫秒）
-  description: string;      // 步骤描述
-  userInput?: boolean;      // 是否为用户输入步骤（密钥），true 时 send 字段忽略，改用 key 参数
+  send: string; // 要发送的命令（userInput 步骤留空，由 unlock() 的 key 参数填充）
+  expectPattern: string; // 发送后期望匹配的正则（用于判断该步是否成功）
+  timeoutMs: number; // 本步超时（毫秒）
+  description: string; // 步骤描述
+  userInput?: boolean; // 是否为用户输入步骤（密钥），true 时 send 字段忽略，改用 key 参数
 }
 
 /**
@@ -44,8 +44,8 @@ export interface PshUnlockStep {
  * 让解锁逻辑根据特性做条件分支，而非硬编码设备名判断。
  */
 export interface PshFeatures {
-  bypassOnNonTty?: boolean;   // 非 TTY 环境下是否可绕过（某些 PSH 在非交互终端下行为不同）
-  signalResistant?: boolean;  // 输出中是否含信号干扰字符（串口连接时某些设备会混入控制字符）
+  bypassOnNonTty?: boolean; // 非 TTY 环境下是否可绕过（某些 PSH 在非交互终端下行为不同）
+  signalResistant?: boolean; // 输出中是否含信号干扰字符（串口连接时某些设备会混入控制字符）
 }
 
 /**
@@ -58,16 +58,17 @@ export interface PshFeatures {
 export interface PshProfile {
   name: string;
   description: string;
-  statePatterns: {                       // 各状态的正则匹配模式，用于从终端输出中识别当前 PSH 状态
-    ready: string[];                     // 已解锁的特征（如 "built-in shell (ash)"、"Enter Debug Mode"）
-    locked: string[];                    // 锁定状态的特征（如 "Protect Shell (psh)"、"Not Supported"）
-    unlocking: string[];                 // 等待密码输入的特征（如 "Password:"、"key>"）
-    error: string[];                     // 解锁失败的特征（如 "Incorrect Password"、"Invalid key"）
+  statePatterns: {
+    // 各状态的正则匹配模式，用于从终端输出中识别当前 PSH 状态
+    ready: string[]; // 已解锁的特征（如 "built-in shell (ash)"、"Enter Debug Mode"）
+    locked: string[]; // 锁定状态的特征（如 "Protect Shell (psh)"、"Not Supported"）
+    unlocking: string[]; // 等待密码输入的特征（如 "Password:"、"key>"）
+    error: string[]; // 解锁失败的特征（如 "Incorrect Password"、"Invalid key"）
   };
-  unlockSequence: PshUnlockStep[];       // 解锁交互步骤序列
-  challengeCodePattern?: string;         // Challenge Code 提取正则（psh: PSH-XXXX 格式；psh_busybox: Base64 字符串）
-  features?: PshFeatures;                // 行为特性开关，处理不同设备的细微差异
-  allowedCommands?: string[];            // 锁定状态下允许执行的命令列表（如 help、dmesg、debug）
+  unlockSequence: PshUnlockStep[]; // 解锁交互步骤序列
+  challengeCodePattern?: string; // Challenge Code 提取正则（psh: PSH-XXXX 格式；psh_busybox: Base64 字符串）
+  features?: PshFeatures; // 行为特性开关，处理不同设备的细微差异
+  allowedCommands?: string[]; // 锁定状态下允许执行的命令列表（如 help、dmesg、debug）
 }
 
 /**
@@ -87,14 +88,14 @@ export interface PshUnlockResult {
   success: boolean;
   state: PshState;
   output: string;
-  challengeCode: string | null;   // 提取到的 Challenge Code（psh: PSH-XXXX；psh_busybox: Base64 字符串）
-  attemptsLeft: number | null;    // 剩余尝试次数（如 "4 Times Left" 中的 4），密码错误时有效
+  challengeCode: string | null; // 提取到的 Challenge Code（psh: PSH-XXXX；psh_busybox: Base64 字符串）
+  attemptsLeft: number | null; // 剩余尝试次数（如 "4 Times Left" 中的 4），密码错误时有效
   error?: string;
 }
 
 /** PSH 状态检测结果 */
 export interface PshDetectResult {
-  isPsh: boolean;         // 当前终端是否为 PSH（通过 locked 特征判断）
+  isPsh: boolean; // 当前终端是否为 PSH（通过 locked 特征判断）
   state: PshState;
   output: string;
   challengeCode: string | null;
@@ -121,29 +122,18 @@ const BUILTIN_PROFILES: Record<string, PshProfile> = {
    */
   psh: {
     name: "psh",
-    description: "Protect Shell v2.1 - Davinci locked shell with Challenge Code (PSH-XXXX format)",
+    description:
+      "Protect Shell v2.1 - Davinci locked shell with Challenge Code (PSH-XXXX format)",
     statePatterns: {
-      ready: [
-        "PSH_AUTH=1",
-        "built-in shell \\(ash\\)",
-        "Access Granted",
-      ],
+      ready: ["PSH_AUTH=1", "built-in shell \\(ash\\)", "Access Granted"],
       locked: [
         "System is LOCKED",
         "^locked>\\s*$",
         "Command not supported in locked mode",
         "Type 'debug' to unlock",
       ],
-      unlocking: [
-        "Enter key to unlock",
-        "^key>\\s*$",
-        "Password:\\s*$",
-      ],
-      error: [
-        "Invalid key",
-        "Returning to locked mode",
-        "Access denied",
-      ],
+      unlocking: ["Enter key to unlock", "^key>\\s*$", "Password:\\s*$"],
+      error: ["Invalid key", "Returning to locked mode", "Access denied"],
     },
     challengeCodePattern: "PSH-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}",
     unlockSequence: [
@@ -190,20 +180,16 @@ const BUILTIN_PROFILES: Record<string, PshProfile> = {
    */
   psh_busybox: {
     name: "psh_busybox",
-    description: "Protect Shell (BusyBox) - locked shell with QR code + Base64 challenge",
+    description:
+      "Protect Shell (BusyBox) - locked shell with QR code + Base64 challenge",
     statePatterns: {
-      ready: [
-        "Enter Debug Mode",
-        "built-in shell \\(ash\\)",
-      ],
+      ready: ["Enter Debug Mode", "built-in shell \\(ash\\)"],
       locked: [
         "Protect Shell \\(psh\\)",
         "Not Supported.*Try 'help'",
         "davinci system commands",
       ],
-      unlocking: [
-        "Password:\\s*$",
-      ],
+      unlocking: ["Password:\\s*$"],
       error: [
         "Incorrect Password",
         "input invaild len param",
@@ -220,7 +206,8 @@ const BUILTIN_PROFILES: Record<string, PshProfile> = {
       },
       {
         send: "",
-        expectPattern: "Enter Debug Mode|built-in shell|Incorrect Password|Times Left",
+        expectPattern:
+          "Enter Debug Mode|built-in shell|Incorrect Password|Times Left",
         timeoutMs: 15000,
         description: "Submit unlock password",
         userInput: true,
@@ -260,7 +247,9 @@ function buildProfileFromEnv(): PshProfile | null {
   }
 
   const statePatterns: PshProfile["statePatterns"] = {
-    ready: readyPrompt ? readyPrompt.split("|").filter(Boolean) : [".*[@:].*[#$]\\s*$"],
+    ready: readyPrompt
+      ? readyPrompt.split("|").filter(Boolean)
+      : [".*[@:].*[#$]\\s*$"],
     locked: lockedPrompt
       ? lockedPrompt.split("|").filter(Boolean)
       : ["locked>"],
@@ -281,7 +270,9 @@ function buildProfileFromEnv(): PshProfile | null {
           send: userInput ? "" : send,
           expectPattern: (parts[1] ?? ".*").trim(),
           timeoutMs: 5000,
-          description: userInput ? `Step ${idx + 1} (user key)` : `Step ${idx + 1}`,
+          description: userInput
+            ? `Step ${idx + 1} (user key)`
+            : `Step ${idx + 1}`,
           userInput,
         };
       })
@@ -332,7 +323,9 @@ export class PshHandler {
     this.#compiled = {
       ready: profile.statePatterns.ready.map((p) => new RegExp(p, "im")),
       locked: profile.statePatterns.locked.map((p) => new RegExp(p, "im")),
-      unlocking: profile.statePatterns.unlocking.map((p) => new RegExp(p, "im")),
+      unlocking: profile.statePatterns.unlocking.map(
+        (p) => new RegExp(p, "im")
+      ),
       error: profile.statePatterns.error.map((p) => new RegExp(p, "im")),
       challenge: profile.challengeCodePattern
         ? new RegExp(profile.challengeCodePattern, "im")
@@ -381,8 +374,10 @@ export class PshHandler {
   detectState(output: string): PshState {
     if (this.#compiled.ready.some((p) => p.test(output))) return PshState.READY;
     if (this.#compiled.error.some((p) => p.test(output))) return PshState.ERROR;
-    if (this.#compiled.unlocking.some((p) => p.test(output))) return PshState.UNLOCKING;
-    if (this.#compiled.locked.some((p) => p.test(output))) return PshState.LOCKED;
+    if (this.#compiled.unlocking.some((p) => p.test(output)))
+      return PshState.UNLOCKING;
+    if (this.#compiled.locked.some((p) => p.test(output)))
+      return PshState.LOCKED;
     return PshState.UNKNOWN;
   }
 
@@ -469,7 +464,7 @@ export class PshHandler {
     channel: PshChannel,
     key: string,
     stepDelay = 1000,
-    onKeyRequest?: (output: string) => string | Promise<string>,
+    onKeyRequest?: (output: string) => string | Promise<string>
   ): Promise<PshUnlockResult> {
     const sequence = this.#profile.unlockSequence;
     if (!sequence || sequence.length === 0) {
@@ -552,9 +547,10 @@ export class PshHandler {
       output: lastOutput,
       challengeCode: this.extractChallengeCode(lastOutput),
       attemptsLeft: this.extractAttemptsLeft(lastOutput),
-      error: finalState !== PshState.READY
-        ? `Unlock sequence completed but state is ${finalState}`
-        : undefined,
+      error:
+        finalState !== PshState.READY
+          ? `Unlock sequence completed but state is ${finalState}`
+          : undefined,
     };
   }
 
@@ -577,7 +573,7 @@ export class PshHandler {
   async probeState(
     channel: PshChannel,
     probeCmd = "echo __PSH_STATE_PROBE__",
-    timeoutMs = 3000,
+    timeoutMs = 3000
   ): Promise<PshDetectResult> {
     // 第一步：静默读取已有输出，尝试判断状态
     const pending = channel.read(0);
@@ -608,15 +604,27 @@ export class PshHandler {
     if (/[@:].*[#$]\s*$/m.test(output) || /PSH_AUTH=1/.test(output)) {
       return PshState.READY;
     }
-    if (/invalid\s+(key|password|code)/i.test(output) || /access\s+denied/i.test(output) ||
-        /incorrect\s+password/i.test(output)) {
+    if (
+      /invalid\s+(key|password|code)/i.test(output) ||
+      /access\s+denied/i.test(output) ||
+      /incorrect\s+password/i.test(output)
+    ) {
       return PshState.ERROR;
     }
-    if (/enter\s+(key|password|code|pin)/i.test(output) || /^key>\s*$/m.test(output) || /^password:\s*$/im.test(output)) {
+    if (
+      /enter\s+(key|password|code|pin)/i.test(output) ||
+      /^key>\s*$/m.test(output) ||
+      /^password:\s*$/im.test(output)
+    ) {
       return PshState.UNLOCKING;
     }
-    if (/locked/i.test(output) || /system\s+is\s+locked/i.test(output) || /^locked>\s*$/m.test(output) ||
-        /command not supported/i.test(output) || /not available in/i.test(output)) {
+    if (
+      /locked/i.test(output) ||
+      /system\s+is\s+locked/i.test(output) ||
+      /^locked>\s*$/m.test(output) ||
+      /command not supported/i.test(output) ||
+      /not available in/i.test(output)
+    ) {
       return PshState.LOCKED;
     }
     return PshState.UNKNOWN;
@@ -689,7 +697,9 @@ export class PshHandler {
    */
   static matchFromOutput(output: string): PshHandler | null {
     for (const [, profile] of Object.entries(BUILTIN_PROFILES)) {
-      const locked = profile.statePatterns.locked.map((p) => new RegExp(p, "im"));
+      const locked = profile.statePatterns.locked.map(
+        (p) => new RegExp(p, "im")
+      );
       if (locked.some((p) => p.test(output))) {
         return new PshHandler(profile);
       }

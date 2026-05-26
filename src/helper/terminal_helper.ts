@@ -18,17 +18,19 @@
  * @return 清洗后的安全字符串，可安全打印到终端
  */
 export function sanitize(raw: string): string {
-  return raw
-    // 先归一化 CRLF → LF
-    .replace(/\r\n/g, "\n")
-    // 孤立的 CR 替换为 LF
-    .replace(/\r/g, "\n")
-    // 移除 ANSI CSI 序列：ESC[ + 参数 + 字母
-    // 匹配 \x1b[...m (SGR), \x1b[...A/B/C/D/H/J/K 等光标控制
-    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
-    // 移除其他 ANSI 序列（如 ESC]...BEL 等）
-    .replace(/\x1b\][^\x07]*\x07/g, "")
-    .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "")
-    // 移除除 \n \t 之外的控制字符（ASCII 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F）
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  return (
+    raw
+      // 先归一化 CRLF → LF
+      .replace(/\r\n/g, "\n")
+      // 孤立的 CR 替换为 LF
+      .replace(/\r/g, "\n")
+      // 移除 ANSI CSI 序列：ESC[ + 参数 + 字母
+      // 匹配 \x1b[...m (SGR), \x1b[...A/B/C/D/H/J/K 等光标控制
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "") // eslint-disable-line no-control-regex
+      // 移除其他 ANSI 序列（如 ESC]...BEL 等）
+      .replace(/\x1b\][^\x07]*\x07/g, "") // eslint-disable-line no-control-regex
+      .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "") // eslint-disable-line no-control-regex
+      // 移除除 \n \t 之外的控制字符（ASCII 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F）
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "") // eslint-disable-line no-control-regex
+  );
 }

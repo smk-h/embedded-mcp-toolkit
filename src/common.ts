@@ -1,7 +1,6 @@
 /** @brief 输出缓冲区最大容量（字节） */
 export const MAX_BUFFER_SIZE = 1024 * 1024; // 16KB
 
-
 /**
  * @brief 交互式 Shell 的读写接口
  *
@@ -23,7 +22,10 @@ export interface InteractiveShell {
  * @param shell  实现 InteractiveShell 接口的 shell 实例
  * @param prefix 命令提示符前缀（如 "ssh"、"serial"）
  */
-export async function interactiveLoop(shell: InteractiveShell, prefix: string): Promise<void> {
+export async function interactiveLoop(
+  shell: InteractiveShell,
+  prefix: string
+): Promise<void> {
   const { createInterface } = await import("readline");
   const rl = createInterface({
     input: process.stdin,

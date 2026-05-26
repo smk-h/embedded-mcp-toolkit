@@ -3,40 +3,12 @@
   "mcpServers": {
     "embedded-board": {
       "command": "node",
-      "args": ["./out/index.js"],
+      "args": [
+        "./bin/embedded-mcp-toolkit-cli.js"
+      ],
       "env": {
-        "BOARD_HOST": "192.168.16.103",
-        "BOARD_PORT": "22",
-        "BOARD_USERNAME": "root",
-        "BOARD_PASSWORD": "root"
-      }
-    },
-    "board-beta": {
-      "command": "node",
-      "args": ["./out/index.js"],
-      "env": {
-        "BOARD_HOST": "192.168.16.105",
-        "BOARD_PORT": "22",
-        "BOARD_USERNAME": "root",
-        "BOARD_PASSWORD": "root",
-        "BOARD_HOST_KEY_ALGORITHMS": "ssh-rsa",
-        "BOARD_SHELL_PROFILE": "psh",
-        "BOARD_CHALLENGE_FILE": "./challenge.txt",
-        "BOARD_PASSWORD_FILE": "./password_input.txt"
-      }
-    },
-    "board-alpha": {
-      "command": "node",
-      "args": ["./out/index.js"],
-      "env": {
-        "SERIAL_PORT": "COM3",
-        "SERIAL_BAUDRATE": "115200",
-        "SERIAL_DATABITS": "8",
-        "SERIAL_STOPBITS": "1",
-        "SERIAL_PARITY": "none",
-        "BOARD_SHELL_PROFILE": "psh",
-        "BOARD_CHALLENGE_FILE": "./challenge.txt",
-        "BOARD_PASSWORD_FILE": "./password_input.txt"
+        "DEVICE": "board-a",
+        "BOARD_CONFIG_PATH": "D:/Temp/embedded-mcp-toolkit/.claude/config.yaml"
       }
     }
   }

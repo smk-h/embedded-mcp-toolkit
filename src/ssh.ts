@@ -24,7 +24,6 @@ export interface SSHShellConfig {
   passphrase?: string;
 }
 
-
 /**
  * @brief SSH 交互式 Shell 管理器
  *
@@ -37,8 +36,8 @@ export class SSHShell {
   #stream: ClientChannel | null = null;
   #buffer = "";
 
-  #collecting = false;     // 是否开启输出收集，open/write 控制 
-  #overflow = false;       // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
+  #collecting = false; // 是否开启输出收集，open/write 控制
+  #overflow = false; // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
   #config: SSHShellConfig; // SSH 连接配置
 
   /**
@@ -84,11 +83,12 @@ export class SSHShell {
    * @return shell 启动时的初始输出（banner / prompt）
    */
   async open(): Promise<string> {
-    const client = new Client();
+    const client = new Client(); // 创建 ssh2 Client
 
     await new Promise<void>((resolve, reject) => {
       client.on("ready", () => resolve());
       client.on("error", reject);
+      // 用配置发起 TCP + SSH 握手连接
       client.connect({
         host: this.#config.host,
         port: this.#config.port ?? 22,
@@ -102,14 +102,14 @@ export class SSHShell {
 
     this.#client = client;
     this.#collecting = false;
-
+    // 连接成功后分配 PTY 伪终端（xterm, 80x24），启动远端 shell
     const stream = await new Promise<ClientChannel>((resolve, reject) => {
       client.shell({ term: "xterm", cols: 80, rows: 24 }, (err, stream) => {
         if (err) return reject(err);
         resolve(stream);
       });
     });
-
+    // 监听 stream 的 data/stderr 事件，收集输出到内部缓冲区
     stream.on("data", (data: Buffer) => {
       this.#appendBuffer(data.toString());
     });
@@ -124,12 +124,12 @@ export class SSHShell {
 
     // 收集 banner 后停止
     this.#collecting = true;
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 500)); // 等待 500ms 收集 banner（登录提示、motd 等），然后停止收集
     const banner = this.#buffer;
     this.#buffer = "";
     this.#collecting = false;
     this.#overflow = false;
-    return banner;
+    return banner; // 返回收集到的 banner 文本
   }
 
   /**
@@ -207,7 +207,9 @@ export async function interactiveShell(config: SSHShellConfig): Promise<void> {
 
   const banner = await shell.open();
   if (banner) process.stdout.write(banner);
-  console.log("\n--- SSH shell ready. Send commands with write(), read() to get output. ---\n");
+  console.log(
+    "\n--- SSH shell ready. Send commands with write(), read() to get output. ---\n"
+  );
 
   await interactiveLoop(shell, "ssh");
 }
@@ -241,17 +243,26 @@ export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
   // ===== 步骤 2：自动识别 PSH profile =====
   const handler = PshHandler.matchFromOutput(banner);
   if (!handler) {
-    console.log("[Step 2] No PSH profile matched — shell may already be unlocked or not a PSH device.");
+    console.log(
+      "[Step 2] No PSH profile matched — shell may already be unlocked or not a PSH device."
+    );
     await shell.close();
     return;
   }
-  console.log("[Step 2] Matched profile: %s (%s)\n", handler.profile.name, handler.profile.description);
+  console.log(
+    "[Step 2] Matched profile: %s (%s)\n",
+    handler.profile.name,
+    handler.profile.description
+  );
 
   // ===== 步骤 3：探测当前状态 =====
   let detect = handler.detect(banner);
   console.log("[Step 3] Initial state : %s", detect.state);
   console.log("[Step 3] Is PSH        : %s", detect.isPsh);
-  console.log("[Step 3] Challenge     : %s\n", detect.challengeCode ?? "(none)");
+  console.log(
+    "[Step 3] Challenge     : %s\n",
+    detect.challengeCode ?? "(none)"
+  );
 
   if (detect.state === PshState.UNKNOWN) {
     console.log("[Step 3] State is UNKNOWN, sending probe command...");
@@ -269,28 +280,43 @@ export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
       shell,
       "", // key 参数用不到（走 onKeyRequest 回调）
       1500,
-      (output: string) => keyProvider.getKey(output),
+      (output: string) => keyProvider.getKey(output)
     );
 
     console.log("[Step 4] Unlock result:");
     console.log("            success      : %s", result.success);
     console.log("            state        : %s", result.state);
-    console.log("            challenge    : %s", result.challengeCode ?? "(none)");
-    console.log("            attemptsLeft : %s", result.attemptsLeft ?? "(none)");
+    console.log(
+      "            challenge    : %s",
+      result.challengeCode ?? "(none)"
+    );
+    console.log(
+      "            attemptsLeft : %s",
+      result.attemptsLeft ?? "(none)"
+    );
     console.log("            error        : %s", result.error ?? "(none)");
 
     if (result.success) {
-      console.log("[Step 4] Unlock succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n");
+      console.log(
+        "[Step 4] Unlock succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n"
+      );
       await interactiveLoop(shell, "ssh");
     } else if (result.attemptsLeft && result.attemptsLeft > 0) {
-      console.log("[Step 4] Hint: wrong password, %d attempt(s) remaining. Re-run to try again.", result.attemptsLeft);
+      console.log(
+        "[Step 4] Hint: wrong password, %d attempt(s) remaining. Re-run to try again.",
+        result.attemptsLeft
+      );
     }
   } else if (detect.state === PshState.READY) {
     console.log("[Step 4] Shell is already unlocked, no action needed.");
   } else if (detect.state === PshState.ERROR) {
-    console.log("[Step 4] Shell is in ERROR state (previous unlock may have failed).");
+    console.log(
+      "[Step 4] Shell is in ERROR state (previous unlock may have failed)."
+    );
   } else if (detect.state === PshState.UNLOCKING) {
-    console.log("[Step 4] Shell is in UNLOCKING state — a password prompt was left dangling.");
+    console.log(
+      "[Step 4] Shell is in UNLOCKING state — a password prompt was left dangling."
+    );
   }
 
   // ===== 步骤 5：解锁后验证（已在步骤 4 内完成） =====

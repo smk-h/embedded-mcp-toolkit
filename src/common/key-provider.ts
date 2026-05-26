@@ -1,8 +1,14 @@
-import { watchFile, unwatchFile, existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  watchFile,
+  unwatchFile,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { createInterface } from "node:readline";
 
 /**
- * @brief 
+ * @brief
  */
 export type KeyProviderMode = "file" | "terminal";
 
@@ -12,10 +18,10 @@ export type KeyProviderMode = "file" | "terminal";
 export interface KeyProviderConfig {
   mode: KeyProviderMode; // 密钥提供方式
   challengeFilePath?: string; // 挑战信息写入路径
-  keyFilePath?: string;  // 轮询密钥的文件路径
+  keyFilePath?: string; // 轮询密钥的文件路径
   pollInterval?: number; // 轮询间隔（毫秒），默认 500
-  timeout?: number;      // 超时（毫秒），默认 120000（2 分钟）
-  prompt?: string;       // 提示文本
+  timeout?: number; // 超时（毫秒），默认 120000（2 分钟）
+  prompt?: string; // 提示文本
 }
 
 /**
@@ -62,11 +68,16 @@ export class KeyProvider {
    * @return 用户/外部工具提供的解锁密钥
    */
   async #fromFile(output: string): Promise<string> {
-    const { challengeFilePath, keyFilePath, pollInterval, timeout } = this.#config;
+    const { challengeFilePath, keyFilePath, pollInterval, timeout } =
+      this.#config;
 
     // 写入挑战信息
     writeFileSync(challengeFilePath, output, "utf-8");
-    console.log("Challenge written to %s, waiting for key in %s ...", challengeFilePath, keyFilePath);
+    console.log(
+      "Challenge written to %s, waiting for key in %s ...",
+      challengeFilePath,
+      keyFilePath
+    );
 
     // 清空可能残留的旧密钥
     if (existsSync(keyFilePath)) {
@@ -115,7 +126,11 @@ export class KeyProvider {
         }
         if (Date.now() >= deadline) {
           clearInterval(checkTimeout);
-          finish(new Error(`KeyProvider timed out after ${timeout}ms waiting for ${keyFilePath}`));
+          finish(
+            new Error(
+              `KeyProvider timed out after ${timeout}ms waiting for ${keyFilePath}`
+            )
+          );
         }
       }, pollInterval);
     });
@@ -127,7 +142,10 @@ export class KeyProvider {
    * @return 用户输入的解锁密钥
    */
   async #fromTerminal(output: string): Promise<string> {
-    console.log("\n--- Challenge output from device ---\n%s\n----------------------------------\n", output);
+    console.log(
+      "\n--- Challenge output from device ---\n%s\n----------------------------------\n",
+      output
+    );
 
     return new Promise<string>((resolve) => {
       const rl = createInterface({
