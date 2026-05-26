@@ -43,8 +43,9 @@ let _cached: RootConfig | null = null;
 
 function loadConfig(): RootConfig {
   if (_cached) return _cached;
+  const configPath = process.env.BOARD_CONFIG_PATH ?? "config.yaml";
   try {
-    _cached = load(readFileSync("config.yaml", "utf8")) as RootConfig;
+    _cached = load(readFileSync(configPath, "utf8")) as RootConfig;
   } catch {
     _cached = {};
   }

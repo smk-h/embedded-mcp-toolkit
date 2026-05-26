@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__embedded-board__device_info_tool",
+      "mcp__embedded-board__ssh_shell_login",
+      "mcp__embedded-board__ssh_shell_connection",
+      "mcp__embedded-board__ssh_shell_close",
+      "mcp__embedded-board__serial_shell_login",
+      "mcp__embedded-board__serial_close",
+      "mcp__embedded-board__serial_exec"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "embedded-board"
+  ]
+}

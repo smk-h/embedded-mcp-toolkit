@@ -6,3 +6,5 @@ config.yaml
 .claude/.env
 .claude/start-claude.ps1
 .claude/start-claude.bat
+
+!.claude/settings.local.json

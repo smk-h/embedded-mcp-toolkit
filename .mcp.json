@@ -7,8 +7,8 @@
         "./bin/embedded-mcp-toolkit-cli.js"
       ],
       "env": {
-        "DEVICE": "board-a",
-        "BOARD_CONFIG_PATH": "D:/Temp/embedded-mcp-toolkit/.claude/config.yaml"
+        "DEVICE": "board-b",
+        "BOARD_CONFIG_PATH": "./.claude/config.yaml"
       }
     }
   }
