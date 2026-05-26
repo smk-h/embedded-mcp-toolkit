@@ -1,5 +1,7 @@
 # npm 发布忽略的文件
 .env
+.env.tmp
+.npmrc
 .cnb
 .roo
 .vscode
@@ -18,10 +20,20 @@ test
 eslint.config.ts
 tsconfig.json
 
+# Claude Code 敏感文件（含 token / 本地密钥，仅排除真实文件，.tmp 模板需发布）
 .claude/start-claude.bat
 .claude/start-claude.ps1
+.claude/.env
 
+# 设备配置（仅保留模板，真实配置不上传）
 configs/config.yaml
+log/
 *.log
 
 *embedded-mcp-toolkit*.tgz
+
+# OpenCode 本地开发文件
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/README.md
+.opencode/.gitignore
