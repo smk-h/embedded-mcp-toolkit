@@ -15,19 +15,19 @@ devices:
       username: "root"
       password: "root"
       keyProvider:
-        mode: "file"             # file: 通过文件 IPC 获取密钥; terminal: 终端交互输入
-        challengeFilePath: "challenge.txt"   # 挑战信息写入文件路径
-        keyFilePath: "password_input.txt"    # 轮询密钥的文件路径
-        pollInterval: 500                    # 轮询间隔（毫秒）
-        timeout: 120000                      # 超时（毫秒），默认 2 分钟
+        mode: "file" # file: 通过文件 IPC 获取密钥; terminal: 终端交互输入
+        challengeFilePath: "./configs/challenge.txt" # 挑战信息写入文件路径
+        keyFilePath: "./configs/password_input.txt" # 轮询密钥的文件路径
+        pollInterval: 500 # 轮询间隔（毫秒）
+        timeout: 120000 # 超时（毫秒），默认 2 分钟
     serial:
       port: "COM4"
       baudRate: 115200
       keyProvider:
         keyProvider:
         mode: "file"
-        challengeFilePath: "challenge.txt"
-        keyFilePath: "password_input.txt"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
         pollInterval: 500
         timeout: 120000
 
@@ -40,8 +40,8 @@ devices:
       password: "root"
       keyProvider:
         mode: "file"
-        challengeFilePath: "challenge.txt"
-        keyFilePath: "password_input.txt"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
         pollInterval: 500
         timeout: 120000
     serial:
@@ -49,7 +49,7 @@ devices:
       baudRate: 115200
       keyProvider:
         mode: "file"
-        challengeFilePath: "challenge.txt"
-        keyFilePath: "password_input.txt"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
         pollInterval: 500
         timeout: 120000

@@ -8,7 +8,7 @@
       ],
       "env": {
         "DEVICE": "board-b",
-        "BOARD_CONFIG_PATH": "./config/config.yaml",
+        "BOARD_CONFIG_PATH": "./configs/config.yaml",
         "LOG_SAVE": "1",
         "LOG_DIR": "./log"
       }
