@@ -4,7 +4,7 @@
 
 ### 1. 是什么？
 
-`embedded-mcp-toolkit` 是一个基于 MCP（Model Context Protocol）协议的嵌入式板卡远程管理工具，通过多个个 MCP 工具提供嵌入式设备交互能力。支持以下功能：
+`embedded-mcp-toolkit` 是一个基于 MCP（Model Context Protocol）协议的嵌入式板卡远程管理工具，通过多个 MCP 工具提供嵌入式设备交互能力。支持以下功能：
 
 - **串口管理**：打开/关闭串口连接、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、进入 U-Boot 命令行
 - **SSH 管理**：打开/关闭 SSH 会话、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、查看远端设备活跃连接
@@ -30,7 +30,7 @@ npm i @smai-kit/embedded-mcp-toolkit
 ./node_modules/.bin/embedded-mcp-toolkit init
 ```
 
-安装配置完成后会目录结构如下：
+安装配置完成后目录结构如下：
 
 ```shell
 mcp-toolkit
