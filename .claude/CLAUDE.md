@@ -2,100 +2,132 @@
 
 本项目提供用于嵌入式 Linux 板卡管理的 MCP 服务器，支持 SSH 和串口两种连接方式。
 
-## MCP 服务器
+**配置文件:** `configs/config.yaml`
+**默认设备:** board-b
 
-| 服务器名 | 连接方式 | 用途 |
-|---------|---------|------|
-| **embedded-board** | SSH (192.168.16.103:22) | 远程命令执行、文件操作 |
-| **board-beta** | SSH (192.168.16.105:22) | 远程命令执行、文件操作（ssh-rsa 主机密钥，文件 IPC 解锁） |
-| **board-alpha** | 串口 (COM12, 115200) | U-Boot 交互、底层调试 |
+## 设备列表
 
-## 可用工具
+| 设备名 | SSH | 串口 | 用途 |
+|-------|-----|------|------|
+| **board-a** | 192.168.16.103:22 root/root | COM4@115200 | 板卡 A |
+| **board-b** | 192.168.16.105:22 root/root | COM3@115200 | 板卡 B（默认） |
+| **board-test** | 1.1.1.1:22 sumu/sumu | COM3@115200 | 测试设备 |
 
-### SSH 工具（embedded-board / board-beta）
+所有设备均配置了 **文件 IPC 解锁**（`challenge.txt` / `password_input.txt`）。
 
-| 工具名 | 用途 | 必填参数 |
-|-------|------|---------|
-| `exec` | 执行 shell 命令 | `command`, `timeout?`(秒) |
-| `read_file` | 读取文件 | `path` |
-| `write_file` | 写入文件 | `path`, `content` |
-| `list_dir` | 列出目录 | `path` |
-| `dmesg` | 内核日志 | `lines?` |
-| `system_info` | 系统信息 | 无 |
-| `upload_file` | 上传文件 | `local_path`, `remote_path` |
-| `shell_unlock` | 执行解锁序列 | `timeout?`(毫秒) |
-| `shell_detect_state` | 检测 shell 状态 | `timeout?`(毫秒) |
-| `ssh_shell_login` | 一键登录（连接+检测+解锁） | `device?`, `key?`, `timeout?`(毫秒) |
+## MCP 工具总览
 
-### 串口工具（board-alpha）
+### 基本工具（Basic）
 
 | 工具名 | 用途 | 必填参数 |
 |-------|------|---------|
-| `serial_connect` | 打开串口 | `port?`, `baudRate?`, ... |
-| `serial_disconnect` | 关闭串口 | 无 |
-| `serial_exec` | 串口执行命令 | `command`, `timeout?`(毫秒) |
-| `serial_send` | 发送原始数据 | `data`（支持 `\x03` 等） |
-| `shell_unlock` | 执行解锁序列 | `timeout?`(毫秒) |
-| `shell_detect_state` | 检测 shell 状态 | `timeout?`(毫秒) |
+| `device_info_tool` | 获取当前设备配置（SSH、串口、KeyProvider） | `device?` |
+| `version_tool` | 获取 MCP 服务器版本和工具包信息 | 无 |
+| `greet_tool` | 打招呼测试 | `name` |
+
+### SSH 工具（需先 open 获取 session_id）
+
+| 工具名 | 用途 | 必填参数 |
+|-------|------|---------|
+| `ssh_shell_open` | 打开交互式 SSH Shell 会话，返回初始 banner | `device?`, `timeout?`(秒) |
+| `ssh_shell_close` | 关闭 SSH Shell 会话 | `session_id` |
+| `ssh_shell_write` | 向 SSH Shell 发送命令 | `session_id`, `command`, `clear?` |
+| `ssh_shell_read` | 读取 SSH Shell 输出 | `session_id`, `clear?` |
+| `ssh_shell_list` | 列出所有活跃 SSH 会话 | 无 |
+| `ssh_shell_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
+| `ssh_shell_connection` | 检查远端板卡上活跃的 SSH 连接 | `session_id` |
+| `ssh_shell_login` | **一键登录**（连接 + PSH 检测 + 解锁） | `device?`, `key?`, `timeout?`(ms) |
+
+### 串口工具（需先 open 获取 session_id）
+
+| 工具名 | 用途 | 必填参数 |
+|-------|------|---------|
+| `serial_open` | 打开串口连接并启动交互式 Shell | `device?`, `port?`, `baudRate?`, `dataBits?`, `stopBits?`, `parity?` |
+| `serial_close` | 关闭串口会话 | `session_id` |
+| `serial_write` | 向串口发送命令 | `session_id`, `command`, `clear?` |
+| `serial_read` | 读取串口输出 | `session_id`, `clear?` |
+| `serial_list` | 列出所有活跃串口会话 | 无 |
+| `serial_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
+| `serial_shell_login` | **一键登录**（连接 + PSH 检测 + 解锁） | `device?`, `key?`, `timeout?`(ms) |
+
+### Windows 本地工具
+
+| 工具名 | 用途 | 必填参数 |
+|-------|------|---------|
+| `port_scan_tool` | 扫描 Windows 设备管理器中的 COM/LPT 端口 | 无 |
+| `network_scan_tool` | 扫描 Windows 网络适配器信息 | 无 |
+| `power_shell_open` | 打开交互式 PowerShell 会话 | `workingDir?` |
+| `power_shell_close` | 关闭 PowerShell 会话 | `session_id` |
+| `power_shell_write` | 向 PowerShell 发送命令 | `session_id`, `command`, `clear?` |
+| `power_shell_read` | 读取 PowerShell 输出 | `session_id`, `clear?` |
+| `power_shell_list` | 列出所有活跃 PowerShell 会话 | 无 |
+| `power_shell_exec` | 发送命令 + 等待 + 读取 | `session_id`, `command`, `delay?`(ms), `clear?` |
 
 ## 使用指南
 
-### 优先使用 SSH
-- 板卡网络可用、SSH 服务正常
-- 文件操作、系统诊断、长时间命令
+### 连接优先级
+1. **SSH Login（推荐）** → `ssh_shell_login` 一键连接 + 检测 + 解锁
+2. **SSH Open** → `ssh_shell_open` 手动控制会话生命周期
+3. **Serial Login** → `serial_shell_login` 一键串口登录
+4. **Serial Open** → `serial_open` 手动控制串口会话
 
-### 使用串口
-- 板卡无网络或 SSH 不可用
-- U-Boot 交互、发送控制字符
-  - `\x03` = Ctrl+C
-  - `\x04` = Ctrl+D
-  - `\x1a` = Ctrl+Z
+### 工作流模式
+- **简单执行**（一次性）: `ssh_shell_login` / `serial_shell_login` → 直接在返回的 session 中操作
+- **交互式**（多步）: `ssh_shell_open` => `write` + `read` + ... => `close`
+- **本地探测**（Windows 主机）: `port_scan_tool` → `serial_open`
+- **调试串口**（控制字符）: 数据通过 `serial_write` 的 `command` 参数发送，换行符按配置追加
+
+### 参数说明
+- `device`: 设备名（board-a / board-b / board-test），不填则用默认设备
+- `clear`: 缓冲区标志，1=清空后操作（默认），0=追加
+- `delay`: 命令发送后的等待时间（毫秒），默认 1000ms
+- `session_id`: 由 open/login 返回，后续操作需使用同一 ID
 
 ## 示例用法
 
-### 执行命令
-```json
-{"name": "exec", "arguments": {"command": "ps aux", "timeout": 60}}
-```
-
-### 读取文件
-```json
-{"name": "read_file", "arguments": {"path": "/etc/hostname"}}
-```
-
-### 写入文件
-```json
-{"name": "write_file", "arguments": {"path": "/tmp/test.sh", "content": "#!/bin/sh\necho hello"}}
-```
-
-### 列出目录
-```json
-{"name": "list_dir", "arguments": {"path": "/home"}}
-```
-
-### 串口执行命令
-```json
-{"name": "serial_exec", "arguments": {"command": "ls", "timeout": 5000}}
-```
-
-### 发送控制字符
-```json
-{"name": "serial_send", "arguments": {"data": "\x03"}}
-```
-
-### 一键登录（自动连接+PSH检测+解锁）
+### 一键 SSH 登录（推荐）
 ```json
 {"name": "ssh_shell_login", "arguments": {}}
 ```
 
-带密钥一键登录：
+指定设备和密钥：
 ```json
-{"name": "ssh_shell_login", "arguments": {"key": "my_unlock_password"}}
+{"name": "ssh_shell_login", "arguments": {"device": "board-a", "key": "my_password"}}
 ```
 
-指定设备一键登录：
+### SSH session 多步交互
 ```json
-{"name": "ssh_shell_login", "arguments": {"device": "board-b", "key": "my_unlock_password"}}
+{"name": "ssh_shell_open", "arguments": {"device": "board-b"}}
+```
+```json
+{"name": "ssh_shell_exec", "arguments": {"session_id": "ssh_1", "command": "cat /proc/cpuinfo", "delay": 2000}}
+```
+```json
+{"name": "ssh_shell_close", "arguments": {"session_id": "ssh_1"}}
+```
+
+### 串口登录
+```json
+{"name": "serial_shell_login", "arguments": {"device": "board-b"}}
+```
+
+### 本地端口扫描
+```json
+{"name": "port_scan_tool", "arguments": {}}
+```
+
+### 获取设备配置
+```json
+{"name": "device_info_tool", "arguments": {}}
+```
+
+```json
+{"name": "device_info_tool", "arguments": {"device": "board-a"}}
+```
+
+### 查看 SSH 连接状态
+```json
+{"name": "ssh_shell_connection", "arguments": {"session_id": "ssh_1"}}
 ```
 
 ## 快捷技能（Slash Commands）
@@ -109,7 +141,7 @@
 
 ## 文件 IPC 解锁
 
-board-beta 配置了文件 IPC 用于动态密钥交换：
-- 挑战信息保存到 `challenge.txt`，供外部工具读取
-- 外部工具将密钥写入 `password_input.txt`
+所有设备均配置了文件 IPC 用于动态密钥交换：
+- 挑战信息保存到 `configs/challenge.txt`，供外部工具读取
+- 外部工具将密钥写入 `configs/password_input.txt`
 - 系统自动轮询并读取密钥，读取后删除密码文件

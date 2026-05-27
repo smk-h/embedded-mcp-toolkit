@@ -11,6 +11,7 @@ my-psh
 node_modules
 src
 test
+docs
 
 .cnb.yml
 .editorconfig
