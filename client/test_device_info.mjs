@@ -58,8 +58,15 @@ async function main() {
   console.log("╚══════════════════════════════════════════╝");
 
   let client;
+  const serverEnv = {
+    DEVICE: "board-b",
+    BOARD_CONFIG_PATH: "./configs/config.yaml",
+    LOG_SAVE: "1",
+    LOG_DIR: "./log",
+  };
+
   try {
-    const conn = await connect({ name: "test-device-info" });
+    const conn = await connect({ name: "test-device-info", env: serverEnv });
     client = conn.client;
     pass("MCP 服务器连接成功");
   } catch (err) {

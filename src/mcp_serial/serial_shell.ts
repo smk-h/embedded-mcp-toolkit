@@ -151,6 +151,7 @@ export async function serialOpenHandler(args: {
   const sessionId = `serial_${++sessionCounter}`;
   sessions.set(sessionId, shell);
   portToSession.set(config.port, sessionId);
+  logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
 
   return {
     content: [
@@ -649,11 +650,11 @@ export async function serialShellLoginHandler(args: {
     const onKeyRequest = args.key
       ? undefined
       : (output: string) => {
-          const keyProvider = new KeyProvider(
-            getKeyProviderConfig("serial", args.device)
-          );
-          return keyProvider.getKey(output);
-        };
+        const keyProvider = new KeyProvider(
+          getKeyProviderConfig("serial", args.device)
+        );
+        return keyProvider.getKey(output);
+      };
 
     const result = await handler.unlock(
       shell,
@@ -698,6 +699,7 @@ function registerSession(
   detail: string
 ) {
   if (existingId) {
+    logger.info(`[serial_shell_login] session reused: ${existingId} port=${port}`);
     return {
       content: [text(`Session ${existingId} on ${port} (existing, ${detail})`)],
     };
@@ -705,7 +707,30 @@ function registerSession(
   const sessionId = `serial_${++sessionCounter}`;
   sessions.set(sessionId, shell);
   portToSession.set(port, sessionId);
+  logger.info(`[serial_shell_login] session opened: ${sessionId} port=${port}`);
   return {
     content: [text(`Session ${sessionId} opened on ${port} ${detail}`)],
   };
+}
+
+// ── 进程退出自动清理 ────────────────────────────────────────
+
+/**
+ * @brief 关闭所有活跃的串口会话
+ *
+ * 在 MCP Server 进程退出时调用，确保所有串口连接被正确关闭，
+ * 释放端口资源，避免串口残留占用。
+ */
+export async function disposeAllSerialSessions(): Promise<void> {
+  const entries = [...sessions.entries()];
+  for (const [id, shell] of entries) {
+    try {
+      await shell.close();
+      logger.info(`[serial_dispose] session ${id} closed`);
+    } catch (err) {
+      logger.error(`[serial_dispose] session ${id} close failed:`, err);
+    }
+  }
+  sessions.clear();
+  portToSession.clear();
 }

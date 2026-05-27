@@ -100,6 +100,7 @@ export async function powerShellOpenHandler(args: {
 
   const sessionId = `power_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  logger.info(`[power_shell_open] session opened: ${sessionId}`);
 
   return {
     content: [
@@ -394,4 +395,25 @@ export async function powerShellExecHandler(args: {
   const output = shell.read(1);
 
   return { content: [text(output || "(no output)")] };
+}
+
+// ── 进程退出自动清理 ────────────────────────────────────────
+
+/**
+ * @brief 关闭所有活跃的 PowerShell 会话
+ *
+ * 在 MCP Server 进程退出时调用，确保所有 powershell.exe 子进程被终止，
+ * 避免僵尸进程残留。
+ */
+export async function disposeAllPowerShellSessions(): Promise<void> {
+  const entries = [...sessions.entries()];
+  for (const [id, shell] of entries) {
+    try {
+      await shell.close();
+      logger.info(`[power_dispose] session ${id} closed`);
+    } catch (err) {
+      logger.error(`[power_dispose] session ${id} close failed:`, err);
+    }
+  }
+  sessions.clear();
 }

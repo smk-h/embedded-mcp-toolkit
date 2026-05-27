@@ -74,6 +74,7 @@ export async function sshShellOpenHandler(args: {
 
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
 
   return {
     content: [text(`Session ${sessionId} opened.\n${banner || "(no banner)"}`)],
@@ -518,6 +519,7 @@ export async function sshShellLoginHandler(args: {
     // 未检测到 PSH — shell 已就绪
     const sessionId = `ssh_${++sessionCounter}`;
     sessions.set(sessionId, shell);
+    logger.info(`[ssh_shell_login] session opened: ${sessionId} (no PSH)`);
     return {
       content: [
         text(
@@ -539,6 +541,7 @@ export async function sshShellLoginHandler(args: {
   if (detect.state === PshState.READY) {
     const sessionId = `ssh_${++sessionCounter}`;
     sessions.set(sessionId, shell);
+    logger.info(`[ssh_shell_login] session opened: ${sessionId} (PSH already unlocked)`);
     return {
       content: [
         text(
@@ -567,6 +570,7 @@ export async function sshShellLoginHandler(args: {
     if (state === PshState.READY) {
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
+      logger.info(`[ssh_shell_login] session opened: ${sessionId} (UNLOCKING resolved)`);
       return {
         content: [
           text(
@@ -606,11 +610,11 @@ export async function sshShellLoginHandler(args: {
     const onKeyRequest = args.key
       ? undefined
       : (output: string) => {
-          const keyProvider = new KeyProvider(
-            getKeyProviderConfig("ssh", args.device)
-          );
-          return keyProvider.getKey(output);
-        };
+        const keyProvider = new KeyProvider(
+          getKeyProviderConfig("ssh", args.device)
+        );
+        return keyProvider.getKey(output);
+      };
 
     const result = await handler.unlock(
       shell,
@@ -622,6 +626,7 @@ export async function sshShellLoginHandler(args: {
     if (result.success) {
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
+      logger.info(`[ssh_shell_login] session opened: ${sessionId} (unlock succeeded)`);
       return {
         content: [
           text(
@@ -644,6 +649,7 @@ export async function sshShellLoginHandler(args: {
   // --- 未知状态：探测后仍无法判断，返回 session 但可能需手动交互 ---
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  logger.info(`[ssh_shell_login] session opened: ${sessionId} (PSH state unknown)`);
   return {
     content: [
       text(
@@ -651,4 +657,25 @@ export async function sshShellLoginHandler(args: {
       ),
     ],
   };
+}
+
+// ── 进程退出自动清理 ────────────────────────────────────────
+
+/**
+ * @brief 关闭所有活跃的 SSH 会话
+ *
+ * 在 MCP Server 进程退出时调用，确保所有 SSH 连接被正确关闭，
+ * 释放网络资源。
+ */
+export async function disposeAllSshSessions(): Promise<void> {
+  const entries = [...sessions.entries()];
+  for (const [id, shell] of entries) {
+    try {
+      await shell.close();
+      logger.info(`[ssh_dispose] session ${id} closed`);
+    } catch (err) {
+      logger.error(`[ssh_dispose] session ${id} close failed:`, err);
+    }
+  }
+  sessions.clear();
 }
