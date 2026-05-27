@@ -32,9 +32,12 @@ log/
 *.log
 
 *embedded-mcp-toolkit*.tgz
+*embedded-mcp-toolkit*.zip
 
 # OpenCode 本地开发文件
 .opencode/package.json
 .opencode/package-lock.json
 .opencode/README.md
 .opencode/.gitignore
+
+scripts

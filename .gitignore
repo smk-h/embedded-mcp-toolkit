@@ -13,3 +13,4 @@ config.yaml
 # npm token — 禁止提交含认证信息的 .npmrc
 .npmrc
 *embedded-mcp-toolkit*.tgz
+*embedded-mcp-toolkit*.zip
