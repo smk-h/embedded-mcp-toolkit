@@ -99,7 +99,14 @@ function registerCleanupHooks() {
 // ── 启动入口 ───────────────────────────────────────────────
 
 export async function startMcpServer() {
+  const envVars = {
+    DEVICE: process.env.DEVICE,
+    BOARD_CONFIG_PATH: process.env.BOARD_CONFIG_PATH,
+    LOG_SAVE: process.env.LOG_SAVE,
+    LOG_DIR: process.env.LOG_DIR,
+  };
   logger.info(`MCP server starting... cwd: ${process.cwd()}`);
+  logger.info(`MCP server env: ${JSON.stringify(envVars)}`);
   registerCleanupHooks();
   const transport = new StdioServerTransport();
   await server.connect(transport);
