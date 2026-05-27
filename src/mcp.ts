@@ -9,6 +9,7 @@ import { logger } from "./common/logger.js";
 import { mcpBasicTools } from "./mcp_basic/index.js";
 import { mcpSshTools } from "./mcp_ssh/index.js";
 import { mcpSerialTools } from "./mcp_serial/index.js";
+import { mcpWinTools } from "./mcp_win/index.js";
 
 // ── package info ───────────────────────────────────────────
 
@@ -33,6 +34,10 @@ for (const { name, config, handler } of mcpSshTools) {
 }
 
 for (const { name, config, handler } of mcpSerialTools) {
+  server.registerTool(name, config, handler);
+}
+
+for (const { name, config, handler } of mcpWinTools) {
   server.registerTool(name, config, handler);
 }
 
