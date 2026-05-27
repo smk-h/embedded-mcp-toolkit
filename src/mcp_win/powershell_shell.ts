@@ -12,9 +12,9 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../helper/mcp_helper.js";
 import { logger } from "../common/logger.js";
 import {
-  PowerShellShell,
-  type PowerShellShellConfig,
-} from "../common/powershell.js";
+	PowerShellShell,
+	type PowerShellShellConfig,
+} from "../powershell.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -39,20 +39,20 @@ let sessionCounter = 0;
  * @param workingDir  工作目录（可选，默认使用当前进程的工作目录）
  */
 export const powerShellOpenConfig = {
-  description:
-    "Open an interactive PowerShell shell session on the local Windows machine. Returns the initial banner output.",
-  inputSchema: fromJsonSchema<{
-    workingDir?: string;
-  }>({
-    type: "object",
-    properties: {
-      workingDir: {
-        type: "string",
-        description:
-          "Working directory for the PowerShell process (default: current working directory)",
-      },
-    },
-  }),
+	description:
+		"Open an interactive PowerShell shell session on the local Windows machine. Returns the initial banner output.",
+	inputSchema: fromJsonSchema<{
+		workingDir?: string;
+	}>({
+		type: "object",
+		properties: {
+			workingDir: {
+				type: "string",
+				description:
+					"Working directory for the PowerShell process (default: current working directory)",
+			},
+		},
+	}),
 };
 
 /**
@@ -68,47 +68,47 @@ export const powerShellOpenConfig = {
  * @return MCP 响应，包含 session_id 和 banner 内容
  */
 export async function powerShellOpenHandler(args: {
-  workingDir?: string;
+	workingDir?: string;
 }) {
-  logger.info(
-    `[power_shell_open] workingDir=${args.workingDir ?? "(cwd)"}`
-  );
+	logger.info(
+		`[power_shell_open] workingDir=${args.workingDir ?? "(cwd)"}`
+	);
 
-  if (process.platform !== "win32") {
-    return {
-      content: [text("This tool only works on Windows.")],
-    };
-  }
+	if (process.platform !== "win32") {
+		return {
+			content: [text("This tool only works on Windows.")],
+		};
+	}
 
-  const config: PowerShellShellConfig = {
-    workingDir: args.workingDir,
-  };
+	const config: PowerShellShellConfig = {
+		workingDir: args.workingDir,
+	};
 
-  const shell = new PowerShellShell(config);
-  let banner: string;
-  try {
-    banner = await shell.open();
-  } catch (err) {
-    return {
-      content: [
-        text(
-          `PowerShell open failed: ${err instanceof Error ? err.message : String(err)}`
-        ),
-      ],
-    };
-  }
+	const shell = new PowerShellShell(config);
+	let banner: string;
+	try {
+		banner = await shell.open();
+	} catch (err) {
+		return {
+			content: [
+				text(
+					`PowerShell open failed: ${err instanceof Error ? err.message : String(err)}`
+				),
+			],
+		};
+	}
 
-  const sessionId = `power_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  logger.info(`[power_shell_open] session opened: ${sessionId}`);
+	const sessionId = `power_${++sessionCounter}`;
+	sessions.set(sessionId, shell);
+	logger.info(`[power_shell_open] session opened: ${sessionId}`);
 
-  return {
-    content: [
-      text(
-        `Session ${sessionId} opened. Working dir: ${shell.getWorkingDir()}\n${banner || "(no banner)"}`
-      ),
-    ],
-  };
+	return {
+		content: [
+			text(
+				`Session ${sessionId} opened. Working dir: ${shell.getWorkingDir()}\n${banner || "(no banner)"}`
+			),
+		],
+	};
 }
 
 // ── power_shell_close ───────────────────────────────────────
@@ -121,18 +121,18 @@ export async function powerShellOpenHandler(args: {
  * @param session_id  由 power_shell_open 返回的会话 ID
  */
 export const powerShellCloseConfig = {
-  description:
-    "Close a PowerShell shell session and terminate the process.",
-  inputSchema: fromJsonSchema<{ session_id: string }>({
-    type: "object",
-    properties: {
-      session_id: {
-        type: "string",
-        description: "The session ID returned by power_shell_open",
-      },
-    },
-    required: ["session_id"],
-  }),
+	description:
+		"Close a PowerShell shell session and terminate the process.",
+	inputSchema: fromJsonSchema<{ session_id: string }>({
+		type: "object",
+		properties: {
+			session_id: {
+				type: "string",
+				description: "The session ID returned by power_shell_open",
+			},
+		},
+		required: ["session_id"],
+	}),
 };
 
 /**
@@ -147,18 +147,18 @@ export const powerShellCloseConfig = {
  * @return MCP 响应，确认会话已关闭
  */
 export async function powerShellCloseHandler(args: {
-  session_id: string;
+	session_id: string;
 }) {
-  logger.info(`[power_shell_close] session_id=${args.session_id}`);
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
-  }
+	logger.info(`[power_shell_close] session_id=${args.session_id}`);
+	const shell = sessions.get(args.session_id);
+	if (!shell) {
+		return { content: [text(`Session ${args.session_id} not found.`)] };
+	}
 
-  await shell.close();
-  sessions.delete(args.session_id);
+	await shell.close();
+	sessions.delete(args.session_id);
 
-  return { content: [text(`Session ${args.session_id} closed.`)] };
+	return { content: [text(`Session ${args.session_id} closed.`)] };
 }
 
 // ── power_shell_write ───────────────────────────────────────
@@ -173,31 +173,31 @@ export async function powerShellCloseHandler(args: {
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
 export const powerShellWriteConfig = {
-  description:
-    "Send a command to a PowerShell shell session.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    clear?: number;
-  }>({
-    type: "object",
-    properties: {
-      session_id: {
-        type: "string",
-        description: "The session ID returned by power_shell_open",
-      },
-      command: {
-        type: "string",
-        description: "The PowerShell command to send",
-      },
-      clear: {
-        type: "number",
-        description:
-          "Buffer clear flag: 1 (default) = clear buffer before collecting, 0 = append to buffer",
-      },
-    },
-    required: ["session_id", "command"],
-  }),
+	description:
+		"Send a command to a PowerShell shell session.",
+	inputSchema: fromJsonSchema<{
+		session_id: string;
+		command: string;
+		clear?: number;
+	}>({
+		type: "object",
+		properties: {
+			session_id: {
+				type: "string",
+				description: "The session ID returned by power_shell_open",
+			},
+			command: {
+				type: "string",
+				description: "The PowerShell command to send",
+			},
+			clear: {
+				type: "number",
+				description:
+					"Buffer clear flag: 1 (default) = clear buffer before collecting, 0 = append to buffer",
+			},
+		},
+		required: ["session_id", "command"],
+	}),
 };
 
 /**
@@ -210,21 +210,21 @@ export const powerShellWriteConfig = {
  * @return MCP 响应，确认命令已发送
  */
 export function powerShellWriteHandler(args: {
-  session_id: string;
-  command: string;
-  clear?: number;
+	session_id: string;
+	command: string;
+	clear?: number;
 }) {
-  logger.info(
-    `[power_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
-  );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
-  }
+	logger.info(
+		`[power_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
+	);
+	const shell = sessions.get(args.session_id);
+	if (!shell) {
+		return { content: [text(`Session ${args.session_id} not found.`)] };
+	}
 
-  shell.write(args.command, args.clear ?? 1);
+	shell.write(args.command, args.clear ?? 1);
 
-  return { content: [text(`Command sent: ${args.command}`)] };
+	return { content: [text(`Command sent: ${args.command}`)] };
 }
 
 // ── power_shell_read ────────────────────────────────────────
@@ -238,23 +238,23 @@ export function powerShellWriteHandler(args: {
  * @param clear       缓冲区清空标志（1=读取后清空，0=保留缓冲区，默认 1）
  */
 export const powerShellReadConfig = {
-  description:
-    "Read output from a PowerShell shell session.",
-  inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
-    type: "object",
-    properties: {
-      session_id: {
-        type: "string",
-        description: "The session ID returned by power_shell_open",
-      },
-      clear: {
-        type: "number",
-        description:
-          "Buffer clear flag: 1 (default) = clear buffer after reading, 0 = keep buffer",
-      },
-    },
-    required: ["session_id"],
-  }),
+	description:
+		"Read output from a PowerShell shell session.",
+	inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
+		type: "object",
+		properties: {
+			session_id: {
+				type: "string",
+				description: "The session ID returned by power_shell_open",
+			},
+			clear: {
+				type: "number",
+				description:
+					"Buffer clear flag: 1 (default) = clear buffer after reading, 0 = keep buffer",
+			},
+		},
+		required: ["session_id"],
+	}),
 };
 
 /**
@@ -268,20 +268,20 @@ export const powerShellReadConfig = {
  * @return MCP 响应，包含读取到的输出内容
  */
 export function powerShellReadHandler(args: {
-  session_id: string;
-  clear?: number;
+	session_id: string;
+	clear?: number;
 }) {
-  logger.info(
-    `[power_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
-  );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
-  }
+	logger.info(
+		`[power_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
+	);
+	const shell = sessions.get(args.session_id);
+	if (!shell) {
+		return { content: [text(`Session ${args.session_id} not found.`)] };
+	}
 
-  const output = shell.read(args.clear ?? 1);
+	const output = shell.read(args.clear ?? 1);
 
-  return { content: [text(output || "(no output)")] };
+	return { content: [text(output || "(no output)")] };
 }
 
 // ── power_shell_list ────────────────────────────────────────
@@ -292,12 +292,12 @@ export function powerShellReadHandler(args: {
  * 列出当前所有活跃的 PowerShell Shell 会话。
  */
 export const powerShellListConfig = {
-  description:
-    "List all active PowerShell shell sessions.",
-  inputSchema: fromJsonSchema<Record<string, never>>({
-    type: "object",
-    properties: {},
-  }),
+	description:
+		"List all active PowerShell shell sessions.",
+	inputSchema: fromJsonSchema<Record<string, never>>({
+		type: "object",
+		properties: {},
+	}),
 };
 
 /**
@@ -308,14 +308,14 @@ export const powerShellListConfig = {
  * @return MCP 响应，包含活跃会话列表或"无活跃会话"提示
  */
 export function powerShellListHandler() {
-  logger.info("[power_shell_list]");
-  const ids = [...sessions.keys()];
+	logger.info("[power_shell_list]");
+	const ids = [...sessions.keys()];
 
-  if (ids.length === 0) {
-    return { content: [text("No active PowerShell sessions.")] };
-  }
+	if (ids.length === 0) {
+		return { content: [text("No active PowerShell sessions.")] };
+	}
 
-  return { content: [text(`Active sessions: ${ids.join(", ")}`)] };
+	return { content: [text(`Active sessions: ${ids.join(", ")}`)] };
 }
 
 // ── power_shell_exec ────────────────────────────────────────
@@ -331,37 +331,37 @@ export function powerShellListHandler() {
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
 export const powerShellExecConfig = {
-  description:
-    "Send a command to a PowerShell shell session and wait for the output. Combines write + delay + read in one call.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    delay?: number;
-    clear?: number;
-  }>({
-    type: "object",
-    properties: {
-      session_id: {
-        type: "string",
-        description: "The session ID returned by power_shell_open",
-      },
-      command: {
-        type: "string",
-        description: "The PowerShell command to execute",
-      },
-      delay: {
-        type: "number",
-        description:
-          "Wait time in milliseconds before reading output (default: 1000)",
-      },
-      clear: {
-        type: "number",
-        description:
-          "Buffer clear flag: 1 (default) = clear buffer before collecting, 0 = append to buffer",
-      },
-    },
-    required: ["session_id", "command"],
-  }),
+	description:
+		"Send a command to a PowerShell shell session and wait for the output. Combines write + delay + read in one call.",
+	inputSchema: fromJsonSchema<{
+		session_id: string;
+		command: string;
+		delay?: number;
+		clear?: number;
+	}>({
+		type: "object",
+		properties: {
+			session_id: {
+				type: "string",
+				description: "The session ID returned by power_shell_open",
+			},
+			command: {
+				type: "string",
+				description: "The PowerShell command to execute",
+			},
+			delay: {
+				type: "number",
+				description:
+					"Wait time in milliseconds before reading output (default: 1000)",
+			},
+			clear: {
+				type: "number",
+				description:
+					"Buffer clear flag: 1 (default) = clear buffer before collecting, 0 = append to buffer",
+			},
+		},
+		required: ["session_id", "command"],
+	}),
 };
 
 /**
@@ -374,27 +374,27 @@ export const powerShellExecConfig = {
  * @return MCP 响应，包含命令执行后的输出内容
  */
 export async function powerShellExecHandler(args: {
-  session_id: string;
-  command: string;
-  delay?: number;
-  clear?: number;
+	session_id: string;
+	command: string;
+	delay?: number;
+	clear?: number;
 }) {
-  logger.info(
-    `[power_shell_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
-  );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
-  }
+	logger.info(
+		`[power_shell_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
+	);
+	const shell = sessions.get(args.session_id);
+	if (!shell) {
+		return { content: [text(`Session ${args.session_id} not found.`)] };
+	}
 
-  shell.write(args.command, args.clear ?? 1);
+	shell.write(args.command, args.clear ?? 1);
 
-  // 等待命令执行完成，让 stdout/stderr 数据积累到内部缓冲区
-  await new Promise((r) => setTimeout(r, args.delay ?? 1000));
+	// 等待命令执行完成，让 stdout/stderr 数据积累到内部缓冲区
+	await new Promise((r) => setTimeout(r, args.delay ?? 1000));
 
-  const output = shell.read(1);
+	const output = shell.read(1);
 
-  return { content: [text(output || "(no output)")] };
+	return { content: [text(output || "(no output)")] };
 }
 
 // ── 进程退出自动清理 ────────────────────────────────────────
@@ -406,14 +406,14 @@ export async function powerShellExecHandler(args: {
  * 避免僵尸进程残留。
  */
 export async function disposeAllPowerShellSessions(): Promise<void> {
-  const entries = [...sessions.entries()];
-  for (const [id, shell] of entries) {
-    try {
-      await shell.close();
-      logger.info(`[power_dispose] session ${id} closed`);
-    } catch (err) {
-      logger.error(`[power_dispose] session ${id} close failed:`, err);
-    }
-  }
-  sessions.clear();
+	const entries = [...sessions.entries()];
+	for (const [id, shell] of entries) {
+		try {
+			await shell.close();
+			logger.info(`[power_dispose] session ${id} closed`);
+		} catch (err) {
+			logger.error(`[power_dispose] session ${id} close failed:`, err);
+		}
+	}
+	sessions.clear();
 }

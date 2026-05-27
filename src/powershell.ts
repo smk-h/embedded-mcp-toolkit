@@ -15,8 +15,8 @@ import {
   type ChildProcess,
   type ExecSyncOptionsWithStringEncoding,
 } from "child_process";
-import { MAX_BUFFER_SIZE } from "../common.js";
-import { logger } from "./logger.js";
+import { MAX_BUFFER_SIZE } from "./common.js";
+import { logger } from "./common/logger.js";
 
 // ── 一次性执行工具 ──────────────────────────────────────────
 

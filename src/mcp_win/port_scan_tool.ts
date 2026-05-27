@@ -11,124 +11,124 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../helper/mcp_helper.js";
 import { logger } from "../common/logger.js";
-import { execPowerShell } from "../common/powershell.js";
+import { execPowerShell } from "../powershell.js";
 
 // ── 声明 ──
 
 export const portScanConfig = {
-  description:
-    "Scan Windows Device Manager for available COM (serial) and LPT (parallel) ports",
-  inputSchema: fromJsonSchema<Record<string, never>>({
-    type: "object",
-    properties: {},
-  }),
+	description:
+		"Scan Windows Device Manager for available COM (serial) and LPT (parallel) ports",
+	inputSchema: fromJsonSchema<Record<string, never>>({
+		type: "object",
+		properties: {},
+	}),
 };
 
 // ── 实现 ──
 
 interface PortInfo {
-  name: string;
-  deviceId: string;
-  status: string;
-  manufacturer: string;
-  pnpClass: string;
+	name: string;
+	deviceId: string;
+	status: string;
+	manufacturer: string;
+	pnpClass: string;
 }
 
 function scanPnPEntity(): PortInfo[] {
-  const psScript = [
-    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
-    "$ErrorActionPreference = 'Stop'",
-    "Get-CimInstance -ClassName Win32_PnPEntity |",
-    "  Where-Object { $_.Name -match 'COM\\d+' -or $_.PNPClass -eq 'Ports' } |",
-    "  ForEach-Object {",
-    '    "$($_.Name)|$($_.DeviceID)|$($_.Status)|$($_.Manufacturer)|$($_.PNPClass)"',
-    "  }",
-  ].join("\n");
+	const psScript = [
+		"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+		"$ErrorActionPreference = 'Stop'",
+		"Get-CimInstance -ClassName Win32_PnPEntity |",
+		"  Where-Object { $_.Name -match 'COM\\d+' -or $_.PNPClass -eq 'Ports' } |",
+		"  ForEach-Object {",
+		'    "$($_.Name)|$($_.DeviceID)|$($_.Status)|$($_.Manufacturer)|$($_.PNPClass)"',
+		"  }",
+	].join("\n");
 
-  try {
-    const raw = execPowerShell(psScript);
-    const lines = raw
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+	try {
+		const raw = execPowerShell(psScript);
+		const lines = raw
+			.split(/\r?\n/)
+			.map((l) => l.trim())
+			.filter(Boolean);
 
-    return lines.map((line) => {
-      const parts = line.split("|");
-      return {
-        name: parts[0] ?? "",
-        deviceId: parts[1] ?? "",
-        status: parts[2] ?? "",
-        manufacturer: parts[3] ?? "",
-        pnpClass: parts[4] ?? "",
-      };
-    });
-  } catch {
-    logger.error("[port_scan_tool] scanPnPEntity failed");
-    return [];
-  }
+		return lines.map((line) => {
+			const parts = line.split("|");
+			return {
+				name: parts[0] ?? "",
+				deviceId: parts[1] ?? "",
+				status: parts[2] ?? "",
+				manufacturer: parts[3] ?? "",
+				pnpClass: parts[4] ?? "",
+			};
+		});
+	} catch {
+		logger.error("[port_scan_tool] scanPnPEntity failed");
+		return [];
+	}
 }
 
 export async function portScanHandler() {
-  logger.info("[port_scan_tool] scanning Windows Device Manager ports");
+	logger.info("[port_scan_tool] scanning Windows Device Manager ports");
 
-  if (process.platform !== "win32") {
-    return {
-      content: [text("This tool only works on Windows.")],
-    };
-  }
+	if (process.platform !== "win32") {
+		return {
+			content: [text("This tool only works on Windows.")],
+		};
+	}
 
-  const ports = scanPnPEntity();
+	const ports = scanPnPEntity();
 
-  if (ports.length === 0) {
-    return {
-      content: [
-        text(
-          "No COM/LPT ports found.\n(Try running as Administrator if ports are expected)"
-        ),
-      ],
-    };
-  }
+	if (ports.length === 0) {
+		return {
+			content: [
+				text(
+					"No COM/LPT ports found.\n(Try running as Administrator if ports are expected)"
+				),
+			],
+		};
+	}
 
-  const comPorts = ports.filter((p) => /COM\d+/.test(p.name));
-  const lptPorts = ports.filter((p) => /LPT\d+/.test(p.name));
-  const otherPorts = ports.filter(
-    (p) => !/COM\d+/.test(p.name) && !/LPT\d+/.test(p.name)
-  );
+	const comPorts = ports.filter((p) => /COM\d+/.test(p.name));
+	const lptPorts = ports.filter((p) => /LPT\d+/.test(p.name));
+	const otherPorts = ports.filter(
+		(p) => !/COM\d+/.test(p.name) && !/LPT\d+/.test(p.name)
+	);
 
-  const lines: string[] = [];
+	const lines: string[] = [];
 
-  if (comPorts.length > 0) {
-    lines.push("=== COM Ports (Serial) ===");
-    for (const p of comPorts) {
-      lines.push(`  ${p.name}`);
-      lines.push(`    DeviceID:     ${p.deviceId}`);
-      lines.push(`    Status:       ${p.status}`);
-      lines.push(`    Manufacturer: ${p.manufacturer}`);
-    }
-  }
+	if (comPorts.length > 0) {
+		lines.push("=== COM Ports (Serial) ===");
+		for (const p of comPorts) {
+			lines.push(`  ${p.name}`);
+			lines.push(`    DeviceID:     ${p.deviceId}`);
+			lines.push(`    Status:       ${p.status}`);
+			lines.push(`    Manufacturer: ${p.manufacturer}`);
+		}
+	}
 
-  if (lptPorts.length > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push("=== LPT Ports (Parallel) ===");
-    for (const p of lptPorts) {
-      lines.push(`  ${p.name}`);
-      lines.push(`    DeviceID:     ${p.deviceId}`);
-      lines.push(`    Status:       ${p.status}`);
-      lines.push(`    Manufacturer: ${p.manufacturer}`);
-    }
-  }
+	if (lptPorts.length > 0) {
+		if (lines.length > 0) lines.push("");
+		lines.push("=== LPT Ports (Parallel) ===");
+		for (const p of lptPorts) {
+			lines.push(`  ${p.name}`);
+			lines.push(`    DeviceID:     ${p.deviceId}`);
+			lines.push(`    Status:       ${p.status}`);
+			lines.push(`    Manufacturer: ${p.manufacturer}`);
+		}
+	}
 
-  if (otherPorts.length > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push("=== Other Port Devices ===");
-    for (const p of otherPorts) {
-      lines.push(`  ${p.name}`);
-      lines.push(`    DeviceID:     ${p.deviceId}`);
-      lines.push(`    Status:       ${p.status}`);
-      lines.push(`    Manufacturer: ${p.manufacturer}`);
-      lines.push(`    PNPClass:     ${p.pnpClass}`);
-    }
-  }
+	if (otherPorts.length > 0) {
+		if (lines.length > 0) lines.push("");
+		lines.push("=== Other Port Devices ===");
+		for (const p of otherPorts) {
+			lines.push(`  ${p.name}`);
+			lines.push(`    DeviceID:     ${p.deviceId}`);
+			lines.push(`    Status:       ${p.status}`);
+			lines.push(`    Manufacturer: ${p.manufacturer}`);
+			lines.push(`    PNPClass:     ${p.pnpClass}`);
+		}
+	}
 
-  return { content: [text(lines.join("\n"))] };
+	return { content: [text(lines.join("\n"))] };
 }
