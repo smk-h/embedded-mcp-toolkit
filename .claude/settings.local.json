@@ -9,7 +9,9 @@
       "mcp__embedded-board__serial_close",
       "mcp__embedded-board__serial_exec",
       "mcp__embedded-board__network_scan_tool",
-      "mcp__embedded-board__port_scan_tool"
+      "mcp__embedded-board__port_scan_tool",
+      "mcp__embedded-board__serial_list",
+      "mcp__embedded-board__serial_enter_uboot"
     ]
   },
   "enabledMcpjsonServers": [

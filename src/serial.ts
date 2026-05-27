@@ -151,6 +151,28 @@ export class SerialShell {
   }
 
   /**
+   * @brief 发送原始数据到串口（不追加换行符）
+   *
+   * 用于发送控制字符等场景，如 "\x15"（Ctrl+u）、"\x03"（Ctrl+C）等。
+   *
+   * @param data  要发送的原始字符串
+   * @param clear 清空标志（同 write），默认 1
+   */
+  sendRaw(data: string, clear: number = 1): void {
+    if (!this.#serialPort || !this.#serialPort.isOpen) {
+      throw new Error("Serial not open. Call open() first.");
+    }
+    if (clear) {
+      this.#buffer = "";
+      this.#overflow = false;
+    } else {
+      this.#overflow = true;
+    }
+    this.#collecting = true;
+    this.#serialPort.write(data);
+  }
+
+  /**
    * @brief 读取缓冲区中的输出数据
    *
    * 返回缓冲区内容，并根据 clear 参数决定是否清空缓冲区。

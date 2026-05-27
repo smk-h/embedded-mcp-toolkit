@@ -691,6 +691,139 @@ export async function serialShellLoginHandler(args: {
   );
 }
 
+// ── serial_enter_uboot ────────────────────────────────────────
+
+/**
+ * @brief serial_enter_uboot 工具配置
+ *
+ * 通过串口重启设备并在 U-Boot 自动引导倒计时期间发送按键中断引导，
+ * 进入 U-Boot 命令行。支持检测多种 autoboot 提示和 U-Boot 命令提示符。
+ *
+ * @param session_id  由 serial_open 返回的会话 ID
+ * @param timeout     等待 autoboot 提示的总超时时间（秒，默认 60）
+ */
+export const serialEnterUbootConfig = {
+  description:
+    "Enter U-Boot by rebooting the device and stopping autoboot. Detects 'Hit any key' or 'Hit Ctrl+u' prompts, and '=>' or 'U-Boot>' command prompts.",
+  inputSchema: fromJsonSchema<{
+    session_id: string;
+    timeout?: number;
+  }>({
+    type: "object",
+    properties: {
+      session_id: {
+        type: "string",
+        description: "The session ID returned by serial_open",
+      },
+      timeout: {
+        type: "number",
+        description: "Total timeout in seconds to wait for autoboot prompt (default: 60)",
+      },
+    },
+    required: ["session_id"],
+  }),
+};
+
+/**
+ * @brief serial_enter_uboot 处理函数
+ *
+ * 流程：
+ *   1. 发送 reboot 命令重启设备
+ *   2. 轮询串口输出，检测 autoboot 提示：
+ *      - "Hit any key to stop autoboot" → 发送换行键
+ *      - "Hit Ctrl+u to stop autoboot"  → 发送 \x15（Ctrl+u）
+ *   3. 根据提示内容自动判断发送换行还是 Ctrl+u
+ *   4. 继续轮询检测 U-Boot 命令提示符：
+ *      - "=>" (标准 U-Boot 提示符)
+ *      - "U-Boot>" (部分厂商自定义提示符)
+ *   5. 返回 U-Boot 命令行输出
+ *
+ * @param args  工具参数，包含 session_id 和可选的 timeout
+ * @return MCP 响应，包含进入 U-Boot 的结果和输出
+ */
+export async function serialEnterUbootHandler(args: {
+  session_id: string;
+  timeout?: number;
+}) {
+  const timeoutSec = args.timeout ?? 60;
+  logger.info(
+    `[serial_enter_uboot] session_id=${args.session_id} timeout=${timeoutSec}s`
+  );
+
+  const shell = sessions.get(args.session_id);
+  if (!shell) {
+    return { content: [text(`Session ${args.session_id} not found.`)] };
+  }
+
+  // Autoboot 提示模式
+  const AUTOBOOT_ANY_KEY_RE = /Hit\s+any\s+key\s+to\s+stop\s+autoboot/i;
+  const AUTOBOOT_CTRL_U_RE = /Hit\s+Ctrl\+u\s+to\s+stop\s+autoboot/i;
+
+  // U-Boot 命令提示符模式
+  const UBOOT_PROMPT_RE = /(?:=>|U-Boot>)\s*$/;
+
+  // 发送 reboot 重启设备
+  shell.write("reboot", 1);
+
+  const deadline = Date.now() + timeoutSec * 1000;
+  let allOutput = "";
+  let enteredUboot = false;
+  let interruptKey = "";
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 500));
+    const chunk = shell.read(0); // 不清空缓冲区，持续累积
+    if (chunk) allOutput += chunk;
+
+    // 检测 autoboot 提示 — 优先匹配 Ctrl+u，再匹配 any key
+    if (!enteredUboot) {
+      if (AUTOBOOT_CTRL_U_RE.test(allOutput)) {
+        interruptKey = "Ctrl+u";
+        logger.info("[serial_enter_uboot] detected Ctrl+u autoboot prompt");
+      } else if (AUTOBOOT_ANY_KEY_RE.test(allOutput)) {
+        interruptKey = "Enter";
+        logger.info("[serial_enter_uboot] detected any-key autoboot prompt");
+      }
+
+      if (interruptKey) {
+        if (interruptKey === "Ctrl+u") {
+          shell.sendRaw("\x15", 1); // 发送 Ctrl+u
+        } else {
+          shell.sendRaw("\n", 1); // 发送换行键
+        }
+        enteredUboot = true;
+        allOutput = ""; // 重置，接下来只收集 U-Boot 输出
+        continue;
+      }
+    }
+
+    // 检测 U-Boot 命令提示符
+    if (enteredUboot && UBOOT_PROMPT_RE.test(allOutput)) {
+      const finalOutput = shell.read(1);
+      if (finalOutput) allOutput += finalOutput;
+      return {
+        content: [
+          text(
+            `Entered U-Boot successfully (interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
+          ),
+        ],
+      };
+    }
+  }
+
+  // 超时
+  const remaining = shell.read(1);
+  if (remaining) allOutput += remaining;
+
+  return {
+    content: [
+      text(
+        `Timeout after ${timeoutSec}s waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`
+      ),
+    ],
+  };
+}
+
 /** 注册 session（复用已有或新建），返回统一的 MCP 响应 */
 function registerSession(
   shell: SerialShell,

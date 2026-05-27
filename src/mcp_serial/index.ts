@@ -17,6 +17,8 @@ import {
   serialExecHandler,
   serialShellLoginConfig,
   serialShellLoginHandler,
+  serialEnterUbootConfig,
+  serialEnterUbootHandler,
 } from "./serial_shell.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
@@ -36,5 +38,10 @@ export const mcpSerialTools: ToolEntry[] = [
     "serial_shell_login",
     serialShellLoginConfig,
     serialShellLoginHandler
+  ),
+  mcpDefineTool(
+    "serial_enter_uboot",
+    serialEnterUbootConfig,
+    serialEnterUbootHandler
   ),
 ];
