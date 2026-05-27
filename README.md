@@ -17,7 +17,9 @@
 
 ### 2. 怎么安装
 
-目前支持工具的全局安装和本地指定目录安装，但是全局安装后还是只能在某个目录配置使用（需要claude配置文件、设备配置文件、mcp配置文件以及日志等），暂未支持全局配置使用。
+#### 2.1 npm
+
+目前支持工具的全局安装和本地指定目录安装，但是全局安装后还是只能在某个目录配置使用（需要claude配置文件、设备配置文件、mcp配置文件以及日志等），暂未测试过全局配置。
 
 ```shell
 mkdir mcp-toolkit
@@ -58,6 +60,15 @@ mcp-toolkit
 │   └── zod
 ├── package-lock.json
 └── package.json                 # npm项目包依赖管理文件，不用管
+```
+
+#### 2.2 源码安装
+
+git clone源码后：
+
+```shell
+npm i         # 安装依赖
+npm run build # 编译，编译后就可以在当前目录下启动claude使用了
 ```
 
 ### 3. 工具介绍
@@ -113,7 +124,7 @@ mcp-toolkit
 
 ### 1. claude配置
 
-目前还未在全局配置过，后续测试后再支持，**当前配置下，只支持在指定项目目录使用**。
+目前还未测试过全局配置，后续测试验证。**当前配置下，只测试过在指定项目目录使用**。
 
 #### 1.1 `.claude/settings.local.json`
 
@@ -146,7 +157,7 @@ mcp-toolkit
 
 #### 1.2 `.mcp.json`
 
-此文件和`.claude`同级，文件内容如下：
+此文件和`.claude`同级，文件内容如下（npm本地安装）：
 
 ```json
 {
@@ -182,36 +193,38 @@ mcp-toolkit
 这个是在`.mcp.json`中配置的，得到的日志信息可能如下：
 
 ```powershell
-[2026-05-27 21:55:39] [INFO] MCP server starting... cwd: E:\AI\embedded-mcp-toolkit
-[2026-05-27 21:55:39] [INFO] MCP server env: {"DEVICE":"board-b","BOARD_CONFIG_PATH":"./configs/config.yaml","LOG_SAVE":"1","LOG_DIR":"./log"}
-[2026-05-27 21:56:20] [INFO] [greet_tool] name=苏木
-[2026-05-27 21:56:27] [INFO] [version_tool]
-[2026-05-27 21:56:38] [INFO] [device_info_tool] device=(default)
-[2026-05-27 21:56:38] [INFO] Config loaded: E:\AI\embedded-mcp-toolkit\configs\config.yaml
-[2026-05-27 21:56:38] [INFO] Device resolved: board-b
-[2026-05-27 21:56:38] [INFO] [KeyProvider/ssh] challenge file: E:\AI\embedded-mcp-toolkit\configs\challenge.txt
-[2026-05-27 21:56:38] [INFO] [KeyProvider/ssh] key file:       E:\AI\embedded-mcp-toolkit\configs\password_input.txt
-[2026-05-27 21:56:38] [INFO] [KeyProvider/serial] challenge file: E:\AI\embedded-mcp-toolkit\configs\challenge.txt
-[2026-05-27 21:56:38] [INFO] [KeyProvider/serial] key file:       E:\AI\embedded-mcp-toolkit\configs\password_input.txt
-[2026-05-27 21:57:13] [INFO] [serial_open] device=(default) port=(auto) baudRate=115200
-[2026-05-27 21:57:13] [INFO] Device resolved: board-b
-[2026-05-27 21:57:13] [INFO] [serial_open] session opened: serial_1 port=COM3
-[2026-05-27 21:57:36] [INFO] [serial_close] session_id=serial_1
-[2026-05-27 21:57:55] [INFO] [serial_shell_login] device=(default) timeout=1500 key=(none)
-[2026-05-27 21:57:55] [INFO] Device resolved: board-b
-[2026-05-27 21:57:57] [INFO] [serial_shell_login] session opened: serial_2 port=COM3
-[2026-05-27 21:58:13] [INFO] [serial_exec] session_id=serial_2 command=exit delay=1000 clear=1
-[2026-05-27 21:58:27] [INFO] [serial_shell_login] device=(default) timeout=1500 key=(none)
-[2026-05-27 21:58:27] [INFO] Device resolved: board-b
-[2026-05-27 21:58:30] [INFO] Device resolved: board-b
-[2026-05-27 21:58:30] [INFO] [KeyProvider/serial] challenge file: E:\AI\embedded-mcp-toolkit\configs\challenge.txt
-[2026-05-27 21:58:30] [INFO] [KeyProvider/serial] key file:       E:\AI\embedded-mcp-toolkit\configs\password_input.txt
-[2026-05-27 21:58:38] [INFO] [serial_shell_login] session reused: serial_2 port=COM3
-[2026-05-27 21:58:54] [INFO] [serial_enter_uboot] session_id=serial_2 timeout=60s
-[2026-05-27 21:59:11] [INFO] [serial_enter_uboot] detected any-key autoboot prompt
-[2026-05-27 21:59:36] [INFO] [serial_exec] session_id=serial_2 command=help delay=3000 clear=1
+[2026-05-27 18:55:39] [INFO] MCP server starting... cwd: E:\AI\embedded-mcp-toolkit
+[2026-05-27 18:55:39] [INFO] MCP server env: {"DEVICE":"board-b","BOARD_CONFIG_PATH":"./configs/config.yaml","LOG_SAVE":"1","LOG_DIR":"./log"}
+[2026-05-27 18:56:20] [INFO] [greet_tool] name=苏木
+[2026-05-27 18:56:27] [INFO] [version_tool]
+[2026-05-27 18:56:38] [INFO] [device_info_tool] device=(default)
+[2026-05-27 18:56:38] [INFO] Config loaded: E:\AI\embedded-mcp-toolkit\configs\config.yaml
+[2026-05-27 18:56:38] [INFO] Device resolved: board-b
+[2026-05-27 18:56:38] [INFO] [KeyProvider/ssh] challenge file: E:\AI\embedded-mcp-toolkit\configs\challenge.txt
+[2026-05-27 18:56:38] [INFO] [KeyProvider/ssh] key file:       E:\AI\embedded-mcp-toolkit\configs\password_input.txt
+[2026-05-27 18:56:38] [INFO] [KeyProvider/serial] challenge file: E:\AI\embedded-mcp-toolkit\configs\challenge.txt
+[2026-05-27 18:56:38] [INFO] [KeyProvider/serial] key file:       E:\AI\embedded-mcp-toolkit\configs\password_input.txt
+[2026-05-27 18:57:13] [INFO] [serial_open] device=(default) port=(auto) baudRate=115200
+[2026-05-27 18:57:13] [INFO] Device resolved: board-b
+[2026-05-27 18:57:13] [INFO] [serial_open] session opened: serial_1 port=COM3
+[2026-05-27 18:57:36] [INFO] [serial_close] session_id=serial_1
+[2026-05-27 18:57:55] [INFO] [serial_shell_login] device=(default) timeout=1500 key=(none)
+[2026-05-27 18:57:55] [INFO] Device resolved: board-b
+[2026-05-27 18:57:57] [INFO] [serial_shell_login] session opened: serial_2 port=COM3
+[2026-05-27 18:58:13] [INFO] [serial_exec] session_id=serial_2 command=exit delay=1000 clear=1
+[2026-05-27 18:58:27] [INFO] [serial_shell_login] device=(default) timeout=1500 key=(none)
+[2026-05-27 18:58:27] [INFO] Device resolved: board-b
+[2026-05-27 18:58:30] [INFO] Device resolved: board-b
+[2026-05-27 18:58:30] [INFO] [KeyProvider/serial] challenge file: E:\AI\embedded-mcp-toolkit\configs\challenge.txt
+[2026-05-27 18:58:30] [INFO] [KeyProvider/serial] key file:       E:\AI\embedded-mcp-toolkit\configs\password_input.txt
+[2026-05-27 18:58:38] [INFO] [serial_shell_login] session reused: serial_2 port=COM3
+[2026-05-27 18:58:54] [INFO] [serial_enter_uboot] session_id=serial_2 timeout=60s
+[2026-05-27 18:59:11] [INFO] [serial_enter_uboot] detected any-key autoboot prompt
+[2026-05-27 18:59:36] [INFO] [serial_exec] session_id=serial_2 command=help delay=3000 clear=1
 
 ```
+
+会记录工具的名称、传入的参数等。
 
 ### 3. `configs`配置
 
