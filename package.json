@@ -10,9 +10,10 @@
   "scripts": {
     "build": "tsc",
     "clean": "rimraf out",
+    "clean-log": "rimraf --glob log/*.log",
     "start": "node out/index.js",
     "dev": "tsc --watch",
-    "inspector": "mcp-inspector node bin/embedded-mcp-toolkit-cli.js",
+    "inspector": "set DEVICE=board-b&& set BOARD_CONFIG_PATH=./configs/config.yaml&& set LOG_SAVE=1&& set LOG_DIR=./log&& mcp-inspector node bin/embedded-mcp-toolkit-cli.js",
     "psh-demo-ssh": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-ssh",
     "psh-demo-serial": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-serial",
     "format:check": "prettier ./src --check",
@@ -20,7 +21,8 @@
     "eslint:fix": "eslint --fix -c eslint.config.ts src",
     "pack-dry-run": "npm pack --dry-run",
     "pack-tgz": "npm pack",
-    "pack-list": "tar -tzf smai-kit-embedded-mcp-toolkit-0.1.0.tgz"
+    "pack-list": "tar -tzf smai-kit-embedded-mcp-toolkit-%npm_package_version%.tgz",
+    "get-node-process": "tasklist | findstr node.exe"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
