@@ -1,10 +1,10 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { load } from "js-yaml";
-import { logger } from "./common/logger.js";
-import type { SSHShellConfig } from "./ssh.js";
-import type { SerialShellConfig } from "./serial.js";
-import type { KeyProviderConfig } from "./common/key-provider.js";
+import { logger } from "./logger.js";
+import type { SSHShellConfig } from "../transport/ssh.js";
+import type { SerialShellConfig } from "../transport/serial.js";
+import type { KeyProviderConfig } from "../utils/key-provider.js";
 
 /** KeyProvider 配置片段（YAML 中可选项） */
 interface KeyProviderYaml {
@@ -63,7 +63,7 @@ function loadConfig(): RootConfig {
  * 配置优先级: 环境变量 > config.yaml > 硬编码兜底
  *
  * 可通过命令行传入，如:
- *   DEVICE=board-b node out/index.js ssh
+ *   DEVICE=board-b node out/main.js ssh
  */
 export function resolveDeviceName(): string {
   const deviceName = process.env.DEVICE ?? loadConfig().default ?? "board-a";
@@ -144,7 +144,9 @@ export function getKeyProviderConfig(
   const keyFilePath =
     process.env.KEY_FILE ?? yaml.keyFilePath ?? "password_input.txt";
 
-  logger.info(`[KeyProvider/${scope}] challenge file: ${resolve(challengeFilePath)}`);
+  logger.info(
+    `[KeyProvider/${scope}] challenge file: ${resolve(challengeFilePath)}`
+  );
   logger.info(`[KeyProvider/${scope}] key file:       ${resolve(keyFilePath)}`);
 
   return {

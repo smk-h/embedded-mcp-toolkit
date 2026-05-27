@@ -1,6 +1,6 @@
 // MCP SSH 工具 — SSH 相关工具的统一定义入口（只导出工具，注册由 src/mcp.ts 负责）
 
-import { mcpDefineTool, ToolEntry } from "../helper/mcp_helper.js";
+import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 
 import {
   sshShellOpenConfig,
@@ -19,7 +19,7 @@ import {
   sshConnectionsHandler,
   sshShellLoginConfig,
   sshShellLoginHandler,
-} from "./ssh_shell.js";
+} from "./shell.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 

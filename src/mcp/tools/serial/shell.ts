@@ -1,10 +1,16 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../helper/mcp_helper.js";
-import { logger } from "../common/logger.js";
-import { SerialShell, type SerialShellConfig } from "../serial.js";
-import { getSerialConfig, getKeyProviderConfig } from "../config.js";
-import { PshHandler, PshState } from "../common/psh.js";
-import { KeyProvider } from "../common/key-provider.js";
+import { text } from "../../tool-registry.js";
+import { logger } from "../../../infra/logger.js";
+import {
+  SerialShell,
+  type SerialShellConfig,
+} from "../../../transport/serial.js";
+import {
+  getSerialConfig,
+  getKeyProviderConfig,
+} from "../../../infra/config.js";
+import { PshHandler, PshState } from "../../../transport/psh.js";
+import { KeyProvider } from "../../../utils/key-provider.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -717,7 +723,8 @@ export const serialEnterUbootConfig = {
       },
       timeout: {
         type: "number",
-        description: "Total timeout in seconds to wait for autoboot prompt (default: 60)",
+        description:
+          "Total timeout in seconds to wait for autoboot prompt (default: 60)",
       },
     },
     required: ["session_id"],
@@ -764,7 +771,9 @@ export async function serialEnterUbootHandler(args: {
 
   // 发送 reboot 重启设备
   shell.write("reboot", 1);
-
+  logger.info(
+    `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
+  );
   const deadline = Date.now() + timeoutSec * 1000;
   let allOutput = "";
   let enteredUboot = false;
@@ -832,7 +841,9 @@ function registerSession(
   detail: string
 ) {
   if (existingId) {
-    logger.info(`[serial_shell_login] session reused: ${existingId} port=${port}`);
+    logger.info(
+      `[serial_shell_login] session reused: ${existingId} port=${port}`
+    );
     return {
       content: [text(`Session ${existingId} on ${port} (existing, ${detail})`)],
     };

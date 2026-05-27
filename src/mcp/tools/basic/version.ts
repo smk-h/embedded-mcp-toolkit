@@ -2,15 +2,15 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
-import { text } from "../helper/mcp_helper.js";
-import { logger } from "../common/logger.js";
+import { text } from "../../tool-registry.js";
+import { logger } from "../../../infra/logger.js";
 
 // ── 读取 package.json 获取版本信息 ──
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const pkg = JSON.parse(
-  readFileSync(resolve(__dirname, "../../package.json"), "utf-8")
+  readFileSync(resolve(__dirname, "../../../../package.json"), "utf-8")
 );
 
 // ── 声明 ──

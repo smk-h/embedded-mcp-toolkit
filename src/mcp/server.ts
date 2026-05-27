@@ -5,18 +5,18 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 
-import { logger } from "./common/logger.js";
-import { mcpBasicTools } from "./mcp_basic/index.js";
-import { mcpSshTools } from "./mcp_ssh/index.js";
-import { mcpSerialTools } from "./mcp_serial/index.js";
-import { mcpWinTools } from "./mcp_win/index.js";
+import { logger } from "../infra/logger.js";
+import { mcpBasicTools } from "./tools/basic/index.js";
+import { mcpSshTools } from "./tools/ssh/index.js";
+import { mcpSerialTools } from "./tools/serial/index.js";
+import { mcpWinTools } from "./tools/win/index.js";
 
 // ── package info ───────────────────────────────────────────
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const pkg = JSON.parse(
-  readFileSync(resolve(__dirname, "../package.json"), "utf-8")
+  readFileSync(resolve(__dirname, "../../package.json"), "utf-8")
 );
 
 // ── server 实例 ────────────────────────────────────────────
@@ -52,12 +52,15 @@ for (const { name, config, handler } of mcpWinTools) {
  */
 async function cleanupAllSessions() {
   // 动态导入避免循环依赖，仅在清理时加载
-  const [{ disposeAllSerialSessions }, { disposeAllSshSessions }, { disposeAllPowerShellSessions }] =
-    await Promise.all([
-      import("./mcp_serial/serial_shell.js"),
-      import("./mcp_ssh/ssh_shell.js"),
-      import("./mcp_win/powershell_shell.js"),
-    ]);
+  const [
+    { disposeAllSerialSessions },
+    { disposeAllSshSessions },
+    { disposeAllPowerShellSessions },
+  ] = await Promise.all([
+    import("./tools/serial/shell.js"),
+    import("./tools/ssh/shell.js"),
+    import("./tools/win/powershell.js"),
+  ]);
   await Promise.allSettled([
     disposeAllSerialSessions(),
     disposeAllSshSessions(),

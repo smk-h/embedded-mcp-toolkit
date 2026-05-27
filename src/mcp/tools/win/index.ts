@@ -1,12 +1,9 @@
 // MCP Core 工具 — 通用工具的统一定义入口（只导出工具，注册由 src/mcp.ts 负责）
 
-import { mcpDefineTool, ToolEntry } from "../helper/mcp_helper.js";
+import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 
-import { portScanConfig, portScanHandler } from "../mcp_win/port_scan_tool.js";
-import {
-  networkScanConfig,
-  networkScanHandler,
-} from "../mcp_win/network_scan_tool.js";
+import { portScanConfig, portScanHandler } from "./port-scan.js";
+import { networkScanConfig, networkScanHandler } from "./network-scan.js";
 import {
   powerShellOpenConfig,
   powerShellOpenHandler,
@@ -20,7 +17,7 @@ import {
   powerShellListHandler,
   powerShellExecConfig,
   powerShellExecHandler,
-} from "../mcp_win/powershell_shell.js";
+} from "./powershell.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
@@ -31,10 +28,34 @@ import {
 export const mcpWinTools: ToolEntry[] = [
   mcpDefineTool("port_scan_tool", portScanConfig, portScanHandler),
   mcpDefineTool("network_scan_tool", networkScanConfig, networkScanHandler),
-  mcpDefineTool("power_shell_open", powerShellOpenConfig, powerShellOpenHandler),
-  mcpDefineTool("power_shell_close", powerShellCloseConfig, powerShellCloseHandler),
-  mcpDefineTool("power_shell_write", powerShellWriteConfig, powerShellWriteHandler),
-  mcpDefineTool("power_shell_read", powerShellReadConfig, powerShellReadHandler),
-  mcpDefineTool("power_shell_list", powerShellListConfig, powerShellListHandler),
-  mcpDefineTool("power_shell_exec", powerShellExecConfig, powerShellExecHandler),
+  mcpDefineTool(
+    "power_shell_open",
+    powerShellOpenConfig,
+    powerShellOpenHandler
+  ),
+  mcpDefineTool(
+    "power_shell_close",
+    powerShellCloseConfig,
+    powerShellCloseHandler
+  ),
+  mcpDefineTool(
+    "power_shell_write",
+    powerShellWriteConfig,
+    powerShellWriteHandler
+  ),
+  mcpDefineTool(
+    "power_shell_read",
+    powerShellReadConfig,
+    powerShellReadHandler
+  ),
+  mcpDefineTool(
+    "power_shell_list",
+    powerShellListConfig,
+    powerShellListHandler
+  ),
+  mcpDefineTool(
+    "power_shell_exec",
+    powerShellExecConfig,
+    powerShellExecHandler
+  ),
 ];

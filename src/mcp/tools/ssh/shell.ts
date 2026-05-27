@@ -1,10 +1,10 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../helper/mcp_helper.js";
-import { logger } from "../common/logger.js";
-import { SSHShell, type SSHShellConfig } from "../ssh.js";
-import { getSSHConfig, getKeyProviderConfig } from "../config.js";
-import { PshHandler, PshState } from "../common/psh.js";
-import { KeyProvider } from "../common/key-provider.js";
+import { text } from "../../tool-registry.js";
+import { logger } from "../../../infra/logger.js";
+import { SSHShell, type SSHShellConfig } from "../../../transport/ssh.js";
+import { getSSHConfig, getKeyProviderConfig } from "../../../infra/config.js";
+import { PshHandler, PshState } from "../../../transport/psh.js";
+import { KeyProvider } from "../../../utils/key-provider.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -541,7 +541,9 @@ export async function sshShellLoginHandler(args: {
   if (detect.state === PshState.READY) {
     const sessionId = `ssh_${++sessionCounter}`;
     sessions.set(sessionId, shell);
-    logger.info(`[ssh_shell_login] session opened: ${sessionId} (PSH already unlocked)`);
+    logger.info(
+      `[ssh_shell_login] session opened: ${sessionId} (PSH already unlocked)`
+    );
     return {
       content: [
         text(
@@ -570,7 +572,9 @@ export async function sshShellLoginHandler(args: {
     if (state === PshState.READY) {
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
-      logger.info(`[ssh_shell_login] session opened: ${sessionId} (UNLOCKING resolved)`);
+      logger.info(
+        `[ssh_shell_login] session opened: ${sessionId} (UNLOCKING resolved)`
+      );
       return {
         content: [
           text(
@@ -610,11 +614,11 @@ export async function sshShellLoginHandler(args: {
     const onKeyRequest = args.key
       ? undefined
       : (output: string) => {
-        const keyProvider = new KeyProvider(
-          getKeyProviderConfig("ssh", args.device)
-        );
-        return keyProvider.getKey(output);
-      };
+          const keyProvider = new KeyProvider(
+            getKeyProviderConfig("ssh", args.device)
+          );
+          return keyProvider.getKey(output);
+        };
 
     const result = await handler.unlock(
       shell,
@@ -626,7 +630,9 @@ export async function sshShellLoginHandler(args: {
     if (result.success) {
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
-      logger.info(`[ssh_shell_login] session opened: ${sessionId} (unlock succeeded)`);
+      logger.info(
+        `[ssh_shell_login] session opened: ${sessionId} (unlock succeeded)`
+      );
       return {
         content: [
           text(
@@ -649,7 +655,9 @@ export async function sshShellLoginHandler(args: {
   // --- 未知状态：探测后仍无法判断，返回 session 但可能需手动交互 ---
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
-  logger.info(`[ssh_shell_login] session opened: ${sessionId} (PSH state unknown)`);
+  logger.info(
+    `[ssh_shell_login] session opened: ${sessionId} (PSH state unknown)`
+  );
   return {
     content: [
       text(

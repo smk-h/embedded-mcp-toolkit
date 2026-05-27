@@ -15,8 +15,8 @@ import {
   type ChildProcess,
   type ExecSyncOptionsWithStringEncoding,
 } from "child_process";
-import { MAX_BUFFER_SIZE } from "./common.js";
-import { logger } from "./common/logger.js";
+import { MAX_BUFFER_SIZE } from "../infra/constants.js";
+import { logger } from "../infra/logger.js";
 
 // ── 一次性执行工具 ──────────────────────────────────────────
 
@@ -85,7 +85,7 @@ export interface PowerShellShellConfig {
  * 内部维护输出缓冲区，支持命令发送与输出读取。
  *
  * 与 SerialShell / SSHShell 保持相同的接口模式，
- * 实现 common.ts 中的 InteractiveShell 接口。
+ * 实现 transport/loop.ts 中的 InteractiveShell 接口。
  */
 export class PowerShellShell {
   #process: ChildProcess | null = null;
@@ -164,7 +164,7 @@ export class PowerShellShell {
     proc.stderr?.on("data", (data: Buffer) => {
       this.#appendBuffer(data.toString());
     });
-    proc.on("close", (code) => {
+    proc.on("close", () => {
       this.#process = null;
       this.#collecting = false;
     });
@@ -253,7 +253,11 @@ export class PowerShellShell {
           });
         });
       } catch {
-        try { proc.kill(); } catch { /* ignore */ }
+        try {
+          proc.kill();
+        } catch {
+          /* ignore */
+        }
       }
     }
     this.#buffer = "";

@@ -1,6 +1,6 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../helper/mcp_helper.js";
-import { logger } from "../common/logger.js";
+import { text } from "../../tool-registry.js";
+import { logger } from "../../../infra/logger.js";
 
 // ── 声明 ──
 

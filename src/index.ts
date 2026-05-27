@@ -1,8 +1,8 @@
-import { interactiveShell, pshDemoSsh } from "./ssh.js";
-import { interactiveSerialShell, pshDemoSerial } from "./serial.js";
-import { getSSHConfig, getSerialConfig, getAllConfig } from "./config.js";
-import { startMcpServer } from "./mcp.js";
-import { runInit } from "./command/init.js";
+import { interactiveShell, pshDemoSsh } from "./transport/ssh.js";
+import { interactiveSerialShell, pshDemoSerial } from "./transport/serial.js";
+import { getSSHConfig, getSerialConfig, getAllConfig } from "./infra/config.js";
+import { startMcpServer } from "./mcp/server.js";
+import { runInit } from "./cli/commands/init.js";
 
 const mode = process.argv[2] || "mcp"; // 默认无参数时为 MCP 服务器模式
 
@@ -68,7 +68,7 @@ switch (mode) {
   }
   default:
     console.error(
-      "Usage: node index.js [mcp|init|ssh|serial|psh-demo-ssh|psh-demo-serial|config]"
+      "Usage: node main.js [mcp|init|ssh|serial|psh-demo-ssh|psh-demo-serial|config]"
     );
     console.error("");
     console.error("  mcp              MCP 服务器模式（默认）");
@@ -79,11 +79,13 @@ switch (mode) {
     console.error("  psh-demo-serial  串口方式 PSH 探测 + 解锁演示");
     console.error("  config           打印当前默认设备的配置信息");
     console.error("");
-    console.error("💡 提示: 使用 'embedded-mcp-toolkit init' 在任意目录初始化配置文件");
+    console.error(
+      "💡 提示: 使用 'embedded-mcp-toolkit init' 在任意目录初始化配置文件"
+    );
     console.error("");
     console.error("Configure via config.yaml (copy from config.example.yaml).");
     console.error(
-      "Set DEVICE env var to select a device, e.g. DEVICE=board-b node out/index.js ssh"
+      "Set DEVICE env var to select a device, e.g. DEVICE=board-b node out/main.js ssh"
     );
     process.exit(1);
 }

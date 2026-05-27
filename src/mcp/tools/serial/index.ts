@@ -1,6 +1,6 @@
 // MCP Serial 工具 — 串口相关工具的统一定义入口（只导出工具，注册由 src/mcp.ts 负责）
 
-import { mcpDefineTool, ToolEntry } from "../helper/mcp_helper.js";
+import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 
 import {
   serialOpenConfig,
@@ -19,7 +19,7 @@ import {
   serialShellLoginHandler,
   serialEnterUbootConfig,
   serialEnterUbootHandler,
-} from "./serial_shell.js";
+} from "./shell.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 

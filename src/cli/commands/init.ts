@@ -189,11 +189,9 @@ function copyAndPatchJson(
   const isMcpJson = basename(dest) === ".mcp.json";
 
   if (isMcpJson) {
-    const servers: Record<string, Record<string, unknown>> =
-      (json as Record<string, unknown>).mcpServers as Record<
-        string,
-        Record<string, unknown>
-      > ?? {};
+    const servers: Record<string, Record<string, unknown>> = ((
+      json as Record<string, unknown>
+    ).mcpServers as Record<string, Record<string, unknown>>) ?? {};
     for (const key of Object.keys(servers)) {
       servers[key].command = binCommand;
       servers[key].args = binArgs;
@@ -202,11 +200,9 @@ function copyAndPatchJson(
       }
     }
   } else {
-    const mcp: Record<string, Record<string, unknown>> =
-      (json as Record<string, unknown>).mcp as Record<
-        string,
-        Record<string, unknown>
-      > ?? {};
+    const mcp: Record<string, Record<string, unknown>> = ((
+      json as Record<string, unknown>
+    ).mcp as Record<string, Record<string, unknown>>) ?? {};
     for (const key of Object.keys(mcp)) {
       mcp[key].command = [binCommand, ...binArgs];
       if (mcp[key].environment) {
@@ -229,7 +225,12 @@ type CopyTask =
   | { type: "file"; src: string; dest: string }
   | { type: "dir"; src: string; dest: string; description?: string }
   | { type: "json"; src: string; dest: string }
-  | { type: "pattern"; srcDir: string; destDir: string; match: (entry: string) => boolean }
+  | {
+      type: "pattern";
+      srcDir: string;
+      destDir: string;
+      match: (entry: string) => boolean;
+    }
   | { type: "configYaml"; src: string; dest: string };
 
 interface TaskGroup {
@@ -250,10 +251,10 @@ export function runInit(rawArgs: string[]): void {
   const doOpencode = !claudeOnly;
 
   // 确定 npm 包根目录
-  // out/command/init.js → ../../ → 包根目录
+  // out/cli/commands/init.js → ../../ → 包根目录
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  const PKG_ROOT = resolve(__dirname, "..", "..");
+  const PKG_ROOT = resolve(__dirname, "..", "..", "..");
 
   // 根据实际执行命令判断本地安装 vs 全局安装
   // 判断依据：process.argv[1] 是否在目标目录的 node_modules 下
@@ -277,7 +278,9 @@ export function runInit(rawArgs: string[]): void {
   console.log(`   模板源: ${PKG_ROOT}`);
   console.log(`   目标目录: ${target}`);
   console.log(`   默认设备: ${device}`);
-  console.log(`   安装方式: ${localInstall ? "本地 (node_modules)" : "全局"}\n`);
+  console.log(
+    `   安装方式: ${localInstall ? "本地 (node_modules)" : "全局"}\n`
+  );
 
   ensureDir(target);
 
@@ -292,14 +295,22 @@ export function runInit(rawArgs: string[]): void {
       label: "[OpenCode] 配置",
       condition: doOpencode,
       tasks: [
-        { type: "json", src: ".opencode/opencode.json", dest: ".opencode/opencode.json" },
+        {
+          type: "json",
+          src: ".opencode/opencode.json",
+          dest: ".opencode/opencode.json",
+        },
       ],
     },
     {
       label: "[Claude Code] 项目文件",
       condition: doClaude,
       tasks: [
-        { type: "file", src: ".claude/settings.local.json", dest: ".claude/settings.local.json" },
+        {
+          type: "file",
+          src: ".claude/settings.local.json",
+          dest: ".claude/settings.local.json",
+        },
         { type: "file", src: ".claude/CLAUDE.md", dest: ".claude/CLAUDE.md" },
         {
           type: "pattern",
@@ -319,14 +330,22 @@ export function runInit(rawArgs: string[]): void {
       label: "配置文件",
       condition: true,
       tasks: [
-        { type: "file", src: "configs/config.example.yaml", dest: "configs/config.example.yaml" },
+        {
+          type: "file",
+          src: "configs/config.example.yaml",
+          dest: "configs/config.example.yaml",
+        },
         {
           type: "pattern",
           srcDir: "configs",
           destDir: "configs",
           match: (e) => e.endsWith(".txt"),
         },
-        { type: "configYaml", src: "configs/config.example.yaml", dest: "configs/config.yaml" },
+        {
+          type: "configYaml",
+          src: "configs/config.example.yaml",
+          dest: "configs/config.yaml",
+        },
       ],
     },
   ];
@@ -348,7 +367,9 @@ export function runInit(rawArgs: string[]): void {
             force
           );
           if (count > 0 && task.description) {
-            console.log(`  ✅ 复制 ${count} 个${task.description}到 ${task.dest}/`);
+            console.log(
+              `  ✅ 复制 ${count} 个${task.description}到 ${task.dest}/`
+            );
           }
           break;
         }

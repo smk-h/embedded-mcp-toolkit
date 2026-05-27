@@ -1,10 +1,10 @@
-// MCP Core 工具 — 通用工具的统一定义入口（只导出工具，注册由 src/mcp.ts 负责）
+// MCP Core 工具 — 通用工具的统一定义入口（只导出工具，注册由 src/mcp/server.ts 负责）
 
-import { mcpDefineTool, ToolEntry } from "../helper/mcp_helper.js";
+import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 
-import { greetConfig, greetHandler } from "./greet_tool.js";
-import { versionConfig, versionHandler } from "./version_tool.js";
-import { deviceInfoConfig, deviceInfoHandler } from "./device_info_tool.js";
+import { greetConfig, greetHandler } from "./greet.js";
+import { versionConfig, versionHandler } from "./version.js";
+import { deviceInfoConfig, deviceInfoHandler } from "./device-info.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
