@@ -92,7 +92,7 @@ export function getSSHConfig(name?: string): SSHShellConfig {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   const yaml = device.ssh ?? {};
   return {
-    host: process.env.BOARD_HOST ?? yaml.host ?? "0.0.0.0",
+    host: process.env.BOARD_HOST ?? yaml.host ?? "none",
     port: parseInt(process.env.BOARD_PORT ?? String(yaml.port ?? 22), 10),
     username: process.env.BOARD_USERNAME ?? yaml.username ?? "root",
     password: process.env.BOARD_PASSWORD ?? yaml.password ?? "root",
@@ -110,7 +110,7 @@ export function getSerialConfig(name?: string): SerialShellConfig {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   const yaml = device.serial ?? {};
   return {
-    port: process.env.SERIAL_PORT ?? yaml.port ?? "COM0",
+    port: process.env.SERIAL_PORT ?? yaml.port ?? "none",
     baudRate: parseInt(
       process.env.SERIAL_BAUDRATE ?? String(yaml.baudRate ?? 115200),
       10

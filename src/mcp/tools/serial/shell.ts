@@ -127,6 +127,12 @@ export async function serialOpenHandler(args: {
     lineEnding: baseConfig.lineEnding,
   };
 
+  if (config.port === "none") {
+    const msg = `Device '${args.device ?? "(default)"}' does not support serial (port is none).`;
+    logger.warn(msg);
+    return { content: [text(msg)] };
+  }
+
   // 检查该 COM 口是否已有活跃会话
   const existingId = portToSession.get(config.port);
   if (existingId && sessions.has(existingId)) {
@@ -529,6 +535,13 @@ export async function serialShellLoginHandler(args: {
   );
   // 获取设备配置
   const baseConfig: SerialShellConfig = getSerialConfig(args.device);
+
+  if (baseConfig.port === "none") {
+    const msg = `Device '${args.device ?? "(default)"}' does not support serial (port is none).`;
+    logger.warn(msg);
+    return { content: [text(msg)] };
+  }
+
   const stepDelay = args.timeout ?? 1500;
 
   // ===== 步骤 0：检查是否已有 session =====

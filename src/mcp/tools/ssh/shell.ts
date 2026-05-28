@@ -68,6 +68,12 @@ export async function sshShellOpenHandler(args: {
   );
   const config: SSHShellConfig = getSSHConfig(args.device);
 
+  if (config.host === "none") {
+    const msg = `Device '${args.device ?? "(default)"}' does not support SSH (host is none).`;
+    logger.warn(msg);
+    return { content: [text(msg)] };
+  }
+
   const shell = new SSHShell(config);
 
   const banner = await shell.open();
@@ -495,6 +501,13 @@ export async function sshShellLoginHandler(args: {
     `[ssh_shell_login] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 1500} key=${args.key ? "***" : "(none)"}`
   );
   const config: SSHShellConfig = getSSHConfig(args.device);
+
+  if (config.host === "none") {
+    const msg = `Device '${args.device ?? "(default)"}' does not support SSH (host is none).`;
+    logger.warn(msg);
+    return { content: [text(msg)] };
+  }
+
   const stepDelay = args.timeout ?? 1500;
 
   // ===== 步骤 1：建立 SSH 连接 =====
@@ -614,11 +627,11 @@ export async function sshShellLoginHandler(args: {
     const onKeyRequest = args.key
       ? undefined
       : (output: string) => {
-          const keyProvider = new KeyProvider(
-            getKeyProviderConfig("ssh", args.device)
-          );
-          return keyProvider.getKey(output);
-        };
+        const keyProvider = new KeyProvider(
+          getKeyProviderConfig("ssh", args.device)
+        );
+        return keyProvider.getKey(output);
+      };
 
     const result = await handler.unlock(
       shell,

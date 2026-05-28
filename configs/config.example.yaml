@@ -24,7 +24,6 @@ devices:
       port: "COM4"
       baudRate: 115200
       keyProvider:
-        keyProvider:
         mode: "file"
         challengeFilePath: "./configs/challenge.txt"
         keyFilePath: "./configs/password_input.txt"
@@ -46,6 +45,50 @@ devices:
         timeout: 120000
     serial:
       port: "COM3"
+      baudRate: 115200
+      keyProvider:
+        mode: "file"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
+        pollInterval: 500
+        timeout: 120000
+  # ---- 设备 nossh ----
+  board-nossh:
+    ssh:
+      host: "none"
+      port: 22
+      username: "sumu"
+      password: "sumu"
+      keyProvider:
+        mode: "file"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
+        pollInterval: 500
+        timeout: 120000
+    serial:
+      port: "COM3"
+      baudRate: 115200
+      keyProvider:
+        mode: "file"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
+        pollInterval: 500
+        timeout: 120000
+  # ---- 设备 noserial ----
+  board-noserial:
+    ssh:
+      host: "1.1.1.1"
+      port: 22
+      username: "sumu"
+      password: "sumu"
+      keyProvider:
+        mode: "file"
+        challengeFilePath: "./configs/challenge.txt"
+        keyFilePath: "./configs/password_input.txt"
+        pollInterval: 500
+        timeout: 120000
+    serial:
+      port: "none"
       baudRate: 115200
       keyProvider:
         mode: "file"
