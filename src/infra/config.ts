@@ -67,7 +67,8 @@ function loadConfig(): RootConfig {
  */
 export function resolveDeviceName(): string {
   const deviceName = process.env.DEVICE ?? loadConfig().default ?? "board-a";
-  logger.info(`Device resolved: ${deviceName}`);
+  logger.info(`Device resolved: ${deviceName} `,
+    `(from ${process.env.DEVICE ? "env" : loadConfig().default ? "config.yaml" : "default value"})`);
   return deviceName;
 }
 
@@ -134,7 +135,8 @@ export function getKeyProviderConfig(
   scope: "ssh" | "serial",
   name?: string
 ): KeyProviderConfig {
-  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const deviceName = name ?? resolveDeviceName();
+  const device = getDeviceConfig(deviceName);
   const yaml: KeyProviderYaml =
     scope === "ssh"
       ? (device.ssh?.keyProvider ?? {})
@@ -145,9 +147,9 @@ export function getKeyProviderConfig(
     process.env.KEY_FILE ?? yaml.keyFilePath ?? "password_input.txt";
 
   logger.info(
-    `[KeyProvider/${scope}] challenge file: ${resolve(challengeFilePath)}`
+    `[${deviceName}] [KeyProvider/${scope}] challenge file: ${resolve(challengeFilePath)}`
   );
-  logger.info(`[KeyProvider/${scope}] key file:       ${resolve(keyFilePath)}`);
+  logger.info(`[${deviceName}] [KeyProvider/${scope}] key file:       ${resolve(keyFilePath)}`);
 
   return {
     mode:
@@ -186,6 +188,11 @@ export function getAllConfig(name?: string): {
 
 /**
  * @brief 列出所有可用设备名
+ *     1. config.yaml 中 devices 字段下定义了三个设备：board-a、board-b、board-test。
+ *     2. loadConfig() 解析 YAML 后，返回的对象中 devices 属性为 
+ *        { "board-a": {...}, "board-b": {...}, "board-test": {...} }。
+ *     3. Object.keys(devices) 提取键名得到 ["board-a", "board-b", "board-test"]。
+ *     4. devices 对象存在（truthy），走 Object.keys(devices) 分支而非 []。
  */
 export function listDevices(): string[] {
   const devices = loadConfig().devices;

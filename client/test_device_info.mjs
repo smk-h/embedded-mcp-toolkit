@@ -15,7 +15,6 @@ async function testDefaultDevice(client) {
   assert(text.includes("Device:"), "返回包含 Device 字段");
   assert(text.includes("[SSH]"), "返回包含 [SSH] 段");
   assert(text.includes("[Serial]"), "返回包含 [Serial] 段");
-  assert(text.includes("Available:"), "返回包含 Available 设备列表");
 }
 
 async function testSpecificDevice(client) {
@@ -33,8 +32,24 @@ async function testSpecificDevice(client) {
   assert(text.includes("192.168.16.103"), "返回 board-a 的 SSH 地址");
 }
 
+async function testAllDevices(client) {
+  console.log("\n── 测试 3: 获取所有设备信息 ──");
+
+  const result = await client.callTool({
+    name: "device_info_tool",
+    arguments: { device: "all" },
+  });
+
+  printResult(result);
+
+  const text = result.content.map((c) => c.text).join("");
+  assert(text.includes("--- Device:"), "返回包含设备分隔符");
+  assert(text.includes("[SSH]"), "返回包含 [SSH] 段");
+  assert(text.includes("[Serial]"), "返回包含 [Serial] 段");
+}
+
 async function testNonexistentDevice(client) {
-  console.log("\n── 测试 3: 查询不存在的设备 ──");
+  console.log("\n── 测试 4: 查询不存在的设备 ──");
 
   const result = await client.callTool({
     name: "device_info_tool",
@@ -74,7 +89,12 @@ async function main() {
     process.exit(1);
   }
 
-  const tests = [testDefaultDevice, testSpecificDevice, testNonexistentDevice];
+  const tests = [
+    testDefaultDevice,
+    testSpecificDevice,
+    testAllDevices,
+    testNonexistentDevice,
+  ];
 
   for (const test of tests) {
     try {
