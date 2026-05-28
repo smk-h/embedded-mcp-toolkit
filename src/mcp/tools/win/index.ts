@@ -4,6 +4,7 @@ import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 
 import { portScanConfig, portScanHandler } from "./port-scan.js";
 import { networkScanConfig, networkScanHandler } from "./network-scan.js";
+import { subnetCheckConfig, subnetCheckHandler } from "./subnet-check.js";
 import {
   powerShellOpenConfig,
   powerShellOpenHandler,
@@ -28,6 +29,7 @@ import {
 export const mcpWinTools: ToolEntry[] = [
   mcpDefineTool("port_scan_tool", portScanConfig, portScanHandler),
   mcpDefineTool("network_scan_tool", networkScanConfig, networkScanHandler),
+  mcpDefineTool("subnet_check_tool", subnetCheckConfig, subnetCheckHandler),
   mcpDefineTool(
     "power_shell_open",
     powerShellOpenConfig,
