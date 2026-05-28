@@ -18,6 +18,7 @@ import {
 } from "fs";
 import { resolve, join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
+import { Command } from "commander";
 
 // ============================================================
 // 选项
@@ -34,78 +35,6 @@ interface InitOptions {
   opencodeOnly: boolean;
   /** 覆盖已存在的文件 */
   force: boolean;
-}
-
-// ============================================================
-// 帮助
-// ============================================================
-
-function printHelp(): void {
-  console.log(`
-embedded-mcp-toolkit init — 初始化 MCP 配置文件
-
-用法:
-  embedded-mcp-toolkit init [options]
-
-选项:
-  --target <path>     目标目录（默认：当前工作目录）
-  --device <name>     默认设备名（默认：board-b）
-  --claude-only       仅生成 Claude Code 配置
-  --opencode-only     仅生成 OpenCode 配置
-  --force             覆盖已存在的文件
-  --help              显示帮助
-
-生成的目录结构:
-  .mcp.json                    Claude Code MCP 配置
-  .opencode/opencode.json       OpenCode MCP 配置
-  .claude/
-    settings.local.json         Claude Code 权限设置
-    CLAUDE.md                   Claude Code 项目说明
-    skills/                     Claude Code 快捷技能
-  configs/
-    config.example.yaml         设备配置模板
-  log/                         日志目录
-`);
-}
-
-// ============================================================
-// 参数解析
-// ============================================================
-
-function parseArgs(argv: string[]): InitOptions {
-  const options: InitOptions = {
-    target: process.cwd(),
-    device: "board-b",
-    claudeOnly: false,
-    opencodeOnly: false,
-    force: false,
-  };
-
-  for (let i = 0; i < argv.length; i++) {
-    switch (argv[i]) {
-      case "--target":
-        options.target = resolve(argv[++i] || options.target);
-        break;
-      case "--device":
-        options.device = argv[++i] || options.device;
-        break;
-      case "--claude-only":
-        options.claudeOnly = true;
-        break;
-      case "--opencode-only":
-        options.opencodeOnly = true;
-        break;
-      case "--force":
-        options.force = true;
-        break;
-      case "--help":
-      case "-h":
-        printHelp();
-        process.exit(0);
-    }
-  }
-
-  return options;
 }
 
 // ============================================================
@@ -244,8 +173,19 @@ interface TaskGroup {
 // ============================================================
 
 export function runInit(rawArgs: string[]): void {
-  const options = parseArgs(rawArgs);
-  const { target, force, claudeOnly, opencodeOnly, device } = options;
+  const program = new Command("init");
+  program
+    .description("初始化 MCP 配置文件（Claude Code / OpenCode）")
+    .option("-t, --target <path>", "目标目录（默认：当前工作目录）", process.cwd())
+    .option("-d, --device <name>", "默认设备名", "board-b")
+    .option("--claude-only", "仅生成 Claude Code 配置", false)
+    .option("--opencode-only", "仅生成 OpenCode 配置", false)
+    .option("-f, --force", "覆盖已存在的文件", false)
+    .parse(["node", "init", ...rawArgs]);
+
+  const opts = program.opts<InitOptions>();
+  const target = resolve(opts.target);
+  const { force, claudeOnly, opencodeOnly, device } = opts;
 
   const doClaude = !opencodeOnly;
   const doOpencode = !claudeOnly;
@@ -274,7 +214,8 @@ export function runInit(rawArgs: string[]): void {
     binArgs = [];
   }
 
-  console.log(`\n🚀 embedded-mcp-toolkit 初始化`);
+  console.log(`
+🚀 embedded-mcp-toolkit 初始化`);
   console.log(`   模板源: ${PKG_ROOT}`);
   console.log(`   目标目录: ${target}`);
   console.log(`   默认设备: ${device}`);
