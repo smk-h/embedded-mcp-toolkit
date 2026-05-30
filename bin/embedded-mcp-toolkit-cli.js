@@ -16,16 +16,5 @@ if (!existsSync(outIndex)) {
   console.log('[embedded-mcp-toolkit] 构建完成，启动服务...');
 }
 
-// ---- init 子命令 ----
-const subCommand = process.argv[2];
-if (subCommand === 'init') {
-  import('../out/cli/commands/init.js')
-    .then((mod) => mod.runInit(process.argv.slice(3)))
-    .catch((err) => {
-      console.error('init 命令执行失败:', err.message);
-      process.exit(1);
-    });
-} else {
-  // ---- 正常 MCP 服务器启动 ----
-  import('../out/index.js');
-}
+// 所有命令统一由 Commander 在 src/index.ts 中路由解析
+import('../out/index.js');

@@ -1,10 +1,8 @@
 /**
- * embedded-mcp-toolkit init 命令
+ * @file src/cli/commands/init.ts
+ * @brief embedded-mcp-toolkit init 命令
  *
  * 在任意目录执行，从 npm 包安装目录拷贝模板文件，自动初始化 Claude Code / OpenCode 的 MCP 配置。
- *
- * 用法:
- *   embedded-mcp-toolkit init [options]
  */
 
 import {
@@ -18,29 +16,32 @@ import {
 } from "fs";
 import { resolve, join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
-import { Command } from "commander";
 
 // ============================================================
 // 选项
 // ============================================================
 
-interface InitOptions {
-  /** 目标目录（默认：当前工作目录） */
-  target: string;
-  /** 默认设备名 */
-  device: string;
-  /** 仅生成 Claude Code 配置 */
-  claudeOnly: boolean;
-  /** 仅生成 OpenCode 配置 */
-  opencodeOnly: boolean;
-  /** 覆盖已存在的文件 */
-  force: boolean;
+/**
+ * @brief init 命令的选项
+ * @details 由 Commander 在 src/index.ts 中解析命令行参数后传入。
+ */
+export interface InitOptions {
+  target: string; // 目标目录（默认：当前工作目录）
+  device: string; // 默认设备名
+  claudeOnly: boolean; // 仅生成 Claude Code 配置 
+  opencodeOnly: boolean; // 仅生成 OpenCode 配置 
+  force: boolean; // 覆盖已存在的文件
 }
 
 // ============================================================
 // 工具函数
 // ============================================================
 
+/**
+ * @brief 确保目录存在，若不存在则递归创建
+ * @param dirPath 目标目录路径
+ * @returns `true` — 目录为新创建；`false` — 目录已存在
+ */
 function ensureDir(dirPath: string): boolean {
   if (!existsSync(dirPath)) {
     mkdirSync(dirPath, { recursive: true });
@@ -49,7 +50,13 @@ function ensureDir(dirPath: string): boolean {
   return false;
 }
 
-/** 递归复制目录，返回复制的文件数 */
+/**
+ * @brief 递归复制目录
+ * @param src    源目录路径
+ * @param dest   目标目录路径
+ * @param force  是否覆盖已存在的文件
+ * @returns 实际复制的文件数量
+ */
 function copyDir(src: string, dest: string, force: boolean): number {
   if (!existsSync(src)) return 0;
   ensureDir(dest);
@@ -69,7 +76,14 @@ function copyDir(src: string, dest: string, force: boolean): number {
   return count;
 }
 
-/** 复制文件（带覆盖保护） */
+/**
+ * @brief 复制单个文件（带覆盖保护）
+ * @param src    源文件路径
+ * @param dest   目标文件路径
+ * @param force  是否覆盖已存在的文件
+ * @param log    是否输出日志（默认 true）
+ * @returns `true` — 复制成功；`false` — 跳过或源文件不存在
+ */
 function copyFile(
   src: string,
   dest: string,
@@ -91,10 +105,18 @@ function copyFile(
 }
 
 /**
- * 复制并修补 JSON 配置文件（.mcp.json / opencode.json）
+ * @brief 复制并修补 JSON 配置文件（.mcp.json / opencode.json）
+ * @details 读取模板 JSON，将其中的占位命令替换为实际二进制路径，
+ *          同时注入 DEVICE 环境变量。自动适配 Claude Code（.mcp.json）
+ *          和 OpenCode（opencode.json）两种格式。
  *
- * 自动检测本地/全局安装，将模板中的命令替换为对应二进制路径，
- * 并注入用户指定的 DEVICE 环境变量。
+ * @param src        模板 JSON 文件路径
+ * @param dest       目标 JSON 文件路径
+ * @param force      是否覆盖已存在的文件
+ * @param device     设备名称（写入 DEVICE 环境变量）
+ * @param binCommand npm 二进制命令路径
+ * @param binArgs    npm 二进制命令参数列表
+ * @returns `true` — 复制并修补成功；`false` — 跳过或失败
  */
 function copyAndPatchJson(
   src: string,
@@ -150,21 +172,41 @@ function copyAndPatchJson(
 // 拷贝任务配置
 // ============================================================
 
+/**
+ * @brief 拷贝任务描述符
+ * @details 统一的拷贝任务类型，支持文件、目录、JSON 修补、通配符匹配、
+ *          YAML 配置等多种复制策略。
+ *
+ * | type         | 说明                           |
+ * |-------------|-------------------------------|
+ * | `"file"`    | 直接复制单个文件                  |
+ * | `"dir"`     | 递归复制整个目录                  |
+ * | `"json"`    | 复制 JSON 并嵌补命令路径和 DEVICE |
+ * | `"pattern"` | 通配符匹配批量复制                 |
+ * | `"configYaml"` | 复制 YAML 配置文件模板           |
+ */
 type CopyTask =
   | { type: "file"; src: string; dest: string }
   | { type: "dir"; src: string; dest: string; description?: string }
   | { type: "json"; src: string; dest: string }
   | {
-      type: "pattern";
-      srcDir: string;
-      destDir: string;
-      match: (entry: string) => boolean;
-    }
+    type: "pattern";
+    srcDir: string;
+    destDir: string;
+    match: (entry: string) => boolean;
+  }
   | { type: "configYaml"; src: string; dest: string };
 
+/**
+ * @brief 拷贝任务分组
+ * @details 将一组 CopyTask 归入同一个 label，并带 condition 控制是否执行。
+ */
 interface TaskGroup {
+  /** 分组标签，用于日志输出 */
   label: string;
+  /** 条件为 true 时才执行该组任务 */
   condition: boolean;
+  /** 任务列表 */
   tasks: CopyTask[];
 }
 
@@ -172,20 +214,19 @@ interface TaskGroup {
 // 主流程
 // ============================================================
 
-export function runInit(rawArgs: string[]): void {
-  const program = new Command("init");
-  program
-    .description("初始化 MCP 配置文件（Claude Code / OpenCode）")
-    .option("-t, --target <path>", "目标目录（默认：当前工作目录）", process.cwd())
-    .option("-d, --device <name>", "默认设备名", "board-b")
-    .option("--claude-only", "仅生成 Claude Code 配置", false)
-    .option("--opencode-only", "仅生成 OpenCode 配置", false)
-    .option("-f, --force", "覆盖已存在的文件", false)
-    .parse(["node", "init", ...rawArgs]);
+/**
+ * @brief 执行 init 命令
+ * @details 从 npm 包安装目录将模板文件复制到目标项目目录，
+ *          自动初始化 Claude Code / OpenCode 的 MCP 配置。
+ *          自动检测本地/全局安装模式并设置正确的二进制路径。
+ *
+ * @param opts 由 Commander 在 index.ts 中解析后传入的结构化选项。
+ */
+export function runInit(opts: InitOptions): void {
+  console.log("[init] 接收到的参数:", JSON.stringify(opts, null, 2));
 
-  const opts = program.opts<InitOptions>();
-  const target = resolve(opts.target);
-  const { force, claudeOnly, opencodeOnly, device } = opts;
+  const target = resolve(opts.target); // 解析为绝对路径
+  const { force, claudeOnly, opencodeOnly, device } = opts; // 解构选项
 
   const doClaude = !opencodeOnly;
   const doOpencode = !claudeOnly;
@@ -371,8 +412,8 @@ export function runInit(rawArgs: string[]): void {
 ${lines.join("\n")}
 
 下一步:
-  1. 编辑 configs/config.yaml，修改为你的实际设备信息
-  2. 在 Claude Code / OpenCode 中，MCP 服务器 "embedded-board" 将自动启用
+  1. 编辑 configs/config.yaml, 修改为你的实际设备信息
+  2. 在 Claude Code / OpenCode 中, MCP 服务器 "embedded-board" 将自动启用
   3. 开始使用！例如：让 AI 帮你 "查看板卡系统状态"
 `);
 }
