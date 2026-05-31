@@ -70,7 +70,7 @@ export async function deviceInfoHandler(args: { device?: string }) {
   logger.info(
     `[device_info_tool] device=${args.device ?? "(default)"}${isAll ? " (all device info)" : ""}`
   );
-  const devices = listDevices();  // 获取 config.yaml 中device下的第一层所有设备名： board-a board-b这些
+  const devices = listDevices(); // 获取 config.yaml 中device下的第一层所有设备名： board-a board-b这些
 
   // 未指定设备名 → 使用默认设备
   if (!args.device) {

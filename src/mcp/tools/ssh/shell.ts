@@ -627,11 +627,11 @@ export async function sshShellLoginHandler(args: {
     const onKeyRequest = args.key
       ? undefined
       : (output: string) => {
-        const keyProvider = new KeyProvider(
-          getKeyProviderConfig("ssh", args.device)
-        );
-        return keyProvider.getKey(output);
-      };
+          const keyProvider = new KeyProvider(
+            getKeyProviderConfig("ssh", args.device)
+          );
+          return keyProvider.getKey(output);
+        };
 
     const result = await handler.unlock(
       shell,

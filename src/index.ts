@@ -3,10 +3,10 @@ import { interactiveShell, pshDemoSsh } from "./transport/ssh.js";
 import { interactiveSerialShell, pshDemoSerial } from "./transport/serial.js";
 import { getSSHConfig, getSerialConfig, getAllConfig } from "./infra/config.js";
 import { startMcpServer } from "./mcp/server.js";
-import { runInit } from "./cli/commands/init.js";
+import { runInit, runUninstall } from "./cli/commands/init.js";
 import pkg from "../package.json" with { type: "json" };
 
-/** 
+/**
  * 命令层级结构：
  * ─────────────────────────────────────────────────────────────────────────────
  * embedded-mcp-toolkit
@@ -90,17 +90,51 @@ program
  * embedded-mcp-toolkit init --target /path/to/project --force
  * embedded-mcp-toolkit init --claude-only
  * embedded-mcp-toolkit init --opencode-only
+ * .\node_modules\.bin\embedded-mcp-toolkit init
  */
 program
   .command("init")
   .description("在任意目录初始化配置文件")
-  .option("-t, --target <path>", "目标目录（默认：当前工作目录）", process.cwd())
+  .option(
+    "-t, --target <path>",
+    "目标目录（默认：当前工作目录）",
+    process.cwd()
+  )
   .option("-d, --device <name>", "默认设备名", "board-b")
   .option("--claude-only", "仅生成 Claude Code 配置", false)
   .option("--opencode-only", "仅生成 OpenCode 配置", false)
   .option("-f, --force", "覆盖已存在的文件", false)
   .action((opts) => {
     runInit(opts);
+  });
+
+/**
+ * @brief 卸载清理
+ * @details 删除 init 命令生成的所有文件，还原目录到初始化前的状态。
+ *          支持 --claude-only / --opencode-only 分别清理对应配置。
+ *
+ * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit uninstall
+ * embedded-mcp-toolkit uninstall --target /path/to/project --force
+ * embedded-mcp-toolkit uninstall --claude-only
+ * embedded-mcp-toolkit uninstall --opencode-only
+ * .\node_modules\.bin\embedded-mcp-toolkit uninstall
+ */
+program
+  .command("uninstall")
+  .description("删除 init 命令生成的所有文件")
+  .option(
+    "-t, --target <path>",
+    "目标目录（默认：当前工作目录）",
+    process.cwd()
+  )
+  .option("--claude-only", "仅清理 Claude Code 相关文件", false)
+  .option("--opencode-only", "仅清理 OpenCode 相关文件", false)
+  .option("-f, --force", "跳过确认提示直接删除", false)
+  .action(async (opts) => {
+    await runUninstall(opts);
   });
 
 // =============================================================================

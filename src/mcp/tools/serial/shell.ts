@@ -669,11 +669,11 @@ export async function serialShellLoginHandler(args: {
     const onKeyRequest = args.key
       ? undefined
       : (output: string) => {
-        const keyProvider = new KeyProvider(
-          getKeyProviderConfig("serial", args.device)
-        );
-        return keyProvider.getKey(output);
-      };
+          const keyProvider = new KeyProvider(
+            getKeyProviderConfig("serial", args.device)
+          );
+          return keyProvider.getKey(output);
+        };
 
     const result = await handler.unlock(
       shell,

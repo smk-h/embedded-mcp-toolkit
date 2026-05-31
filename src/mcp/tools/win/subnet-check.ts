@@ -306,7 +306,7 @@ export async function subnetCheckHandler(args: unknown) {
       content: [
         text(
           "No active network adapters with IP configuration found.\n" +
-          "Ensure you are connected to a network and try again."
+            "Ensure you are connected to a network and try again."
         ),
       ],
     };

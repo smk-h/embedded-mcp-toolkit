@@ -13,9 +13,11 @@ import {
   readdirSync,
   statSync,
   copyFileSync,
+  rmSync,
 } from "fs";
 import { resolve, join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
+import { createInterface } from "readline";
 
 // ============================================================
 // 选项
@@ -28,9 +30,20 @@ import { fileURLToPath } from "url";
 export interface InitOptions {
   target: string; // 目标目录（默认：当前工作目录）
   device: string; // 默认设备名
-  claudeOnly: boolean; // 仅生成 Claude Code 配置 
-  opencodeOnly: boolean; // 仅生成 OpenCode 配置 
+  claudeOnly: boolean; // 仅生成 Claude Code 配置
+  opencodeOnly: boolean; // 仅生成 OpenCode 配置
   force: boolean; // 覆盖已存在的文件
+}
+
+/**
+ * @brief uninstall 命令的选项
+ * @details 由 Commander 在 src/index.ts 中解析命令行参数后传入。
+ */
+export interface UninstallOptions {
+  target: string; // 目标目录（默认：当前工作目录）
+  claudeOnly: boolean; // 仅清理 Claude Code 相关文件
+  opencodeOnly: boolean; // 仅清理 OpenCode 相关文件
+  force: boolean; // 跳过确认提示
 }
 
 // ============================================================
@@ -202,12 +215,9 @@ type CopyTask =
  * @details 将一组 CopyTask 归入同一个 label，并带 condition 控制是否执行。
  */
 interface TaskGroup {
-  /** 分组标签，用于日志输出 */
-  label: string;
-  /** 条件为 true 时才执行该组任务 */
-  condition: boolean;
-  /** 任务列表 */
-  tasks: CopyTask[];
+  label: string;     // 分组标签，用于日志输出
+  condition: boolean; // 条件为 true 时才执行该组任务
+  tasks: CopyTask[];  // 任务列表
 }
 
 // ============================================================
@@ -223,7 +233,7 @@ interface TaskGroup {
  * @param opts 由 Commander 在 index.ts 中解析后传入的结构化选项。
  */
 export function runInit(opts: InitOptions): void {
-  console.log("[init] 接收到的参数:", JSON.stringify(opts, null, 2));
+  logCommand("init", opts);
 
   const target = resolve(opts.target); // 解析为绝对路径
   const { force, claudeOnly, opencodeOnly, device } = opts; // 解构选项
@@ -237,10 +247,23 @@ export function runInit(opts: InitOptions): void {
   const __dirname = dirname(__filename);
   const PKG_ROOT = resolve(__dirname, "..", "..", "..");
 
-  // 根据实际执行命令判断本地安装 vs 全局安装
-  // 判断依据：process.argv[1] 是否在目标目录的 node_modules 下
-  //   本地:  E:\AI\aaa\node_modules\.bin\embedded-mcp-toolkit
-  //   全局:  C:\Users\xxx\AppData\Roaming\npm\embedded-mcp-toolkit (PATH 直调)
+  /*
+   * 根据实际执行命令判断本地安装 vs 全局安装
+   * 判断依据：process.argv[1]（node 实际执行的 .js 路径）是否以目标目录的 node_modules 开头
+   *
+   *   process.argv[1]:
+   *   本地:  E:\AI\aaa\node_modules\...\embedded-mcp-toolkit-cli.js
+   *   全局:  D:\devSoftware\node_global\node_modules\...\embedded-mcp-toolkit-cli.js
+   *
+   *   join(target, "node_modules") → E:\AI\aaa\node_modules
+   *
+   *   startsWith("E:\AI\aaa\node_modules") 判断：
+   *   本地路径以 "E:\AI\aaa\node_modules" 开头  → true  (本地安装)
+   *   全局路径以 "D:\devSoftware\node_global" 开头 → false (全局安装)
+   *
+   * 虽然两者都包含 "node_modules" 子串，但 startsWith 做的是前缀精确匹配，
+   * 只认目标项目目录下的 node_modules，全局路径的盘符和父目录都不同，必然不命中。
+   */
   const invokedBy = resolve(process.argv[1] ?? "");
   const localInstall = invokedBy
     .toLowerCase()
@@ -391,8 +414,8 @@ export function runInit(opts: InitOptions): void {
   }
 
   // ---- log/ ----
-  ensureDir(join(target, "log"));
-  console.log(`  ✅ 创建: ${join(target, "log")}/`);
+  ensureDir(join(target, ".embedded/log"));
+  console.log(`  ✅ 创建: ${join(target, ".embedded/log")}/`);
 
   // ---- 收尾 ----
   const lines: string[] = [];
@@ -403,8 +426,8 @@ export function runInit(opts: InitOptions): void {
   if (doOpencode) {
     lines.push("  📄 .opencode/opencode.json");
   }
-  lines.push("  📁 configs/");
-  lines.push("  📁 log/");
+  lines.push("  📁 .embedded/configs/");
+  lines.push("  📁 .embedded/log/");
 
   console.log(`
 ✅ 初始化完成！已生成以下文件:
@@ -412,8 +435,133 @@ export function runInit(opts: InitOptions): void {
 ${lines.join("\n")}
 
 下一步:
-  1. 编辑 configs/config.yaml, 修改为你的实际设备信息
+  1. 编辑 .embedded/configs/config.yaml, 修改为你的实际设备信息
   2. 在 Claude Code / OpenCode 中, MCP 服务器 "embedded-board" 将自动启用
   3. 开始使用！例如：让 AI 帮你 "查看板卡系统状态"
 `);
+}
+
+// ============================================================
+// uninstall 命令
+// ============================================================
+
+/**
+ * @brief 执行 uninstall 命令
+ * @details 删除 init 命令生成的所有文件和目录，还原目录到初始化前的状态。
+ *          `--force` 跳过确认提示直接删除。
+ *
+ * @param opts 由 Commander 在 index.ts 中解析后传入的结构化选项。
+ */
+export async function runUninstall(opts: UninstallOptions): Promise<void> {
+  logCommand("uninstall", opts);
+
+  const target = resolve(opts.target);
+  const { force, claudeOnly, opencodeOnly } = opts;
+
+  const doClaude = !opencodeOnly;
+  const doOpencode = !claudeOnly;
+  const doEmbedded = !claudeOnly && !opencodeOnly;
+
+  console.log(`
+🧹 embedded-mcp-toolkit 卸载清理`);
+  console.log(`   目标目录: ${target}\n`);
+
+  if (!force) {
+    console.log("⚠️  即将删除以下文件/目录:");
+    if (doClaude) {
+      console.log("  📄 .mcp.json");
+      console.log("  📁 .claude/");
+    }
+    if (doOpencode) {
+      console.log("  📁 .opencode/");
+    }
+    if (doEmbedded) {
+      console.log("  📁 .embedded/");
+    }
+
+    const answer = await prompt("确认删除? (y/N): ");
+    if (!/^[yY]/.test(answer)) {
+      console.log("已取消");
+      return;
+    }
+  }
+
+  const cleanupPaths: string[] = [];
+
+  if (doClaude) {
+    cleanupPaths.push(".mcp.json");
+    cleanupPaths.push(".claude");
+  }
+  if (doOpencode) {
+    cleanupPaths.push(".opencode");
+  }
+  if (doEmbedded) {
+    cleanupPaths.push(".embedded");
+  }
+
+  let removedCount = 0;
+  for (const relPath of cleanupPaths) {
+    const absPath = join(target, relPath);
+    if (!existsSync(absPath)) {
+      console.log(`  ⏭  跳过（不存在）: ${relPath}`);
+      continue;
+    }
+    try {
+      const isDir = statSync(absPath).isDirectory();
+      rmSync(absPath, { recursive: isDir, force: true });
+      console.log(`  ✅ 已删除: ${relPath}`);
+      removedCount++;
+    } catch (err) {
+      console.error(
+        `  ❌ 删除失败: ${relPath} — ${err instanceof Error ? err.message : err}`
+      );
+    }
+  }
+
+  console.log(`\n✅ 卸载完成，共清理 ${removedCount} 项\n`);
+}
+
+/**
+ * @brief 同步询问用户确认
+ * @param question 提示文本
+ * @returns 用户输入的字符串
+ */
+function prompt(question: string): Promise<string> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+/**
+ * @brief 打印命令调用信息
+ * @details 根据解析后的 opts 重新拼装命令字符串，而非直接使用 `process.argv.join(" ")`。
+ *          因为 npm bin wrapper 会将 `embedded-mcp-toolkit init` 转换为
+ *          `node.exe /full/path/to/bin/cli.js init`，process.argv 会暴露
+ *          内部 node 路径和脚本路径，对用户无意义。
+ *
+ * @param cmd  子命令名（"init" / "uninstall"）
+ * @param opts 由 Commander 解析后的选项对象
+ */
+function logCommand(cmd: string, opts: object): void {
+  const parts: string[] = [`embedded-mcp-toolkit ${cmd}`];
+  for (const [key, value] of Object.entries(opts)) {
+    if (value === false || value === undefined) continue;
+    const flag = key.length === 1 ? `-${key}` : `--${key}`;
+    if (value === true) {
+      parts.push(flag);
+    } else {
+      parts.push(`${flag} ${value}`);
+    }
+  }
+  const cmdLine = parts.join(" ");
+  console.log(`[${cmd}] 命令: ${cmdLine}`);
+  console.log(`[${cmd}] 参数个数: ${process.argv.slice(2).length}`);
+  console.log(`[${cmd}] 解析后参数:`, JSON.stringify(opts, null, 2));
 }
