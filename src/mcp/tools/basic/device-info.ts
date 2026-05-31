@@ -32,6 +32,7 @@ function formatDeviceBlock(
   cfg: ReturnType<typeof getAllConfig>,
   compact = false
 ): string[] {
+  const adbJson = JSON.stringify(cfg.adb, null, 2);
   const sshJson = JSON.stringify(
     { ...cfg.ssh, keyProvider: cfg.sshKeyProvider },
     null,
@@ -50,6 +51,8 @@ function formatDeviceBlock(
       sshJson,
       "[Serial]",
       serialJson,
+      "[ADB]",
+      adbJson,
     ];
   }
   return [
@@ -60,6 +63,9 @@ function formatDeviceBlock(
     "",
     "[Serial]",
     serialJson,
+    "",
+    "[ADB]",
+    adbJson,
   ];
 }
 

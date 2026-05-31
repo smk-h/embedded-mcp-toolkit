@@ -9,6 +9,8 @@ default: board-b
 devices:
   # ---- 设备 A ----
   board-a:
+    adb:
+      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "192.168.16.103"
       port: 22
@@ -32,6 +34,8 @@ devices:
 
   # ---- 设备 B ----
   board-b:
+    adb:
+      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "192.168.16.105"
       port: 22
@@ -54,6 +58,8 @@ devices:
         timeout: 120000
   # ---- 设备 nossh ----
   board-nossh:
+    adb:
+      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "none"
       port: 22
@@ -76,6 +82,8 @@ devices:
         timeout: 120000
   # ---- 设备 noserial ----
   board-noserial:
+    adb:
+      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "1.1.1.1"
       port: 22

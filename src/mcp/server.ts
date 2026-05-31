@@ -10,6 +10,7 @@ import { mcpBasicTools } from "./tools/basic/index.js";
 import { mcpSshTools } from "./tools/ssh/index.js";
 import { mcpSerialTools } from "./tools/serial/index.js";
 import { mcpWinTools } from "./tools/win/index.js";
+import { mcpAdbTools } from "./tools/adb/index.js";
 
 // ── package info ───────────────────────────────────────────
 
@@ -41,6 +42,10 @@ for (const { name, config, handler } of mcpWinTools) {
   server.registerTool(name, config, handler);
 }
 
+for (const { name, config, handler } of mcpAdbTools) {
+  server.registerTool(name, config, handler);
+}
+
 // ── 进程退出自动清理 ───────────────────────────────────────
 
 /**
@@ -56,15 +61,18 @@ async function cleanupAllSessions() {
     { disposeAllSerialSessions },
     { disposeAllSshSessions },
     { disposeAllPowerShellSessions },
+    { disposeAllAdbShellSessions },
   ] = await Promise.all([
     import("./tools/serial/shell.js"),
     import("./tools/ssh/shell.js"),
     import("./tools/win/powershell.js"),
+    import("./tools/adb/shell.js"),
   ]);
   await Promise.allSettled([
     disposeAllSerialSessions(),
     disposeAllSshSessions(),
     disposeAllPowerShellSessions(),
+    disposeAllAdbShellSessions(),
   ]);
   logger.info("[mcp] all sessions disposed");
 }

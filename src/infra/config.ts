@@ -16,6 +16,9 @@ interface KeyProviderYaml {
 }
 
 interface DeviceConfig {
+  adb?: {
+    serialNo?: string; // ADB 设备序列号，留空则自动发现
+  };
   ssh?: {
     host?: string; // SSH 主机地址
     port?: number; // SSH 端口，默认 22
@@ -125,6 +128,81 @@ export function getSerialConfig(name?: string): SerialShellConfig {
 }
 
 /**
+ * @brief ADB 设备配置
+ */
+export interface AdbDeviceConfig {
+  serialNo?: string;
+}
+
+/**
+ * @brief 获取 ADB 连接配置
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ */
+export function getAdbConfig(name?: string): AdbDeviceConfig {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const yaml = device.adb ?? {};
+  return {
+    serialNo: yaml.serialNo,
+  };
+}
+
+/**
+ * @brief 解析 config.yaml 中 adb.serialNo 字段值
+ *
+ * 约定：配置文件中的序列号以 "sn_" 为前缀，用于与用户直接传入的原始序列号区分。
+ *
+ * @param raw  配置中的原始值，如 "sn_43b1e5fe7b186666"、"sn_none"、""、undefined
+ * @returns 解析后的序列号，无法解析时返回 undefined
+ */
+function parseSerialNo(raw?: string): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  // 以 sn_ 开头的视为配置文件定义的序列号
+  if (raw.startsWith("sn_")) {
+    const value = raw.slice(3);
+    // sn_none：显式标记"未定义"，与空值等效
+    if (value === "none" || value === "") {
+      return undefined;
+    }
+    return value;
+  }
+  // 不以 sn_ 开头 → 无法解析，视为未定义（兼容旧配置格式）
+  return undefined;
+}
+
+/**
+ * @brief 解析 ADB 设备参数，将设备别名转换为序列号
+ *
+ * 三种输入模式：
+ *   1. 传入设备别名（如 "board-a"）→ 查 config.yaml 获取 serialNo
+ *   2. 传入序列号字符串（如 "43b1e5fe7b186666"）→ 直接使用
+ *   3. 未传入 → 返回 undefined，由 adb 自动发现唯一设备
+ *
+ * @param device  设备标识（别名或序列号，可选）
+ * @returns 序列号字符串，解析失败时返回 undefined
+ */
+export function resolveAdbSerial(device?: string): string | undefined {
+  // 未传入任何标识 → 交由 adb 自动发现
+  if (!device) {
+    return undefined;
+  }
+  // 判断依据：检查 device 是否为 config.yaml 中 devices 下的某个键名
+  //   - 命中（如 "board-a"）→ 作为设备别名，查 adb.serialNo 字段
+  //       serialNo 值以 "sn_" 为前缀标记（如 "sn_43b1e5fe7b186666"），
+  //       通过 parseSerialNo 去除前缀后得到真实序列号；
+  //       "sn_none" 表示显式标记"未定义"
+  //   - 未命中（如 "43b1e5fe7b186666"）→ 作为原始序列号直传，不查配置，这要求用户必须确保其正确性
+  const devices = loadConfig().devices;
+  if (devices && devices[device]) {
+    const cfg = getAdbConfig(device);
+    return parseSerialNo(cfg.serialNo);
+  }
+  return device;
+}
+
+/**
  * @brief 获取 KeyProvider 配置
  *
  * SSH 侧和串口侧各自独立配置，互不影响。
@@ -175,6 +253,7 @@ export function getKeyProviderConfig(
  */
 export function getAllConfig(name?: string): {
   deviceName: string;
+  adb: ReturnType<typeof getAdbConfig>;
   ssh: ReturnType<typeof getSSHConfig>;
   serial: ReturnType<typeof getSerialConfig>;
   sshKeyProvider: ReturnType<typeof getKeyProviderConfig>;
@@ -183,6 +262,7 @@ export function getAllConfig(name?: string): {
   const deviceName = name ?? resolveDeviceName();
   return {
     deviceName,
+    adb: getAdbConfig(deviceName),
     ssh: getSSHConfig(deviceName),
     serial: getSerialConfig(deviceName),
     sshKeyProvider: getKeyProviderConfig("ssh", deviceName),
