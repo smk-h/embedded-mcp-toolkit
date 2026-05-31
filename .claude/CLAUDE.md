@@ -2,18 +2,12 @@
 
 本项目提供用于嵌入式 Linux 板卡管理的 MCP 服务器，支持 SSH 和串口两种连接方式。
 
-**配置文件:** `configs/config.yaml`
-**默认设备:** board-b
+**配置文件:** `.embedded/configs/config.yaml`
+**默认设备:** 通过环境变量`DEVICE`或配置文件获取
 
 ## 设备列表
 
-| 设备名 | SSH | 串口 | 用途 |
-|-------|-----|------|------|
-| **board-a** | 192.168.16.103:22 root/root | COM4@115200 | 板卡 A |
-| **board-b** | 192.168.16.105:22 root/root | COM3@115200 | 板卡 B（默认） |
-| **board-test** | 1.1.1.1:22 sumu/sumu | COM3@115200 | 测试设备 |
-
-所有设备均配置了 **文件 IPC 解锁**（`challenge.txt` / `password_input.txt`）。
+调用 `device_info_tool`工具来获取。
 
 ## MCP 工具总览
 

@@ -314,19 +314,19 @@ export function runInit(opts: InitOptions): void {
       tasks: [
         {
           type: "file",
-          src: "configs/config.example.yaml",
-          dest: "configs/config.example.yaml",
+          src: ".embedded/configs/config.example.yaml",
+          dest: ".embedded/configs/config.example.yaml",
         },
         {
           type: "pattern",
-          srcDir: "configs",
-          destDir: "configs",
+          srcDir: ".embedded/configs",
+          destDir: ".embedded/configs",
           match: (e) => e.endsWith(".txt"),
         },
         {
           type: "configYaml",
-          src: "configs/config.example.yaml",
-          dest: "configs/config.yaml",
+          src: ".embedded/configs/config.example.yaml",
+          dest: ".embedded/configs/config.yaml",
         },
       ],
     },

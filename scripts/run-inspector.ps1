@@ -22,9 +22,9 @@ foreach ($port in $MCP_PORTS) {
 }
 
 $env:DEVICE            = "board-b"
-$env:BOARD_CONFIG_PATH = "./configs/config.yaml"
+$env:BOARD_CONFIG_PATH = "./.embedded/configs/config.yaml"
 $env:LOG_SAVE          = "1"
-$env:LOG_DIR           = "./log"
+$env:LOG_DIR           = "./.embedded/log"
 
 Write-Host "=== MCP Inspector ===" -ForegroundColor Cyan
 Write-Host "Project Root     : $ProjectRoot"

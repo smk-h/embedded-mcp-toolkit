@@ -75,7 +75,7 @@ async function main() {
   let client;
   const serverEnv = {
     DEVICE: "board-b",
-    BOARD_CONFIG_PATH: "./configs/config.yaml",
+    BOARD_CONFIG_PATH: "./.embedded/configs/config.yaml",
     LOG_SAVE: "1",
     LOG_DIR: "./log",
   };
