@@ -1,0 +1,34 @@
+# npm 自动发布流水线
+# 当 push 的提交记录中含有 [publish] 时触发
+
+"**":
+  push:
+    - docker:
+        image: node:22
+      stages:
+        - name: node和npm版本
+          script: |
+            echo "Node.js 版本: $(node -v)"
+            echo "npm 版本: $(npm -v)"
+  
+        - name: 安装依赖
+          if: |
+            case "$CNB_COMMIT_MESSAGE" in *"[publish]"* ) true ;; * ) false ;; esac
+          script: |
+            npm ci
+
+        - name: 构建项目
+          if: |
+            case "$CNB_COMMIT_MESSAGE" in *"[publish]"* ) true ;; * ) false ;; esac
+          script: |
+            npm run build
+
+        - name: 发布到 npm
+          if: |
+            case "$CNB_COMMIT_MESSAGE" in *"[publish]"* ) true ;; * ) false ;; esac
+          imports: https://cnb.cool/sumu.k/secret-key/-/blob/main/access-token.yml
+          script: |
+            echo "//registry.npmjs.org/:_authToken=${NPM_ACCESS_TOKENS}" > ~/.npmrc
+            npm config set registry https://registry.npmjs.org/
+            npm publish --access public
+            echo "✅ 发布成功！版本: $(node -p "require('./package.json').version")"

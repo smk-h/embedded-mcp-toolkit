@@ -2,7 +2,7 @@
 include:
   - .cnb/workflows/cnb-custom-env.yml
   - .cnb/workflows/cnb-build-image.yml
-
+  - .cnb/workflows/npm-publish.yml
 $:
   vscode:
     - docker:

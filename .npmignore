@@ -27,7 +27,7 @@ tsconfig.json
 .claude/.env
 
 # 设备配置（仅保留模板，真实配置不上传）
-configs/config.yaml
+.embedded/configs/config.yaml
 log/
 *.log
 
