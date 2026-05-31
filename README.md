@@ -1,5 +1,3 @@
-## embedded-mcp-toolkit
-
 ## 一、简介
 
 ### 1. 是什么？
@@ -436,3 +434,84 @@ npm i -g @anthropic-ai/claude-code                 # 全局安装
 ### 3. 其他问题
 
 ......
+
+## 五、开发计划
+
+### 1. 功能概述
+
+#### 1.1 目标
+
+改造 shell 会话（adb/ssh/serial/powershell）的数据采集机制，从"按需收集"升级为"持续监听 + 并行扫描"，使 AI 能在任意时间点获取完整会话输出及已识别的错误告警。
+
+#### 1.2 架构设计
+
+```
+stdout/stderr.on("data") ──→ appendBuffer(data)
+                               ├── 存入 #buffer（等待 read() 拉取）
+                               └── 即时扫描错误模式 → 命中则记入 #alerts 列表
+```
+
+【**两路并行**】
+
+| 通路 | 功能 | 触发方式 |
+|------|------|---------|
+| 数据存储 | 持续写入 `#buffer`，不再丢弃 | data 事件自动触发 |
+| 模式识别 | 扫描 error pattern，写入 `#alerts` | data 事件自动触发 |
+
+【**与现有行为对比**】
+
+- **现有**：`#collecting` 仅在 `write()` 到 `read()` 之间开启，其余时间数据丢弃
+- **改造后**：`open()` 起 `#collecting` 始终为 `true`，所有输出持续归档
+
+---
+
+### 2. TODO 任务清单
+
+| # | 状态 | 任务 | 涉及文件 | 优先级 |
+|---|:---:|------|---------|:---:|
+| 1 | ⬜ | **去掉 `#collecting = false` 关闭点** | `src/transport/adb.ts` | 高 |
+|   |     | `open()` 中 banner 收集后不再关闭 `#collecting`；`read(clear=1)` 中保留 `#buffer = ""` 但不关闭 `#collecting` | | |
+| 2 | ⬜ | **新增 `#alerts` 告警队列与 Alert 类型定义** | `src/transport/adb.ts` | 高 |
+|   |     | 定义 `Alert { pattern, timestamp, detail }` 结构；新增 `#alerts: Alert[]` 成员 | | |
+| 3 | ⬜ | **实现 `#scanAlerts(data)` 错误模式扫描器** | `src/transport/adb.ts` | 高 |
+|   |     | 预定义嵌入式常见错误正则库（kernel panic、OOM、segfault、watchdog timeout 等）；在 `appendBuffer` 入口调用 `#scanAlerts(data)` | | |
+| 4 | ⬜ | **增强 `read()` 返回值结构** | `src/transport/adb.ts` | 中 |
+|   |     | `read()` 返回 `{ data, alerts: [{ pattern, timestamp, detail }] }`；如有未读告警一并返回并清空 `#alerts` | | |
+| 5 | ⬜ | **增强 `exec()` 返回值，附带 alerts** | `src/mcp/tools/adb/shell.ts` | 中 |
+|   |     | `exec()` 内部调用 `read()` 后，将 alerts 一并封装进 MCP 响应内容 | | |
+| 6 | ⬜ | **适配 SSH transport** | `src/transport/ssh.ts` | 中 |
+|   |     | 对 ssh.ts 做与 adb.ts 相同的改造（持续 buffer + 错误扫描 + alerts） | | |
+| 7 | ⬜ | **适配 Serial transport** | `src/transport/serial.ts` | 中 |
+|   |     | 对 serial.ts 做相同改造 | | |
+| 8 | ⬜ | **适配 PowerShell transport** | `src/transport/powershell.ts` | 低 |
+|   |     | 对 powershell.ts 做相同改造 | | |
+| 9 | ⬜ | **抽取公共基类/混入，消除重复代码** | `src/transport/` | 低 |
+|   |     | 四个 transport 类存在大量重复的 buffer/collecting 逻辑，改造完成后考虑抽取 `BaseTransport` 抽象类 | | |
+
+---
+
+### 3. 错误模式库
+
+| 模式名 | 正则 / 关键字 | 场景 |
+|--------|-------------|------|
+| `kernel_panic` | `Kernel panic` | 内核崩溃 |
+| `oom` | `Out of memory` / `OOM killer` | 内存耗尽 |
+| `segfault` | `Segmentation fault` | 段错误 |
+| `watchdog_timeout` | `watchdog.*timeout` | 看门狗超时 |
+| `bus_error` | `Bus error` | 总线错误 |
+| `gpio_error` | `gpio.*error` | GPIO 异常 |
+| `i2c_error` | `i2c.*error` | I2C 通信异常 |
+| `spi_error` | `spi.*error` | SPI 通信异常 |
+| `uart_error` | `uart.*error` / `serial.*error` | 串口异常 |
+| `mount_error` | `mount.*fail` | 挂载失败 |
+| `network_down` | `link down` / `network unreachable` | 网络断开 |
+| `nand_error` | `nand.*(error\|fail)` | NAND 闪存异常 |
+| `emmc_error` | `mmc.*error` / `mmcblk.*error` | eMMC 异常 |
+
+---
+
+### 4. 预期效果
+
+- AI 调用 `exec("dmesg")` 后，返回值中自动附带 `alerts: [{ pattern: "oom", detail: "..." }]`，无需 AI 自行解析长文本
+- 后台持续采集不丢数据，即使 AI 间隔较长时间才调用下一次 `read()`
+- 告警在 `stdout` 到达瞬间即被识别，不依赖 AI 轮询频率
