@@ -181,13 +181,27 @@ export async function adbExecHandler(args: {
 }) {
   const deviceName = args.device ?? resolveDeviceName();
   const serialNo = resolveAdbSerial(deviceName);
+
+  let serialSource: string;
+  if (args.device) {
+    if (serialNo !== deviceName) {
+      serialSource = `user argument → config.yaml devices.${deviceName}.adb.serialNo`;
+    } else {
+      serialSource = `user argument (raw serial)`;
+    }
+  } else if (serialNo) {
+    serialSource = `config.yaml devices.${deviceName}.adb.serialNo`;
+  } else {
+    serialSource = `adb devices auto-discovery`;
+  }
+
   const cmdArgs: string[] = [];
   if (serialNo) {
     cmdArgs.push("-s", serialNo);
   }
   cmdArgs.push(...args.command.split(/\s+/));
 
-  logger.info(`[adb_exec] command=${args.command} device=${deviceName} serialNo=${serialNo ?? "(auto)"}`);
+  logger.info(`[adb_exec] command=${args.command} device=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`);
 
   const output = execAdb(cmdArgs);
 
