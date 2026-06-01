@@ -711,3 +711,256 @@ export class PshHandler {
     return new Promise((r) => setTimeout(r, ms));
   }
 }
+
+/**
+ * PSH 状态机输出指令
+ *
+ * 状态机分析输出后告诉调用方下一步该做什么。
+ */
+export interface PshStateMachineAction {
+  send?: string;                    // 下一步要发送的命令（undefined = 已达终态）
+  waitMs: number;                   // 发送后等待多久再读取（毫秒）
+  state: PshState;                  // 当前检测到的 PSH 状态
+  done: boolean;                    // 是否为终态（不需继续交互）
+  handler: PshHandler | null;       // 匹配到的 PshHandler（done 时有效，用于后续操作）
+  detectResult: PshDetectResult | null; // 检测结果详情（done 时有效）
+}
+
+/**
+ * PSH (Protect Shell) 状态机
+ *
+ * 将 PSH 探测流程建模为有限状态机，替代 if-else 嵌套判断。
+ * 状态机负责 **profile 匹配 + 状态检测**，实际的解锁由 PshHandler.unlock() 完成。
+ *
+ * 状态流转图:
+ *
+ *   start(banner)
+ *       │
+ *       ├─ matchFromOutput(banner) 命中 ──▶ detect(banner)
+ *       │       │
+ *       │       ├─ READY / LOCKED / UNLOCKING ──▶ 终态 (done)
+ *       │       │
+ *       │       ├─ ERROR ──▶ probeState() 二次确认 (＜2次)
+ *       │       │       │     (ERROR 可能是噪声，如 "Invalid key → Returning to locked mode")
+ *       │       │       │
+ *       │       │       └─ ≥2次 → 接受 ERROR 终态
+ *       │       │
+ *       │       └─ UNKNOWN ──▶ probeState()
+ *       │                           │
+ *       │                           ▼ feed(探测输出)
+ *       │                      ┌────────┼─────────┐
+ *       │                      │        │         │
+ *       │                   LOCKED/   READY/   UNKNOWN/
+ *       │                  UNLOCKING  ERROR    其他
+ *       │                      │        │         │
+ *       │                      │      ERROR≥2次    │
+ *       │                      │        │         │
+ *       │                      └────────┘         │
+ *       │                      终态(done)   终态 UNKNOWN(done)
+ *       │
+ *       └─ matchFromOutput(banner) 未命中 ──▶ 发 echo 探测
+ *             │
+ *             ▼ feed(探测输出)
+ *        ┌────┼──────────┐
+ *        │    │          │
+ *      matchFromOutput  未匹配
+ *        命中              │
+ *        │                ▼
+ *        ▼           NOT_PSH (done)
+ *      detect(输出)
+ *       ├─ LOCKED / READY / UNLOCKING ──▶ 终态 (done)
+ *       ├─ ERROR ──▶ probeState() 二次确认
+ *       └─ UNKNOWN ──▶ probeState() → feed → 终态
+ *
+ * 使用方式:
+ *   const sm = new PshStateMachine();
+ *   let action = sm.start(banner);
+ *
+ *   while (!action.done) {
+ *     channel.write(action.send!, 1);
+ *     await wait(action.waitMs);
+ *     const output = channel.read(1);
+ *     action = sm.feed(channel, output);
+ *   }
+ *
+ *   // 根据终态继续:
+ *   if (action.state === PshState.LOCKED) {
+ *     await action.handler!.unlock(channel, key);
+ *   }
+ */
+export class PshStateMachine {
+  private _state: PshState = PshState.UNKNOWN;
+  private _handler: PshHandler | null = null;
+  private _output = "";
+  private _detectResult: PshDetectResult | null = null;
+  private _probeCount = 0;
+
+  get state(): PshState {
+    return this._state;
+  }
+
+  get handler(): PshHandler | null {
+    return this._handler;
+  }
+
+  get detectResult(): PshDetectResult | null {
+    return this._detectResult;
+  }
+
+  /**
+   * 用 banner 初始化状态机，返回下一步动作
+   *
+   * @param banner - 串口/SSH 连接后读取到的初始输出
+   * @returns 下一步动作指令
+   */
+  start(banner: string): PshStateMachineAction {
+    this._output = banner;
+
+    // 规则 1: banner 能匹配到 PSH profile
+    this._handler = PshHandler.matchFromOutput(banner);
+
+    if (this._handler) {
+      return this.#doDetect();
+    }
+
+    // 规则 2: banner 未匹配 → 发探测 echo 命令
+    this._state = PshState.UNKNOWN;
+    return this.#probeAction();
+  }
+
+  /**
+   * 喂入探测/命令输出，状态机根据当前状态 + 输出决定下一步
+   *
+   * @param channel - 读写通道（probeState 需要）
+   * @param output  - 从通道读取到的终端输出
+   * @returns 下一步动作指令
+   */
+  async feed(
+    channel: PshChannel,
+    output: string
+  ): Promise<PshStateMachineAction> {
+    this._output += "\n" + output;
+
+    // ── 首次探测结果分析 (banner 未匹配过 profile) ──
+    if (!this._handler) {
+      this._handler = PshHandler.matchFromOutput(this._output);
+
+      if (this._handler) {
+        // 探测后匹配到了 profile → 进入检测
+        return this.#doDetect();
+      }
+
+      // 探测后仍未匹配 → 不是 PSH 设备
+      return this.#reply(PshState.READY, "未检测到 PSH 特征，shell 可能已解锁");
+    }
+
+    // ── profile 匹配后但 detect 状态未知/ERROR → 使用 probeState 确认 ──
+    this._probeCount++;
+    const result = await this._handler.probeState(channel);
+    return this.#detectReply(result);
+  }
+
+  /** 重置状态机 */
+  reset(): void {
+    this._state = PshState.UNKNOWN;
+    this._handler = null;
+    this._output = "";
+    this._detectResult = null;
+    this._probeCount = 0;
+  }
+
+  // ── 私有辅助 ──
+
+  /**
+   * 用已匹配的 handler 对累积输出做状态检测
+   */
+  #doDetect(): PshStateMachineAction {
+    if (!this._handler) {
+      return this.#reply(PshState.UNKNOWN, "handler 为空");
+    }
+
+    const result = this._handler.detect(this._output);
+    return this.#detectReply(result);
+  }
+
+  /**
+   * 根据 detectResult 决定下一步
+   *
+   * 已知状态（READY / LOCKED / UNLOCKING）→ 终态；
+   * UNKNOWN → probeState 确认；
+   * ERROR → 若未超过重试次数则 probeState 确认（ERROR 可能是探测噪声，
+   *         如 "Invalid key → Returning to locked mode" 的过渡输出，真实状态往往是 LOCKED）；
+   *         超过重试次数则接受 ERROR 为终态。
+   */
+  #detectReply(result: PshDetectResult): PshStateMachineAction {
+    this._detectResult = result;
+    this._state = result.state;
+
+    // 明确状态 → 终态
+    if (
+      result.state === PshState.READY ||
+      result.state === PshState.LOCKED ||
+      result.state === PshState.UNLOCKING
+    ) {
+      return {
+        send: undefined,
+        waitMs: 0,
+        state: result.state,
+        done: true,
+        handler: this._handler,
+        detectResult: result,
+      };
+    }
+
+    // ERROR: 可能是探测噪声，尝试 probeState 确认
+    if (result.state === PshState.ERROR && this._probeCount < 2) {
+      return this.#probeAction();
+    }
+
+    // UNKNOWN / ERROR(超限) → 接受为终态
+    return {
+      send: undefined,
+      waitMs: 0,
+      state: result.state,
+      done: true,
+      handler: this._handler,
+      detectResult: result,
+    };
+  }
+
+  /**
+   * 构建探测动作指令
+   *
+   * @returns 要求调用方发送 echo 探测的动作
+   */
+  #probeAction(): PshStateMachineAction {
+    return {
+      send: "echo __PSH_PROBE__",
+      waitMs: 1500,
+      state: PshState.UNKNOWN,
+      done: false,
+      handler: null,
+      detectResult: null,
+    };
+  }
+
+  /**
+   * 构建终态动作指令
+   *
+   * @param state  - 检测到的终端状态
+   * @param reason - 状态判定原因（用于日志）
+   * @returns 终态动作指令
+   */
+  #reply(state: PshState, reason: string): PshStateMachineAction {
+    this._state = state;
+    console.log("[PshSM] %s → %s", reason, state);
+    return {
+      send: undefined,
+      waitMs: 0,
+      state,
+      done: true,
+      handler: this._handler,
+      detectResult: this._detectResult,
+    };
+  }
+}
