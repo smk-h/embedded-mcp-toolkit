@@ -396,14 +396,12 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
   const shell = new SerialShell(config);
   const banner = await shell.open();
   console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitize(banner));
-  // shell.write("exit", 1);
 
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
   const sm = new PshStateMachine();
   let action = sm.start(banner);
 
   while (!action.done) {
-    // 状态机要求发探测命令
     shell.write(action.send!, 1);
     await new Promise((r) => setTimeout(r, action.waitMs));
     const output = shell.read(1);
@@ -470,7 +468,8 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
     }
 
     case PshState.READY:
-      console.log("[Step 4] Shell is already unlocked, no action needed.");
+      console.log("[Step 4] Shell is already unlocked, entering interactive shell.\n");
+      await interactiveLoop(shell, "serial");
       break;
 
     case PshState.UNLOCKING:

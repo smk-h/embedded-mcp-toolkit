@@ -3,11 +3,9 @@
  *
  * PSH 是嵌入式设备上的锁定 shell，启动后限制可用命令，
  * 需要通过特定流程（如 debug + 密码）解锁后才能获得完整 shell。
- *
- * 状态流转：
- *   LOCKED → (发送 debug) → UNLOCKING → (输入密码) → READY
- *                                              ↘ ERROR (密码错误，回到 LOCKED)
  */
+
+import { logger } from "../infra/logger.js";
 export enum PshState {
   /** 已解锁，拥有完整 shell 权限 */
   READY = "ready",
@@ -263,19 +261,19 @@ function buildProfileFromEnv(): PshProfile | null {
 
   const unlockSequence: PshUnlockStep[] = sequenceStr
     ? sequenceStr.split("||").map((step, idx) => {
-        const parts = step.split("=>", 2);
-        const send = (parts[0] ?? "").trim();
-        const userInput = send === "";
-        return {
-          send: userInput ? "" : send,
-          expectPattern: (parts[1] ?? ".*").trim(),
-          timeoutMs: 5000,
-          description: userInput
-            ? `Step ${idx + 1} (user key)`
-            : `Step ${idx + 1}`,
-          userInput,
-        };
-      })
+      const parts = step.split("=>", 2);
+      const send = (parts[0] ?? "").trim();
+      const userInput = send === "";
+      return {
+        send: userInput ? "" : send,
+        expectPattern: (parts[1] ?? ".*").trim(),
+        timeoutMs: 5000,
+        description: userInput
+          ? `Step ${idx + 1} (user key)`
+          : `Step ${idx + 1}`,
+        userInput,
+      };
+    })
     : [];
 
   return {
@@ -745,32 +743,35 @@ export interface PshStateMachineAction {
  *       │       │       │
  *       │       │       └─ ≥2次 → 接受 ERROR 终态
  *       │       │
- *       │       └─ UNKNOWN ──▶ probeState()
- *       │                           │
- *       │                           ▼ feed(探测输出)
- *       │                      ┌────────┼─────────┐
- *       │                      │        │         │
- *       │                   LOCKED/   READY/   UNKNOWN/
- *       │                  UNLOCKING  ERROR    其他
- *       │                      │        │         │
- *       │                      │      ERROR≥2次    │
- *       │                      │        │         │
- *       │                      └────────┘         │
- *       │                      终态(done)   终态 UNKNOWN(done)
+ *       │       └─ UNKNOWN ──▶ probeState() → feed → 分析结果
+ *       │                                    │
+ *       │                    ┌───────────────┼──────────────────┐
+ *       │                    │               │                  │
+ *       │               LOCKED /          READY              UNKNOWN /
+ *       │               UNLOCKING                            其他
+ *       │                    │               │                  │
+ *       │                    ▼               ▼                  ▼
+ *       │                终态(done)      终态(done)      终态 UNKNOWN(done)
+ *       │
+ *       │  注: ERROR 在 feed() 内部处理 — 若 probeCount＜2 则再 probeState 确认，
+ *       │       避免 "Invalid key → Returning to locked mode" 过渡噪声导致误判；
+ *       │       ≥2 次后接受 ERROR 终态。
  *       │
  *       └─ matchFromOutput(banner) 未命中 ──▶ 发 echo 探测
- *             │
- *             ▼ feed(探测输出)
- *        ┌────┼──────────┐
- *        │    │          │
- *      matchFromOutput  未匹配
- *        命中              │
- *        │                ▼
- *        ▼           NOT_PSH (done)
- *      detect(输出)
- *       ├─ LOCKED / READY / UNLOCKING ──▶ 终态 (done)
- *       ├─ ERROR ──▶ probeState() 二次确认
- *       └─ UNKNOWN ──▶ probeState() → feed → 终态
+ *                       │
+ *                       ▼ feed(探测输出)
+ *        ┌──────────────┴──────────────┐
+ *        │                             │
+ *    matchFromOutput 命中            未匹配
+ *        │                             │
+ *        ▼                             ▼
+ *    detect(输出)                 NOT_PSH (done)
+ *        │
+ *        ├─ LOCKED / READY / UNLOCKING ──▶ 终态 (done)
+ *        │
+ *        ├─ ERROR ──▶ probeState() 二次确认
+ *        │
+ *        └─ UNKNOWN ──▶ probeState() → feed → 终态
  *
  * 使用方式:
  *   const sm = new PshStateMachine();
@@ -820,10 +821,14 @@ export class PshStateMachine {
     this._handler = PshHandler.matchFromOutput(banner);
 
     if (this._handler) {
+      logger.info(
+        `[PshSM] start → banner 匹配到 profile '${this._handler.profile.name}', 进入 detect`
+      );
       return this.#doDetect();
     }
 
     // 规则 2: banner 未匹配 → 发探测 echo 命令
+    logger.info("[PshSM] start → banner 未匹配 profile, 发 echo 探测");
     this._state = PshState.UNKNOWN;
     return this.#probeAction();
   }
@@ -846,17 +851,28 @@ export class PshStateMachine {
       this._handler = PshHandler.matchFromOutput(this._output);
 
       if (this._handler) {
-        // 探测后匹配到了 profile → 进入检测
+        logger.info(
+          `[PshSM] feed → echo 探测后匹配到 profile '${this._handler.profile.name}', 进入 detect`
+        );
         return this.#doDetect();
       }
 
       // 探测后仍未匹配 → 不是 PSH 设备
+      logger.info(
+        "[PshSM] feed → echo 探测后仍未匹配 profile, 判定为非 PSH 设备"
+      );
       return this.#reply(PshState.READY, "未检测到 PSH 特征，shell 可能已解锁");
     }
 
     // ── profile 匹配后但 detect 状态未知/ERROR → 使用 probeState 确认 ──
     this._probeCount++;
+    logger.info(
+      `[PshSM] feed → 状态不明 (第${this._probeCount}次 probeState)`
+    );
     const result = await this._handler.probeState(channel);
+    logger.info(
+      `[PshSM] feed → probeState 返回: state=${result.state} isPsh=${result.isPsh} challenge=${result.challengeCode ?? "(none)"}`
+    );
     return this.#detectReply(result);
   }
 
@@ -880,6 +896,9 @@ export class PshStateMachine {
     }
 
     const result = this._handler.detect(this._output);
+    logger.info(
+      `[PshSM] doDetect → profile='${this._handler.profile.name}' state=${result.state} isPsh=${result.isPsh} challenge=${result.challengeCode ?? "(none)"}`
+    );
     return this.#detectReply(result);
   }
 
@@ -902,6 +921,9 @@ export class PshStateMachine {
       result.state === PshState.LOCKED ||
       result.state === PshState.UNLOCKING
     ) {
+      logger.info(
+        `[PshSM] detectReply → 状态明确 '${result.state}', 返回终态`
+      );
       return {
         send: undefined,
         waitMs: 0,
@@ -914,10 +936,16 @@ export class PshStateMachine {
 
     // ERROR: 可能是探测噪声，尝试 probeState 确认
     if (result.state === PshState.ERROR && this._probeCount < 2) {
+      logger.info(
+        `[PshSM] detectReply → ERROR (第${this._probeCount + 1}次检测), 发起 probeState 二次确认`
+      );
       return this.#probeAction();
     }
 
     // UNKNOWN / ERROR(超限) → 接受为终态
+    logger.info(
+      `[PshSM] detectReply → 状态 '${result.state}' (probeCount=${this._probeCount}), 接受为终态`
+    );
     return {
       send: undefined,
       waitMs: 0,
@@ -934,6 +962,7 @@ export class PshStateMachine {
    * @returns 要求调用方发送 echo 探测的动作
    */
   #probeAction(): PshStateMachineAction {
+    logger.info("[PshSM] probeAction → 发送 echo __PSH_PROBE__");
     return {
       send: "echo __PSH_PROBE__",
       waitMs: 1500,
@@ -953,7 +982,7 @@ export class PshStateMachine {
    */
   #reply(state: PshState, reason: string): PshStateMachineAction {
     this._state = state;
-    console.log("[PshSM] %s → %s", reason, state);
+    logger.info(`[PshSM] ${reason} → ${state}`);
     return {
       send: undefined,
       waitMs: 0,
