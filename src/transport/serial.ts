@@ -5,6 +5,13 @@ import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshHandler, PshState } from "./psh.js";
 import { KeyProvider } from "../utils/key-provider.js";
 import { getKeyProviderConfig } from "../infra/config.js";
+import {
+  UserLoginStatus,
+  UserLoginResult,
+  UserLoginHandler,
+  UserLoginStepDelays,
+  DEFAULT_LOGIN_DELAYS,
+} from "./user-login.js";
 
 /**
  * @brief 串口 Shell 连接配置
@@ -23,6 +30,10 @@ export interface SerialShellConfig {
   parity?: "none" | "even" | "odd";
   /** 命令追加的换行符（\n, \r\n），默认 \n */
   lineEnding?: string;
+  /** 串口登录用户名（用于 userLoginDemoSerial 等需要串口认证的场景） */
+  loginUsername?: string;
+  /** 串口登录密码（用于 userLoginDemoSerial 等需要串口认证的场景） */
+  loginPassword?: string;
 }
 
 /**
@@ -248,6 +259,184 @@ export async function interactiveSerialShell(
   );
 
   await interactiveLoop(shell, "serial");
+}
+
+/**
+ * @brief 用户串口登录演示
+ *
+ * 自动探测串口终端是否需要登录，并在需要时完成用户名/密码认证。
+ *
+ * 流程：
+ *   1. 打开串口，读取 banner，失败则返回错误
+ *   2. 检查 banner 是否含有 "login:" —— 有则直接进入步骤5发送用户名
+ *   3. 无 "login:" 则发送 echo __SH_STATUS_PROBE__ 探测
+ *      - 收到 __SH_STATUS_PROBE__：不需要登录，提示英文信息并结束
+ *      - 收到 Password:：进入步骤4
+ *   4. 当前因探测命令进入 Password: 状态，写入一次 echo 命令
+ *      - 含 incorrect：表示下一次可正常输入用户名，进入步骤5
+ *      - 否则：返回状态异常
+ *   5. 发送配置文件中的用户名，等待输出
+ *      - 含 Password:：进入步骤6输入密码
+ *      - 不含：返回登录异常
+ *   6. 输入密码，检测是否含 incorrect
+ *      - 含：密钥错误，返回提示重试
+ *      - 不含：再发 echo __SH_STATUS_PROBE__ 验证，若收到则登录成功
+ *
+ * @param config 串口连接配置（需包含 loginUsername / loginPassword）
+ */
+export async function userLoginDemoSerial(
+  config: SerialShellConfig,
+  stepDelays?: UserLoginStepDelays
+): Promise<UserLoginResult> {
+  console.log("[userLoginDemoSerial] === Starting user login demo ===\n");
+
+  const shell = new SerialShell(config); // 创建串口 shell 实例
+  const delays = { ...DEFAULT_LOGIN_DELAYS, ...stepDelays };
+  const waitPassword = delays[UserLoginStatus.WAITING_PASSWORD] ?? 5000;
+  const waitLoggedIn = delays[UserLoginStatus.LOGGED_IN] ?? 5000;
+
+  // ===== 步骤 1：打开串口连接，读取启动信息（banner） =====
+  console.log(
+    `[Step 1] Opening ${config.port} @ ${config.baudRate ?? 115200} ...`
+  );
+  let banner: string;
+  try {
+    banner = await shell.open();
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error("[Step 1] Open serial failed:", errorMsg);
+    await shell.close().catch(() => { });
+    return {
+      success: false,
+      status: UserLoginStatus.ERROR,
+      output: "",
+      error: errorMsg,
+    };
+  }
+  console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitize(banner));
+
+  // ===== 步骤 2：检查 banner 中是否含有 login: =====
+  if (banner.includes("login:")) {
+    console.log(
+      "[Step 2] Detected 'login:' in banner, need login. Jump to Step 5."
+    );
+    console.log(
+      "[Step 2] sh状态: %s",
+      UserLoginStatus.WAITING_USERNAME
+    );
+    const handler = new UserLoginHandler({
+      username: config.loginUsername ?? "",
+      password: config.loginPassword ?? "",
+    });
+    const result = await handler.login(shell, undefined, stepDelays);
+    if (result.success) {
+      console.log(
+        "[Step 5] Login succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n"
+      );
+      await interactiveLoop(shell, "serial");
+    } else {
+      await shell.close();
+    }
+    return result;
+  }
+
+  // 无 login:，发送探测命令
+  console.log("[Step 2] No 'login:' detected, probing with echo...");
+  shell.write("echo __SH_STATUS_PROBE__", 1);
+  await new Promise((resolve) => setTimeout(resolve, waitPassword));
+  const probeOutput = shell.read(1);
+  console.log("[Step 3] probeOutput =\n%s", sanitize(probeOutput));
+
+  // ===== 步骤 3：分析探测输出 =====
+  // 优先检查 Password: —— 若探测输出中同时含 __SH_STATUS_PROBE__ 和 Password:
+  // 说明设备把 echo 命令当作密码输入处理了，必须进入登录流程。
+  if (probeOutput.includes("Password:")) {
+    console.log("[Step 3] Detected 'Password:', entering Step 4...");
+    console.log(
+      "[Step 3] sh状态: %s",
+      UserLoginStatus.WAITING_PASSWORD
+    );
+
+    // ===== 步骤 4：因探测命令进入 Password: 状态，需写入一次 echo 命令 =====
+    shell.write("echo __SH_STATUS_PROBE__", 1);
+    await new Promise((resolve) => setTimeout(resolve, waitLoggedIn));
+    let step4Output = shell.read(1);
+    if (!step4Output.trim()) {
+      await new Promise((resolve) => setTimeout(resolve, waitLoggedIn));
+      step4Output = shell.read(0);
+    }
+    console.log("[Step 4] output =\n%s", sanitize(step4Output));
+
+    if (step4Output.includes("incorrect")) {
+      console.log(
+        "[Step 4] Detected 'incorrect', next attempt can use normal username."
+      );
+      console.log(
+        "[Step 4] sh状态: %s",
+        UserLoginStatus.WRONG_KEY
+      );
+      const handler = new UserLoginHandler({
+        username: config.loginUsername ?? "",
+        password: config.loginPassword ?? "",
+      });
+      const result = await handler.login(shell, undefined, stepDelays);
+      if (result.success) {
+        console.log(
+          "[Step 5] Login succeeded! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n"
+        );
+        await interactiveLoop(shell, "serial");
+      } else {
+        await shell.close();
+      }
+      return result;
+    }
+
+    const msg = `sh状态异常，无法识别，当前状态: ${sanitize(step4Output)}`;
+    console.log("[Step 4] %s", msg);
+    console.log(
+      "[Step 4] sh状态: %s",
+      UserLoginStatus.ERROR
+    );
+    await shell.close();
+    return {
+      success: false,
+      status: UserLoginStatus.ERROR,
+      output: step4Output,
+      error: msg,
+    };
+  }
+
+  // 不含 Password:，检查是否收到探测回显
+  if (probeOutput.includes("__SH_STATUS_PROBE__")) {
+    console.log(
+      "[Step 3] No login required! Entering interactive shell. Type commands and press Enter. Press Ctrl+C to exit.\n"
+    );
+    console.log(
+      "[Step 3] sh状态: %s",
+      UserLoginStatus.NO_LOGIN_REQUIRED
+    );
+    await interactiveLoop(shell, "serial");
+    return {
+      success: true,
+      status: UserLoginStatus.NO_LOGIN_REQUIRED,
+      output: probeOutput,
+    };
+  }
+
+  // 既不含 probe 标记也不含 Password:
+  console.log(
+    "[Step 3] sh状态: %s",
+    UserLoginStatus.UNKNOWN
+  );
+  const msg = `sh状态异常，无法识别，当前状态: ${sanitize(probeOutput)}`;
+  console.log("[Step 3] %s", msg);
+  await shell.close();
+  return {
+    success: false,
+    status: UserLoginStatus.UNKNOWN,
+    output: probeOutput,
+    error: msg,
+  };
 }
 
 /**

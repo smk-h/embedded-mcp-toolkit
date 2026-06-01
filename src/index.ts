@@ -1,6 +1,10 @@
 import { Command } from "commander";
 import { interactiveShell, pshDemoSsh } from "./transport/ssh.js";
-import { interactiveSerialShell, pshDemoSerial } from "./transport/serial.js";
+import {
+  interactiveSerialShell,
+  pshDemoSerial,
+  userLoginDemoSerial,
+} from "./transport/serial.js";
 import { getSSHConfig, getSerialConfig, getAllConfig } from "./infra/config.js";
 import { startMcpServer } from "./mcp/server.js";
 import { runInit, runUninstall } from "./cli/commands/init.js";
@@ -288,6 +292,31 @@ demoSerialCmd
     process.env.LOG_SAVE ??= "1";
     process.env.LOG_DIR ??= "./log";
     pshDemoSerial(getSerialConfig()).catch((err: unknown) => {
+      console.error("Fatal:", err instanceof Error ? err.message : err);
+      process.exit(1);
+    });
+  });
+
+/**
+ * @brief 串口用户登录演示
+ * @details 通过串口连接到设备后，自动探测是否需要用户名/密码登录并完成认证，
+ *          用于串口登录流程的验证与演示。
+ *
+ * @par 子命令类型 内联子命令 —— 三级子命令，通过 `.action()` 在同一进程内执行。
+ *
+ * @example
+ * embedded-mcp-toolkit demo serial login
+ */
+demoSerialCmd
+  .command("login")
+  .description("串口用户登录演示")
+  .action(() => {
+    // 使用 ??= 确保不影响已显式设置的环境变量。
+    process.env.DEVICE ??= "board-lubancat";
+    process.env.BOARD_CONFIG_PATH ??= "./.embedded/configs/config.yaml";
+    process.env.LOG_SAVE ??= "1";
+    process.env.LOG_DIR ??= "./.embedded/log";
+    userLoginDemoSerial(getSerialConfig()).catch((err: unknown) => {
       console.error("Fatal:", err instanceof Error ? err.message : err);
       process.exit(1);
     });

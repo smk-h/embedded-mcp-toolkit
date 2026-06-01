@@ -35,6 +35,8 @@ interface DeviceConfig {
     stopBits?: number; // 停止位（1/1.5/2），默认 1
     parity?: "none" | "even" | "odd"; // 校验位，默认 none
     lineEnding?: string; // 命令追加的换行符（\n, \r\n），默认 \n
+    loginUsername?: string; // 串口登录用户名
+    loginPassword?: string; // 串口登录密码
     keyProvider?: KeyProviderYaml; // 串口侧密钥提供配置
   };
 }
@@ -124,6 +126,8 @@ export function getSerialConfig(name?: string): SerialShellConfig {
     stopBits: yaml.stopBits as 1 | 1.5 | 2 | undefined,
     parity: yaml.parity,
     lineEnding: yaml.lineEnding,
+    loginUsername: yaml.loginUsername,
+    loginPassword: yaml.loginPassword,
   };
 }
 

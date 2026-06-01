@@ -10,7 +10,7 @@ devices:
   # ---- 设备 A ----
   board-a:
     adb:
-      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
+      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "192.168.16.103"
       port: 22
@@ -25,6 +25,8 @@ devices:
     serial:
       port: "COM4"
       baudRate: 115200
+      loginUsername: "root"
+      loginPassword: "root"
       keyProvider:
         mode: "file"
         challengeFilePath: "./.embedded/configs/challenge.txt"
@@ -35,7 +37,7 @@ devices:
   # ---- 设备 B ----
   board-b:
     adb:
-      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
+      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "192.168.16.105"
       port: 22
@@ -50,6 +52,8 @@ devices:
     serial:
       port: "COM3"
       baudRate: 115200
+      loginUsername: "root"
+      loginPassword: "root"
       keyProvider:
         mode: "file"
         challengeFilePath: "./.embedded/configs/challenge.txt"
@@ -59,7 +63,7 @@ devices:
   # ---- 设备 nossh ----
   board-nossh:
     adb:
-      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
+      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "none"
       port: 22
@@ -74,6 +78,8 @@ devices:
     serial:
       port: "COM3"
       baudRate: 115200
+      loginUsername: "sumu"
+      loginPassword: "sumu"
       keyProvider:
         mode: "file"
         challengeFilePath: "./.embedded/configs/challenge.txt"
@@ -83,7 +89,7 @@ devices:
   # ---- 设备 noserial ----
   board-noserial:
     adb:
-      serialNo: "sn_none"                     # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
+      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
       host: "1.1.1.1"
       port: 22
@@ -98,6 +104,33 @@ devices:
     serial:
       port: "none"
       baudRate: 115200
+      loginUsername: "sumu"
+      loginPassword: "sumu"
+      keyProvider:
+        mode: "file"
+        challengeFilePath: "./.embedded/configs/challenge.txt"
+        keyFilePath: "./.embedded/configs/password_input.txt"
+        pollInterval: 500
+        timeout: 120000
+  board-lubancat:
+    adb:
+      serialNo: "sn_none"
+    ssh:
+      host: "192.168.16.107"
+      port: 22
+      username: "root"
+      password: "root"
+      keyProvider:
+        mode: "file"
+        challengeFilePath: "./.embedded/configs/challenge.txt"
+        keyFilePath: "./.embedded/configs/password_input.txt"
+        pollInterval: 500
+        timeout: 120000
+    serial:
+      port: "COM5"
+      baudRate: 1500000
+      loginUsername: "root"
+      loginPassword: "root"
       keyProvider:
         mode: "file"
         challengeFilePath: "./.embedded/configs/challenge.txt"
