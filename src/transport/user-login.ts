@@ -1,9 +1,15 @@
 /**
- * 用户登录模块
- *
- * 抽象串口/SSH 等通道下的用户名/密码登录流程，
- * 参考 PshHandler 的设计，将状态枚举、结果结构、登录通道接口统一封装。
- * 通过 UserLoginProfile 模板配置不同的登录样式（如标准用户名/密码、仅密码等）。
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : user-login.ts
+ * Author     : sumu
+ * Date       : 2026/06/02
+ * Version    : 2.0
+ * Description: 用户登录模块 —— 抽象串口/SSH 等通道下的用户名/密码登录流程。
+ *              参考 PshHandler 的设计，将状态枚举、结果结构、登录通道接口统一封装。
+ *              通过 UserLoginProfile 模板配置不同的登录样式（如标准用户名/密码、仅密码等）。
+ *              提供 UserLoginStateMachine 状态机简化终端状态探测逻辑。
+ * ======================================================
  */
 
 /** 用户登录状态枚举 */
@@ -207,6 +213,9 @@ const BUILTIN_PROFILES: Record<string, UserLoginProfile> = {
  * 用于兼容旧的 UserLoginStepDelays 参数：将 steps 级别的 timeoutMs
  * 转换为状态级别的延迟映射，使调用方仍可通过 stepDelays 覆盖。
  * 优先级：重复状态的步骤取最后一个的 timeoutMs。
+ *
+ * @param profile - 用户登录 Profile 模板
+ * @returns 状态→超时（毫秒）的映射表
  */
 function delaysFromProfile(profile: UserLoginProfile): Record<string, number> {
   const delays: Record<string, number> = {};
@@ -270,6 +279,7 @@ export class UserLoginHandler {
    * @param channel     登录通道（Serial / SSH）
    * @param probeCmd    登录成功后用于验证的命令，覆盖 profile.probeCmd
    * @param stepDelays  按状态覆盖步骤延迟（毫秒），与 profile 中的 timeoutMs 合并
+   * @returns 登录结果，包含成功/失败状态、输出和错误信息
    */
   async login(
     channel: UserLoginChannel,
@@ -359,6 +369,8 @@ export class UserLoginHandler {
    *
    * @param name   内置 profile 名称（"default" | "password-only"）
    * @param config 登录凭据
+   * @returns 配置好的 UserLoginHandler 实例
+   * @throws {Error} 当 profile 名称不存在时抛出
    */
   static fromProfile(
     name: string,
@@ -369,6 +381,11 @@ export class UserLoginHandler {
     return new UserLoginHandler(config, profile);
   }
 
+  /**
+   * 异步等待指定毫秒数
+   *
+   * @param ms - 等待时间（毫秒）
+   */
   #wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -380,14 +397,10 @@ export class UserLoginHandler {
  * 状态机分析输出后告诉调用方下一步该做什么。
  */
 export interface StateMachineAction {
-  /** 下一步要发送的命令（undefined 表示已达终态） */
-  send?: string;
-  /** 发送后等待多久再读取（毫秒） */
-  waitMs: number;
-  /** 当前检测到的状态 */
-  state: UserLoginStatus;
-  /** 是否为终态（不需继续交互） */
-  done: boolean;
+  send?: string;                    // 下一步要发送的命令（undefined 表示已达终态）
+  waitMs: number;                   // 发送后等待多久再读取（毫秒）
+  state: UserLoginStatus;           // 当前检测到的状态
+  done: boolean;                    // 是否为终态（不需继续交互）
 }
 
 /**
@@ -399,29 +412,29 @@ export interface StateMachineAction {
  * 状态流转图:
  *
  *   start(banner)
- *     │
- *     ├─ banner 含 "login:" ──▶ WAITING_USERNAME (done, 调用方走 UserLoginHandler)
- *     │
- *     └─ banner 无 "login:" ──▶ 发探测 echo __SH_STATUS_PROBE__
- *          │
- *          ▼ feed(探测输出)
- *     ┌────┼─────────────────────────────────────┐
- *     │    │                                     │
- *  含probe 含Password:+login:           含Password:不含login:
- *  (已登录) (探测被当密码→回到login)  (无法确定，需二次探测)
- *     │    │                                     │
- *     ▼    ▼                                     ▼
- *  READY  WAITING_USERNAME              发探测 confirm
- *  (done) (done,走UserLoginHandler)          │
- *                                            ▼ feed(confirm输出)
- *                                      ┌─────┼──────────────┐
- *                                      │     │              │
- *                                   含probe  incorrect/    异常
- *                                   (登录成功) Password:/login:
- *                                      │     │              │
- *                                      ▼     ▼              ▼
- *                                   READY  WAITING_USERNAME ERROR
- *                                   (done) (done,走登录)   (done)
+ *       │
+ *       ├─ banner 含 "login:" ──▶ WAITING_USERNAME (done，调用方走 UserLoginHandler)
+ *       │
+ *       └─ banner 无 "login:" ──▶ 发探测 echo __SH_STATUS_PROBE__
+ *                    │
+ *                    ▼ feed(探测输出)
+ *   ┌────────────────┼──────────────────────────────┐
+ *   │                │                              │
+ *  含 probe      含 Password: + login:      含 Password: 不含 login:
+ *  (已登录)      (探测被当密码→回到login)     (无法确定，需二次探测)
+ *   │                │                              │
+ *   ▼                ▼                              ▼
+ *  READY       WAITING_USERNAME              发探测 confirm
+ *  (done)     (done, 走 UserLoginHandler)           │
+ *                                                   ▼ feed(confirm输出)
+ *                                ┌──────────────────┼───────────────────┐
+ *                                │                  │                   │
+ *                              含 probe      incorrect /              异常
+ *                              (登录成功)    Password: / login:
+ *                                │                  │                   │
+ *                                ▼                  ▼                   ▼
+ *                              READY         WAITING_USERNAME         ERROR
+ *                              (done)       (done, 走登录)            (done)
  *
  * 使用方式:
  *   const sm = new UserLoginStateMachine(profile);
@@ -468,6 +481,9 @@ export class UserLoginStateMachine {
 
   /**
    * 用 banner 初始化状态机，返回下一步动作
+   *
+   * @param banner - 串口/SSH 连接后读取到的初始输出
+   * @returns 下一步动作指令（发探测 或 已达终态）
    */
   start(banner: string): StateMachineAction {
     // 规则 1: banner 含 "login:" → 直接走登录
@@ -483,6 +499,9 @@ export class UserLoginStateMachine {
 
   /**
    * 喂入探测/命令输出，状态机根据当前状态 + 输出决定下一步
+   *
+   * @param output - 从通道读取到的终端输出
+   * @returns 下一步动作指令（继续探测 或 已达终态）
    */
   feed(output: string): StateMachineAction {
     const hasProbe = output.includes("__SH_STATUS_PROBE__");
@@ -519,6 +538,7 @@ export class UserLoginStateMachine {
     return this.#reply(UserLoginStatus.ERROR, "无法识别终端状态");
   }
 
+  /** 重置状态机到初始状态 */
   reset(): void {
     this._state = UserLoginStatus.UNKNOWN;
     this._probeCount = 0;
@@ -526,6 +546,11 @@ export class UserLoginStateMachine {
 
   // ── 私有 ──
 
+  /**
+   * 构建探测动作指令
+   *
+   * @returns 要求调用方发送探测命令的动作
+   */
   #probeAction(): StateMachineAction {
     return {
       send: this.probeCmd,
@@ -535,6 +560,13 @@ export class UserLoginStateMachine {
     };
   }
 
+  /**
+   * 构建终态动作指令（done=true）
+   *
+   * @param state  - 检测到的终端状态
+   * @param reason - 状态判定原因（用于日志）
+   * @returns 终态动作指令
+   */
   #reply(state: UserLoginStatus, reason: string): StateMachineAction {
     this._state = state;
     console.log("[UserLoginSM] %s → %s", reason, state);

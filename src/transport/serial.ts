@@ -317,7 +317,8 @@ export async function userLoginDemoSerial(
   let action = sm.start(banner);
 
   while (!action.done) {
-    // 状态机要求发探测命令
+    // action.send!   : ! 是 TS 非空断言 —— done=false 时 send 一定有值，消除编译报错
+    // write(..., 1)  : 1 是 clear 参数 —— 写之前清空读缓冲区，确保只读到本次命令的响应
     shell.write(action.send!, 1);
     await new Promise((resolve) => setTimeout(resolve, action.waitMs));
     const output = shell.read(1);
