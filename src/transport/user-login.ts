@@ -373,3 +373,176 @@ export class UserLoginHandler {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
+
+/**
+ * 登录状态机输出指令
+ *
+ * 状态机分析输出后告诉调用方下一步该做什么。
+ */
+export interface StateMachineAction {
+  /** 下一步要发送的命令（undefined 表示已达终态） */
+  send?: string;
+  /** 发送后等待多久再读取（毫秒） */
+  waitMs: number;
+  /** 当前检测到的状态 */
+  state: UserLoginStatus;
+  /** 是否为终态（不需继续交互） */
+  done: boolean;
+}
+
+/**
+ * 登录状态机
+ *
+ * 将终端状态探测建模为有限状态机，替代 if-else 嵌套判断。
+ * 状态机只负责**检测终端当前状态**，实际的用户名/密码交互由 UserLoginHandler 完成。
+ *
+ * 状态流转图:
+ *
+ *   start(banner)
+ *     │
+ *     ├─ banner 含 "login:" ──▶ WAITING_USERNAME (done, 调用方走 UserLoginHandler)
+ *     │
+ *     └─ banner 无 "login:" ──▶ 发探测 echo __SH_STATUS_PROBE__
+ *          │
+ *          ▼ feed(探测输出)
+ *     ┌────┼─────────────────────────────────────┐
+ *     │    │                                     │
+ *  含probe 含Password:+login:           含Password:不含login:
+ *  (已登录) (探测被当密码→回到login)  (无法确定，需二次探测)
+ *     │    │                                     │
+ *     ▼    ▼                                     ▼
+ *  READY  WAITING_USERNAME              发探测 confirm
+ *  (done) (done,走UserLoginHandler)          │
+ *                                            ▼ feed(confirm输出)
+ *                                      ┌─────┼──────────────┐
+ *                                      │     │              │
+ *                                   含probe  incorrect/    异常
+ *                                   (登录成功) Password:/login:
+ *                                      │     │              │
+ *                                      ▼     ▼              ▼
+ *                                   READY  WAITING_USERNAME ERROR
+ *                                   (done) (done,走登录)   (done)
+ *
+ * 使用方式:
+ *   const sm = new UserLoginStateMachine(profile);
+ *
+ *   // 1. banner 初始化
+ *   let action = sm.start(banner);
+ *
+ *   // 2. 循环: 执行动作 → 读输出 → 喂入 → 获取下一动作
+ *   while (!action.done) {
+ *     channel.write(action.send, 1);
+ *     await wait(action.waitMs);
+ *     const output = channel.read(1);
+ *     action = sm.feed(output);
+ *   }
+ *
+ *   // 3. 根据终态继续
+ *   if (action.state === UserLoginStatus.NO_LOGIN_REQUIRED) {
+ *     // 已登录，直接进入交互
+ *   } else if (action.state === UserLoginStatus.WAITING_USERNAME) {
+ *     // 需要登录，交给 UserLoginHandler
+ *     const handler = new UserLoginHandler(config, profile);
+ *     await handler.login(channel);
+ *   } else {
+ *     // ERROR / UNKNOWN，处理异常
+ *   }
+ */
+export class UserLoginStateMachine {
+  private _state: UserLoginStatus = UserLoginStatus.UNKNOWN;
+  private _probeCount = 0;
+  private _profile: UserLoginProfile;
+
+  constructor(profile?: UserLoginProfile) {
+    this._profile = profile ?? BUILTIN_PROFILES["default"];
+  }
+
+  get state(): UserLoginStatus {
+    return this._state;
+  }
+
+  /** 探测命令 */
+  get probeCmd(): string {
+    return this._profile.probeCmd;
+  }
+
+  /**
+   * 用 banner 初始化状态机，返回下一步动作
+   */
+  start(banner: string): StateMachineAction {
+    // 规则 1: banner 含 "login:" → 直接走登录
+    if (/login:\s*$/im.test(banner)) {
+      return this.#reply(UserLoginStatus.WAITING_USERNAME, "banner 含 login:");
+    }
+
+    // 规则 2: 无法从 banner 判断 → 发探测
+    this._state = UserLoginStatus.UNKNOWN;
+    this._probeCount = 1;
+    return this.#probeAction();
+  }
+
+  /**
+   * 喂入探测/命令输出，状态机根据当前状态 + 输出决定下一步
+   */
+  feed(output: string): StateMachineAction {
+    const hasProbe = output.includes("__SH_STATUS_PROBE__");
+    const hasPassword = /Password:\s*$/im.test(output);
+    const hasLogin = /login:\s*$/im.test(output);
+    const hasIncorrect = /incorrect/i.test(output);
+
+    // ── 探测结果分析 ──
+    if (hasProbe && !hasPassword) {
+      // 收到了探针回显且不在密码提示中 → 已登录
+      return this.#reply(UserLoginStatus.NO_LOGIN_REQUIRED, "探针回显正常，已登录");
+    }
+
+    if (hasPassword && hasLogin) {
+      // 密码提示 + 登录提示同时出现 → 探测被当密码吃掉，回到登录
+      return this.#reply(UserLoginStatus.WAITING_USERNAME, "探测被吞，终端回到 login:");
+    }
+
+    if (hasPassword && !hasLogin) {
+      // 只有密码提示 → 无法确定，二次探测
+      this._probeCount++;
+      if (this._probeCount > 2) {
+        return this.#reply(UserLoginStatus.ERROR, "探测次数超限");
+      }
+      return this.#probeAction();
+    }
+
+    if (hasIncorrect) {
+      // 含 incorrect → 探测被当密码，验证失败
+      return this.#reply(UserLoginStatus.WAITING_USERNAME, "探测被当密码，验证失败");
+    }
+
+    // 都不匹配 → 状态异常
+    return this.#reply(UserLoginStatus.ERROR, "无法识别终端状态");
+  }
+
+  reset(): void {
+    this._state = UserLoginStatus.UNKNOWN;
+    this._probeCount = 0;
+  }
+
+  // ── 私有 ──
+
+  #probeAction(): StateMachineAction {
+    return {
+      send: this.probeCmd,
+      waitMs: DEFAULT_LOGIN_DELAYS[UserLoginStatus.WAITING_PASSWORD] ?? 5000,
+      state: this._state,
+      done: false,
+    };
+  }
+
+  #reply(state: UserLoginStatus, reason: string): StateMachineAction {
+    this._state = state;
+    console.log("[UserLoginSM] %s → %s", reason, state);
+    return {
+      send: undefined,
+      waitMs: 0,
+      state,
+      done: true,
+    };
+  }
+}
