@@ -3,6 +3,7 @@
  *
  * 抽象串口/SSH 等通道下的用户名/密码登录流程，
  * 参考 PshHandler 的设计，将状态枚举、结果结构、登录通道接口统一封装。
+ * 通过 UserLoginProfile 模板配置不同的登录样式（如标准用户名/密码、仅密码等）。
  */
 
 /** 用户登录状态枚举 */
@@ -45,10 +46,60 @@ export interface UserLoginConfig {
 }
 
 /**
+ * 登录序列中的单步操作
+ *
+ * 用户登录通常需要多步交互，每步包含：发送内容 → 等待响应 → 匹配期望。
+ * 例如默认的登录序列：
+ *   步骤1: send="{username}" → 期望匹配 "Password:"
+ *   步骤2: send="{password}" → 期望不含 "incorrect"
+ *   步骤3: send="{probe}"    → 期望匹配 "__SH_STATUS_PROBE__"
+ *
+ * send 字段支持以下占位符，运行时自动替换：
+ *   {username} - 替换为 UserLoginConfig.username
+ *   {password} - 替换为 UserLoginConfig.password
+ *   {probe}    - 替换为 UserLoginProfile.probeCmd
+ */
+export interface UserLoginStep {
+  /** 要发送的内容，支持 {username} / {password} / {probe} 占位符 */
+  send: string;
+  /** 发送后期望匹配的正则，用于判断该步是否成功 */
+  expectPattern: string;
+  /** 可选的错误匹配正则，匹配到则视为本步失败（如 "incorrect"） */
+  errorPattern?: string;
+  /** 本步超时（毫秒） */
+  timeoutMs: number;
+  /** 步骤描述 */
+  description: string;
+  /** 本步成功后对应的状态 */
+  statusOnSuccess: UserLoginStatus;
+  /** 本步失败后对应的状态 */
+  statusOnError: UserLoginStatus;
+}
+
+/**
+ * 用户登录 Profile 模板
+ *
+ * 不同设备可能有不同的登录流程（标准用户名/密码、仅密码、自定义提示符等），
+ * 通过 profile 将这些差异配置化，使 UserLoginHandler 能适配多种登录样式。
+ *
+ * 参考 PshProfile 的设计：状态模式匹配 + 交互步骤序列。
+ */
+export interface UserLoginProfile {
+  name: string;
+  description: string;
+  /** 登录成功后用于验证的探测命令，默认 "echo __SH_STATUS_PROBE__" */
+  probeCmd: string;
+  /** 登录交互步骤序列 */
+  loginSequence: UserLoginStep[];
+}
+
+/**
  * 登录步骤延迟配置，按 UserLoginStatus 状态绑定。
  * 每个键对应登录流程中的一个目标状态，值为该步骤的等待时间（毫秒）。
- * - WAITING_PASSWORD: 发送用户名后等待密码提示
- * - LOGGED_IN:       发送密码后等待验证 + 探测命令后等待登录确认
+ *
+ * 与 profile 的关系：调用 UserLoginHandler.login() 时，stepDelays 中
+ * status → timeoutMs 的映射会覆盖对应步骤在 profile 中定义的 timeoutMs，
+ * 实现"不改 profile，仅调延迟"的便捷覆盖。
  */
 export type UserLoginStepDelays = Partial<Record<UserLoginStatus, number>>;
 
@@ -59,34 +110,170 @@ export const DEFAULT_LOGIN_DELAYS: Record<string, number> = {
 };
 
 /**
+ * 内置用户登录 Profile
+ *
+ * 目前支持一种登录样式：
+ * - default: 标准用户名/密码登录，通过 echo 探测验证登录成功
+ *
+ * 扩展方式：
+ *   1. 在此处添加新的 profile 条目
+ *   2. 通过 UserLoginHandler.fromProfile(name) 按名称使用
+ *   3. 或直接 new UserLoginHandler(config, customProfile) 传入自定义 profile
+ */
+const BUILTIN_PROFILES: Record<string, UserLoginProfile> = {
+  /**
+   * 标准用户名/密码登录
+   *
+   * 典型交互流程：
+   *   login: root
+   *   Password: ******
+   *   root@device:~# echo __SH_STATUS_PROBE__
+   *   __SH_STATUS_PROBE__
+   */
+  default: {
+    name: "default",
+    description:
+      "Standard username/password login with echo probe verification",
+    probeCmd: "echo __SH_STATUS_PROBE__",
+    loginSequence: [
+      {
+        send: "{username}",
+        expectPattern: "Password:",
+        timeoutMs: 5000,
+        description: "Send username, wait for password prompt",
+        statusOnSuccess: UserLoginStatus.WAITING_PASSWORD,
+        statusOnError: UserLoginStatus.ERROR,
+      },
+      {
+        send: "{password}",
+        expectPattern: ".*",
+        errorPattern: "incorrect",
+        timeoutMs: 5000,
+        description: "Send password, wait for verification",
+        statusOnSuccess: UserLoginStatus.LOGGED_IN,
+        statusOnError: UserLoginStatus.WRONG_KEY,
+      },
+      {
+        send: "{probe}",
+        expectPattern: "__SH_STATUS_PROBE__",
+        timeoutMs: 5000,
+        description: "Send probe command to verify login success",
+        statusOnSuccess: UserLoginStatus.LOGGED_IN,
+        statusOnError: UserLoginStatus.ERROR,
+      },
+    ],
+  },
+
+  /**
+   * 仅密码登录（无需输入用户名）
+   *
+   * 部分嵌入式设备在串口连接后直接显示 Password: 提示符，
+   * 不需要输入用户名，只需输入密码即可登录。
+   *
+   * 典型交互流程：
+   *   Password: ******
+   *   root@device:~# echo __SH_STATUS_PROBE__
+   *   __SH_STATUS_PROBE__
+   */
+  "password-only": {
+    name: "password-only",
+    description: "Password-only login (no username required)",
+    probeCmd: "echo __SH_STATUS_PROBE__",
+    loginSequence: [
+      {
+        send: "{password}",
+        expectPattern: ".*",
+        errorPattern: "incorrect",
+        timeoutMs: 5000,
+        description: "Send password, wait for verification",
+        statusOnSuccess: UserLoginStatus.LOGGED_IN,
+        statusOnError: UserLoginStatus.WRONG_KEY,
+      },
+      {
+        send: "{probe}",
+        expectPattern: "__SH_STATUS_PROBE__",
+        timeoutMs: 5000,
+        description: "Send probe command to verify login success",
+        statusOnSuccess: UserLoginStatus.LOGGED_IN,
+        statusOnError: UserLoginStatus.ERROR,
+      },
+    ],
+  },
+};
+
+/**
+ * 从 profile 的 loginSequence 中提取状态→超时的映射
+ *
+ * 用于兼容旧的 UserLoginStepDelays 参数：将 steps 级别的 timeoutMs
+ * 转换为状态级别的延迟映射，使调用方仍可通过 stepDelays 覆盖。
+ * 优先级：重复状态的步骤取最后一个的 timeoutMs。
+ */
+function delaysFromProfile(profile: UserLoginProfile): Record<string, number> {
+  const delays: Record<string, number> = {};
+  for (const step of profile.loginSequence) {
+    if (step.statusOnSuccess) {
+      delays[step.statusOnSuccess] = step.timeoutMs;
+    }
+  }
+  return delays;
+}
+
+/**
  * 用户登录处理器
  *
  * 封装用户名/密码登录的交互序列，与底层传输无关。
+ * 通过 UserLoginProfile 模板支持不同的登录样式。
+ *
+ * 使用方式：
+ *   // 方式 1：使用内置 profile
+ *   const handler = UserLoginHandler.fromProfile("default", {
+ *     username: "root",
+ *     password: "123456",
+ *   });
+ *   const result = await handler.login(channel);
+ *
+ *   // 方式 2：使用自定义 profile
+ *   const handler = new UserLoginHandler(config, customProfile);
+ *
+ *   // 方式 3：兼容旧 API（默认使用 "default" profile）
+ *   const handler = new UserLoginHandler(config);
+ *   const result = await handler.login(channel, undefined, stepDelays);
  */
 export class UserLoginHandler {
   readonly #config: UserLoginConfig;
+  readonly #profile: UserLoginProfile;
 
-  constructor(config: UserLoginConfig) {
+  /**
+   * @param config 登录凭据
+   * @param profile 登录流程模板，不传则使用 "default" 内置 profile
+   */
+  constructor(config: UserLoginConfig, profile?: UserLoginProfile) {
     this.#config = config;
+    this.#profile = profile ?? BUILTIN_PROFILES["default"];
+  }
+
+  get profile(): UserLoginProfile {
+    return this.#profile;
   }
 
   /**
    * 执行用户名/密码登录序列
    *
-   * 流程：
-   *   1. 发送用户名，等待密码提示（WAITING_PASSWORD 状态）
-   *   2. 检查输出是否含 "Password:"，若无则报错
-   *   3. 发送密码，等待验证结果（LOGGED_IN 状态）
-   *   4. 若输出含 "incorrect"，返回 WRONG_KEY
-   *   5. 否则发送 echo 探测验证登录是否成功（LOGGED_IN 状态）
+   * 根据 profile 中定义的 loginSequence 逐步执行登录：
+   * 1. 遍历 loginSequence 中的每一步
+   * 2. 解析 send 字段中的占位符（{username}/{password}/{probe}）
+   * 3. 发送内容，等待 step.timeoutMs 毫秒后读取输出
+   * 4. 检查输出是否匹配 expectPattern
+   * 5. 如设置了 errorPattern 且匹配，返回错误状态
+   * 6. 全部步骤完成后返回最终状态
    *
    * @param channel     登录通道（Serial / SSH）
-   * @param probeCmd    登录成功后用于验证的命令，默认 "echo __SH_STATUS_PROBE__"
-   * @param stepDelays  按状态绑定的步骤延迟（毫秒），与 DEFAULT_LOGIN_DELAYS 合并
+   * @param probeCmd    登录成功后用于验证的命令，覆盖 profile.probeCmd
+   * @param stepDelays  按状态覆盖步骤延迟（毫秒），与 profile 中的 timeoutMs 合并
    */
   async login(
     channel: UserLoginChannel,
-    probeCmd = "echo __SH_STATUS_PROBE__",
+    probeCmd?: string,
     stepDelays?: UserLoginStepDelays
   ): Promise<UserLoginResult> {
     const { username, password } = this.#config;
@@ -101,85 +288,85 @@ export class UserLoginHandler {
       };
     }
 
-    const delays = { ...DEFAULT_LOGIN_DELAYS, ...stepDelays };
+    const probe = probeCmd ?? this.#profile.probeCmd;
+    const profileDelays = delaysFromProfile(this.#profile);
+    const delays = { ...profileDelays, ...stepDelays };
 
-    // 步骤 1：发送用户名 → 等待进入 WAITING_PASSWORD 状态
-    const passwordPromptDelay =
-      delays[UserLoginStatus.WAITING_PASSWORD] ?? 5000;
-    channel.write(username, 1);
-    await this.#wait(passwordPromptDelay);
-    const usernameOutput = channel.read(1);
+    for (let i = 0; i < this.#profile.loginSequence.length; i++) {
+      const step = this.#profile.loginSequence[i];
+      const timeout = delays[step.statusOnSuccess] ?? step.timeoutMs;
 
-    if (!usernameOutput.includes("Password:")) {
+      // 解析占位符
+      const send = step.send
+        .replace("{username}", username)
+        .replace("{password}", password)
+        .replace("{probe}", probe);
+
+      channel.write(send, 1);
+      console.log(`[UserLogin] 步骤${i + 1} 发送: ${step.description}`);
+      await this.#wait(timeout);
+      const output = channel.read(1);
+
+      // 检查错误模式
+      if (step.errorPattern && output.includes(step.errorPattern)) {
+        console.log(
+          "[UserLogin] 步骤%d 完成, sh状态: %s",
+          i + 1,
+          step.statusOnError
+        );
+        return {
+          success: false,
+          status: step.statusOnError,
+          output,
+          error: `Step ${i + 1} failed: detected error pattern "${step.errorPattern}"`,
+        };
+      }
+
+      // 检查期望模式
+      const expectRe = new RegExp(step.expectPattern, "im");
+      if (!expectRe.test(output)) {
+        console.log(
+          "[UserLogin] 步骤%d 完成, sh状态: %s",
+          i + 1,
+          step.statusOnError
+        );
+        return {
+          success: false,
+          status: step.statusOnError,
+          output,
+          error: `Step ${i + 1} failed: expect pattern "${step.expectPattern}" not matched`,
+        };
+      }
+
       console.log(
-        "[UserLogin] 步骤1 完成, sh状态: %s",
-        UserLoginStatus.ERROR
+        "[UserLogin] 步骤%d 完成, sh状态: %s",
+        i + 1,
+        step.statusOnSuccess
       );
-      const msg = "登录异常，请查看日志";
-      return {
-        success: false,
-        status: UserLoginStatus.ERROR,
-        output: usernameOutput,
-        error: msg,
-      };
-    }
-    console.log(
-      "[UserLogin] 步骤1 完成, sh状态: %s",
-      UserLoginStatus.WAITING_PASSWORD
-    );
-
-    // 步骤 2：发送密码 → 等待进入 LOGGED_IN / WRONG_KEY 状态
-    const passwordVerifyDelay = delays[UserLoginStatus.LOGGED_IN] ?? 5000;
-    channel.write(password, 1);
-    await this.#wait(passwordVerifyDelay);
-    const passwordOutput = channel.read(1);
-
-    if (passwordOutput.includes("incorrect")) {
-      console.log(
-        "[UserLogin] 步骤2 完成, sh状态: %s",
-        UserLoginStatus.WRONG_KEY
-      );
-      const msg = "密钥错误，请检查用户名和密码后重试";
-      return {
-        success: false,
-        status: UserLoginStatus.WRONG_KEY,
-        output: passwordOutput,
-        error: msg,
-      };
-    }
-    console.log(
-      "[UserLogin] 步骤2 完成, sh状态: %s",
-      UserLoginStatus.LOGGED_IN
-    );
-
-    // 步骤 3：探测验证 → 确认 LOGGED_IN 状态
-    channel.write(probeCmd, 1);
-    await this.#wait(passwordVerifyDelay);
-    const verifyOutput = channel.read(1);
-
-    if (verifyOutput.includes("__SH_STATUS_PROBE__")) {
-      console.log(
-        "[UserLogin] 步骤3 完成, sh状态: %s",
-        UserLoginStatus.LOGGED_IN
-      );
-      return {
-        success: true,
-        status: UserLoginStatus.LOGGED_IN,
-        output: verifyOutput,
-      };
     }
 
-    console.log(
-      "[UserLogin] 步骤3 完成, sh状态: %s",
-      UserLoginStatus.ERROR
-    );
-    const msg = "登录失败，状态异常，请查看日志";
+    // 全部步骤完成，返回成功
+    const lastOutput = channel.read(0);
     return {
-      success: false,
-      status: UserLoginStatus.ERROR,
-      output: verifyOutput,
-      error: msg,
+      success: true,
+      status: UserLoginStatus.LOGGED_IN,
+      output: lastOutput,
     };
+  }
+
+  /**
+   * 从内置 profile 名创建 UserLoginHandler
+   *
+   * @param name   内置 profile 名称（"default" | "password-only"）
+   * @param config 登录凭据
+   */
+  static fromProfile(
+    name: string,
+    config: UserLoginConfig
+  ): UserLoginHandler {
+    const profile = BUILTIN_PROFILES[name];
+    if (!profile) throw new Error(`Unknown user login profile: ${name}`);
+    return new UserLoginHandler(config, profile);
   }
 
   #wait(ms: number): Promise<void> {

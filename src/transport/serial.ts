@@ -291,11 +291,30 @@ export async function userLoginDemoSerial(
   console.log("[userLoginDemoSerial] === Starting user login demo ===\n");
 
   const shell = new SerialShell(config); // 创建串口 shell 实例
+  // 调用示例（可选覆盖部分延迟）:
+  //   userLoginDemoSerial(config);                                                 // 全部走默认 5s
+  //   userLoginDemoSerial(config, { [UserLoginStatus.WAITING_PASSWORD]: 3000 });   // 只把"等密码提示"改为 3s
+  //   userLoginDemoSerial(config, { [UserLoginStatus.LOGGED_IN]: 10000 });         // 只把"等登录结果"改为 10s
+  //
+  // 合并: { WAITING_PASSWORD:5000, LOGGED_IN:5000 } ← { WAITING_PASSWORD:3000 }
+  //                         ↓ 展开
+  //       { WAITING_PASSWORD:3000, LOGGED_IN:5000 }
   const delays = { ...DEFAULT_LOGIN_DELAYS, ...stepDelays };
+  // ?? 是空值合并运算符：左边是 null 或 undefined 时取右边，否则取左边。用于兜底
   const waitPassword = delays[UserLoginStatus.WAITING_PASSWORD] ?? 5000;
   const waitLoggedIn = delays[UserLoginStatus.LOGGED_IN] ?? 5000;
 
-  // ===== 步骤 1：打开串口连接，读取启动信息（banner） =====
+  /**
+   * 步骤 1：打开串口连接，读取启动信息（banner）
+   *
+   * 时序还原:
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   (设备启动，串口输出 banner)
+   *   ...kernel logs...
+   *   login:                         → 打开串口
+   *                                  ← 读取banner
+   */
   console.log(
     `[Step 1] Opening ${config.port} @ ${config.baudRate ?? 115200} ...`
   );
@@ -315,10 +334,22 @@ export async function userLoginDemoSerial(
   }
   console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitize(banner));
 
-  // ===== 步骤 2：检查 banner 中是否含有 login: =====
+  /**
+   * 步骤 2：检查 banner 中是否含有 login:
+   *
+   * 时序还原 (含 login: 分支):
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   login:                         → 检测到 login:，进入登录流程
+   *
+   * 时序还原 (不含 login: 分支):
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   (banner 中无 login: 提示)       → 发探测命令 echo __SH_STATUS_PROBE__
+   */
   if (banner.includes("login:")) {
     console.log(
-      "[Step 2] Detected 'login:' in banner, need login. Jump to Step 5."
+      "[Step 2] Detected 'login:' in banner, need login. Jump to Step 5. enter login step directly..."
     );
     console.log(
       "[Step 2] sh状态: %s",
@@ -342,14 +373,43 @@ export async function userLoginDemoSerial(
 
   // 无 login:，发送探测命令
   console.log("[Step 2] No 'login:' detected, probing with echo...");
-  shell.write("echo __SH_STATUS_PROBE__", 1);
-  await new Promise((resolve) => setTimeout(resolve, waitPassword));
-  const probeOutput = shell.read(1);
-  console.log("[Step 3] probeOutput =\n%s", sanitize(probeOutput));
+  shell.write("echo __SH_STATUS_PROBE__", 1); // 写入探测命令，清空缓冲区，准备读取探测结果
+  await new Promise((resolve) => setTimeout(resolve, waitPassword)); // 等待可能的 Password: 提示出现
+  const probeOutput = shell.read(1); // 读取探测输出
+  console.log("[Step 3] probeOutput =\n%s", sanitize(probeOutput)); // 输出探测结果，供分析
 
-  // ===== 步骤 3：分析探测输出 =====
-  // 优先检查 Password: —— 若探测输出中同时含 __SH_STATUS_PROBE__ 和 Password:
-  // 说明设备把 echo 命令当作密码输入处理了，必须进入登录流程。
+  /**
+   * 步骤 3：分析探测输出 —— 三种分支
+   *
+   * 分支 A（探测被当密码吞掉，回到 login: 提示 → 直接走登录）:
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   Password:                       → echo __SH_STATUS_PROBE__
+   *   (echo 被当密码读入, 验证失败)
+   *   Login incorrect.
+   *   lubancat login:                 ← 读取输出: 含 Password: + Login incorrect + login:
+   *                                   → 终端已回到 login:，直接走 UserLoginHandler
+   *
+   * 分支 A2（探测被当密码吞掉，仍停在 Password: → 需步骤4确认）:
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   Password:                       → echo __SH_STATUS_PROBE__
+   *   (echo 被当密码读入, 无 login: 提示)
+   *   Password:                       ← 读取输出: 含 Password: 但不含 login:
+   *                                   → 进入步骤 4（重发 echo 确认状态）
+   *
+   * 分支 B（无需登录）:
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   #                               → echo __SH_STATUS_PROBE__
+   *   __SH_STATUS_PROBE__             ← 读取输出: 含 __SH_STATUS_PROBE__
+   *   #                               → 直接进入交互 shell
+   *
+   * 分支 C（未知状态）:
+   *   设备侧                        PC侧
+   *   ──────────────────────────────────────
+   *   (输出既不含 Password: 也不含探针标记)  ← 状态异常，关闭连接
+   */
   if (probeOutput.includes("Password:")) {
     console.log("[Step 3] Detected 'Password:', entering Step 4...");
     console.log(
@@ -357,7 +417,57 @@ export async function userLoginDemoSerial(
       UserLoginStatus.WAITING_PASSWORD
     );
 
-    // ===== 步骤 4：因探测命令进入 Password: 状态，需写入一次 echo 命令 =====
+    // 分支 A：探测输出中同时含 Password: 和 login: → 终端已回到登录提示，直接走登录
+    if (probeOutput.includes("login:")) {
+      console.log(
+        "[Step 3] Also detected 'login:', terminal is at login prompt. Skipping Step 4."
+      );
+      const handler = new UserLoginHandler({
+        username: config.loginUsername ?? "",
+        password: config.loginPassword ?? "",
+      });
+      const result = await handler.login(shell, undefined, stepDelays);
+      if (result.success) {
+        console.log(
+          "[Step 3→Login] Login succeeded! Entering interactive shell.\n"
+        );
+        await interactiveLoop(shell, "serial");
+      } else {
+        await shell.close();
+      }
+      return result;
+    }
+
+    /**
+     * 步骤 4：分支 A2 — 探测被当密码吞掉但仍停在 Password:，重发 echo 确认状态
+     *
+     * 场景: probeOutput 含 Password: 但不含 login:，无法确定终端状态。
+     *       注意：若 probeOutput 同时含 login:，步骤 3 已直接走登录，不会到这里。
+     *
+     * 时序还原 (echo 被当密码正确 → 登录成功):
+     *   设备侧                        PC侧
+     *   ──────────────────────────────────────
+     *   # (碰巧密码正确，已登录)        → echo __SH_STATUS_PROBE__
+     *   __SH_STATUS_PROBE__            ← 含探针标记，登录成功
+     *
+     * 时序还原 (echo 被当密码错误):
+     *   设备侧                        PC侧
+     *   ──────────────────────────────────────
+     *   Password: (上一步残留)         → echo __SH_STATUS_PROBE__
+     *   (echo 被当密码读入)
+     *   Login incorrect.                ← 含 incorrect → 走登录
+     *
+     * 时序还原 (echo 被当用户名):
+     *   设备侧                        PC侧
+     *   ──────────────────────────────────────
+     *   (echo 被当用户名读入)           → echo __SH_STATUS_PROBE__
+     *   Password:                       ← 含 Password: → 走登录
+     *
+     * 时序还原 (状态异常):
+     *   设备侧                        PC侧
+     *   ──────────────────────────────────────
+     *   (无法识别)                      ← 不含 incorrect / Password: / 探针标记 → 报错
+     */
     shell.write("echo __SH_STATUS_PROBE__", 1);
     await new Promise((resolve) => setTimeout(resolve, waitLoggedIn));
     let step4Output = shell.read(1);
@@ -367,9 +477,11 @@ export async function userLoginDemoSerial(
     }
     console.log("[Step 4] output =\n%s", sanitize(step4Output));
 
-    if (step4Output.includes("incorrect")) {
+    if (step4Output.includes("incorrect") || step4Output.includes("Password:")) {
+      const isPassword = step4Output.includes("Password:");
       console.log(
-        "[Step 4] Detected 'incorrect', next attempt can use normal username."
+        "[Step 4] Detected '%s', switching to login handler.",
+        isPassword ? "Password:" : "incorrect"
       );
       console.log(
         "[Step 4] sh状态: %s",
