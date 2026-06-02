@@ -12,10 +12,6 @@
 import { mkdirSync, appendFileSync, existsSync } from "fs";
 import { join } from "path";
 
-/** 从 MCP 环境变量读取 */
-const LOG_SAVE = process.env.LOG_SAVE;
-const LOG_DIR = process.env.LOG_DIR ?? "./log";
-
 /** 当前北京时间各字段 */
 function beijingFields() {
   const now = new Date();
@@ -57,24 +53,30 @@ function logTimestamp(): string {
  *
  * 提供 info / error / warn 三个方法，
  * 调用时同时写入日志文件和终端。
+ * 日志文件在首次写入时延迟创建，避免依赖模块加载时的环境变量时序。
  */
 class Logger {
   private logFile: string | null = null;
-  private enabled: boolean;
+  private initialized = false;
 
-  constructor() {
-    this.enabled = LOG_SAVE === "1" || LOG_SAVE === "true";
-    if (!this.enabled) return;
+  /** 延迟初始化（首次写入时触发，确保 LOG_SAVE / LOG_DIR 已设置） */
+  private ensureInit(): void {
+    if (this.initialized) return;
+    this.initialized = true;
 
-    if (!existsSync(LOG_DIR)) {
-      mkdirSync(LOG_DIR, { recursive: true });
+    const save = process.env.LOG_SAVE;
+    if (save !== "1" && save !== "true") return;
+
+    const dir = process.env.LOG_DIR ?? "./log";
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
     }
-
-    this.logFile = join(LOG_DIR, `${fileTimestamp()}.log`);
+    this.logFile = join(dir, `${fileTimestamp()}.log`);
   }
 
   /** 写入一行到日志文件 */
   private write(level: string, message: string): void {
+    this.ensureInit();
     if (!this.logFile) return;
     try {
       appendFileSync(
@@ -117,7 +119,7 @@ class Logger {
 
   /** 是否启用了文件保存 */
   get isEnabled(): boolean {
-    return this.enabled;
+    return this.logFile !== null;
   }
 }
 
