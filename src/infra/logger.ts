@@ -79,11 +79,10 @@ class Logger {
     this.ensureInit();
     if (!this.logFile) return;
     try {
-      appendFileSync(
-        this.logFile,
-        `${logTimestamp()} [${level}] ${message}\n`,
-        "utf8"
-      );
+      const line = `${logTimestamp()} [${level}] ${message}\n`;
+      // 移除非法控制字符，确保能安全编码为 UTF-8
+      const safe = line.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+      appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
     } catch {
       /* 静默失败，不影响主流程 */
     }

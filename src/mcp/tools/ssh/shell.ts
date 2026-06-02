@@ -520,7 +520,7 @@ export async function sshShellLoginHandler(args: {
   }
 
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
-  const sm = new PshStateMachine();
+  const sm = new PshStateMachine("ssh");
   let action = sm.start(banner);
 
   while (!action.done) {

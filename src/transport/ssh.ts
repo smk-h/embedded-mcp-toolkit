@@ -242,7 +242,7 @@ export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
   console.log("[Step 1] --- SSH Banner ---\n%s\n---", sanitize(banner));
 
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
-  const sm = new PshStateMachine();
+  const sm = new PshStateMachine("ssh");
   let action = sm.start(banner);
 
   while (!action.done) {

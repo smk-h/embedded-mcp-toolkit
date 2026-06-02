@@ -20,6 +20,36 @@ export enum PshState {
 }
 
 /**
+ * 记录原始终端输出块（分析前调用）
+ *
+ * 用 `----------------------------` 分隔线包裹输出内容，
+ * 超过 maxLines 时保留头部和尾部，中间行省略。
+ *
+ * @param label    - 日志标签（如 "[PshSM ${this._transport}] start banner"）
+ * @param output   - 终端原始输出
+ * @param maxLines - 最大保留行数（默认 8）
+ */
+function logOutputBlock(label: string, output: string, maxLines = 8): void {
+  if (!output) return;
+  const lines = output.split(/\r?\n/);
+  let display: string;
+  if (lines.length <= maxLines) {
+    display = output;
+  } else {
+    const head = lines.slice(0, maxLines / 2).join("\n");
+    const tail = lines.slice(-maxLines / 2).join("\n");
+    display = `${head}\n...[${lines.length - maxLines} lines omitted]...\n${tail}`;
+  }
+  const indented = display
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+  logger.info(
+    `${label}:\n----------------------------\n${indented}\n----------------------------\n`
+  );
+}
+
+/**
  * 解锁序列中的单步操作
  *
  * PSH 解锁通常需要多步交互，每步包含：发送内容 → 等待响应 → 匹配期望。
@@ -314,9 +344,11 @@ export class PshHandler {
     error: RegExp[];
     challenge: RegExp | null;
   };
+  readonly transport: "ssh" | "serial";
 
-  constructor(profile: PshProfile) {
+  constructor(profile: PshProfile, transport: "ssh" | "serial" = "ssh") {
     this.#profile = profile;
+    this.transport = transport;
     // 将 profile 中的字符串正则预编译为 RegExp，避免每次调用时重复编译
     this.#compiled = {
       ready: profile.statePatterns.ready.map((p) => new RegExp(p, "im")),
@@ -370,13 +402,26 @@ export class PshHandler {
    * 因此不能仅凭 # 判断状态，需要结合上下文（如 "Not Supported" 响应）。
    */
   detectState(output: string): PshState {
-    if (this.#compiled.ready.some((p) => p.test(output))) return PshState.READY;
-    if (this.#compiled.error.some((p) => p.test(output))) return PshState.ERROR;
-    if (this.#compiled.unlocking.some((p) => p.test(output)))
-      return PshState.UNLOCKING;
-    if (this.#compiled.locked.some((p) => p.test(output)))
-      return PshState.LOCKED;
-    return PshState.UNKNOWN;
+    const readyMatch = this.#compiled.ready.some((p) => p.test(output));
+    const errorMatch = this.#compiled.error.some((p) => p.test(output));
+    const unlockingMatch = this.#compiled.unlocking.some((p) => p.test(output));
+    const lockedMatch = this.#compiled.locked.some((p) => p.test(output));
+
+    let state = PshState.UNKNOWN;
+    if (readyMatch) {
+      state = PshState.READY;
+    } else if (errorMatch) {
+      state = PshState.ERROR;
+    } else if (unlockingMatch) {
+      state = PshState.UNLOCKING;
+    } else if (lockedMatch) {
+      state = PshState.LOCKED;
+    }
+
+    logger.info(
+      `[PshHandler:${this.transport}] detectState → ${state}, ready=${readyMatch} error=${errorMatch} unlocking=${unlockingMatch} locked=${lockedMatch}`
+    );
+    return state;
   }
 
   /**
@@ -386,16 +431,22 @@ export class PshHandler {
    * 适用于连接后读取 banner/缓冲区内容来判断初始状态。
    */
   detect(output: string): PshDetectResult {
+    logOutputBlock(`[PshHandler:${this.transport}] detect output, will analyze:`, output);
     const state = this.detectState(output);
     // 即使状态为 UNKNOWN，只要输出中包含 PSH locked 特征，也认为当前是 PSH
     const isPsh = state !== PshState.UNKNOWN || this.isPsh(output);
+    const challengeCode = this.extractChallengeCode(output);
+    const attemptsLeft = this.extractAttemptsLeft(output);
 
+    logger.info(
+      `[PshHandler:${this.transport}] detect → isPsh=${isPsh} state=${state} challenge=${challengeCode ?? "(none)"} attemptsLeft=${attemptsLeft ?? "(none)"}`
+    );
     return {
       isPsh,
       state,
       output,
-      challengeCode: this.extractChallengeCode(output),
-      attemptsLeft: this.extractAttemptsLeft(output),
+      challengeCode,
+      attemptsLeft,
     };
   }
 
@@ -576,16 +627,28 @@ export class PshHandler {
     // 第一步：静默读取已有输出，尝试判断状态
     const pending = channel.read(0);
     if (pending) {
+      logger.info(
+        `[PshHandler:${this.transport}] probeState → pending read:\n----------------------------\n${pending}\n----------------------------`
+      );
       const result = this.detect(pending);
       if (result.state !== PshState.UNKNOWN) {
+        logger.info(
+          `[PshHandler:${this.transport}] probeState → pending sufficient, state=${result.state}`
+        );
         return result;
       }
     }
 
     // 第二步：已有输出无法判断，发送探测命令
+    logger.info(`[PshHandler:${this.transport}] probeState → send probe: ${probeCmd}`);
     channel.write(probeCmd, 1);
     await this.#wait(Math.min(timeoutMs, 2000));
     const output = channel.read(1);
+    if (output) {
+      logger.info(
+        `[PshHandler:${this.transport}] probeState → probe output:\n----------------------------\n${output}\n----------------------------`
+      );
+    }
 
     return this.detect(output);
   }
@@ -644,10 +707,10 @@ export class PshHandler {
   }
 
   /** 从内置 profile 名创建 PshHandler */
-  static fromProfile(name: string): PshHandler {
+  static fromProfile(name: string, transport: "ssh" | "serial" = "ssh"): PshHandler {
     const profile = BUILTIN_PROFILES[name];
     if (!profile) throw new Error(`Unknown PSH profile: ${name}`);
-    return new PshHandler(profile);
+    return new PshHandler(profile, transport);
   }
 
   /**
@@ -659,18 +722,18 @@ export class PshHandler {
    *      PSH_ERROR_PROMPT / PSH_UNLOCK_SEQUENCE 环境变量构建自定义 profile
    *   3. 兜底使用启发式 profile（无 unlockSequence，仅做状态检测）
    */
-  static fromEnv(): PshHandler {
+  static fromEnv(transport: "ssh" | "serial" = "ssh"): PshHandler {
     const profileName = process.env.PSH_PROFILE;
 
     // 1. 按名字选择内置 profile
     if (profileName) {
       const builtin = BUILTIN_PROFILES[profileName];
-      if (builtin) return new PshHandler(builtin);
+      if (builtin) return new PshHandler(builtin, transport);
     }
 
     // 2. 从环境变量构建自定义 profile
     const custom = buildProfileFromEnv();
-    if (custom) return new PshHandler(custom);
+    if (custom) return new PshHandler(custom, transport);
 
     // 3. 兜底：启发式 profile
     return new PshHandler({
@@ -683,7 +746,7 @@ export class PshHandler {
         error: ["invalid\\s+(key|password)", "access\\s+denied"],
       },
       unlockSequence: [],
-    });
+    }, transport);
   }
 
   /**
@@ -693,13 +756,13 @@ export class PshHandler {
    * 返回第一个匹配的 profile 创建的 PshHandler。
    * 适用于连接后读取 banner 自动识别 PSH 类型的场景。
    */
-  static matchFromOutput(output: string): PshHandler | null {
+  static matchFromOutput(output: string, transport: "ssh" | "serial" = "ssh"): PshHandler | null {
     for (const [, profile] of Object.entries(BUILTIN_PROFILES)) {
       const locked = profile.statePatterns.locked.map(
         (p) => new RegExp(p, "im")
       );
       if (locked.some((p) => p.test(output))) {
-        return new PshHandler(profile);
+        return new PshHandler(profile, transport);
       }
     }
     return null;
@@ -708,6 +771,7 @@ export class PshHandler {
   #wait(ms: number): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
   }
+
 }
 
 /**
@@ -795,6 +859,7 @@ export class PshStateMachine {
   private _output = "";
   private _detectResult: PshDetectResult | null = null;
   private _probeCount = 0;
+  private _transport: "ssh" | "serial" = "ssh";
 
   get state(): PshState {
     return this._state;
@@ -809,6 +874,13 @@ export class PshStateMachine {
   }
 
   /**
+   * @param transport - 传输层标识（"ssh" | "serial"），用于日志区分
+   */
+  constructor(transport?: "ssh" | "serial") {
+    if (transport) this._transport = transport;
+  }
+
+  /**
    * 用 banner 初始化状态机，返回下一步动作
    *
    * @param banner - 串口/SSH 连接后读取到的初始输出
@@ -816,19 +888,20 @@ export class PshStateMachine {
    */
   start(banner: string): PshStateMachineAction {
     this._output = banner;
+    logOutputBlock(`[PshSM ${this._transport}] start banner, will analyze:`, banner);
 
     // 规则 1: banner 能匹配到 PSH profile
-    this._handler = PshHandler.matchFromOutput(banner);
+    this._handler = PshHandler.matchFromOutput(banner, this._transport);
 
     if (this._handler) {
       logger.info(
-        `[PshSM] start → banner 匹配到 profile '${this._handler.profile.name}', 进入 detect`
+        `[PshSM ${this._transport}] start → banner 匹配到 profile '${this._handler.profile.name}', 进入 detect`
       );
       return this.#doDetect();
     }
 
     // 规则 2: banner 未匹配 → 发探测 echo 命令
-    logger.info("[PshSM] start → banner 未匹配 profile, 发 echo 探测");
+    logger.info(`[PshSM ${this._transport}] start → banner 未匹配 profile, 发 echo 探测`);
     this._state = PshState.UNKNOWN;
     return this.#probeAction();
   }
@@ -845,21 +918,22 @@ export class PshStateMachine {
     output: string
   ): Promise<PshStateMachineAction> {
     this._output += "\n" + output;
+    logOutputBlock(`[PshSM ${this._transport}] feed, will analyze:`, output);
 
     // ── 首次探测结果分析 (banner 未匹配过 profile) ──
     if (!this._handler) {
-      this._handler = PshHandler.matchFromOutput(this._output);
+      this._handler = PshHandler.matchFromOutput(this._output, this._transport);
 
       if (this._handler) {
         logger.info(
-          `[PshSM] feed → echo 探测后匹配到 profile '${this._handler.profile.name}', 进入 detect`
+          `[PshSM ${this._transport}] feed → echo 探测后匹配到 profile '${this._handler.profile.name}', 进入 detect`
         );
         return this.#doDetect();
       }
 
       // 探测后仍未匹配 → 不是 PSH 设备
       logger.info(
-        "[PshSM] feed → echo 探测后仍未匹配 profile, 判定为非 PSH 设备"
+        `[PshSM ${this._transport}] feed → echo 探测后仍未匹配 profile, 判定为非 PSH 设备`
       );
       return this.#reply(PshState.READY, "未检测到 PSH 特征，shell 可能已解锁");
     }
@@ -867,11 +941,11 @@ export class PshStateMachine {
     // ── profile 匹配后但 detect 状态未知/ERROR → 使用 probeState 确认 ──
     this._probeCount++;
     logger.info(
-      `[PshSM] feed → 状态不明 (第${this._probeCount}次 probeState)`
+      `[PshSM ${this._transport}] feed → 状态不明 (第${this._probeCount}次 probeState)`
     );
     const result = await this._handler.probeState(channel);
     logger.info(
-      `[PshSM] feed → probeState 返回: state=${result.state} isPsh=${result.isPsh} challenge=${result.challengeCode ?? "(none)"}`
+      `[PshSM ${this._transport}] feed → probeState 返回: state=${result.state} isPsh=${result.isPsh} challenge=${result.challengeCode ?? "(none)"}`
     );
     return this.#detectReply(result);
   }
@@ -895,9 +969,10 @@ export class PshStateMachine {
       return this.#reply(PshState.UNKNOWN, "handler 为空");
     }
 
+    logOutputBlock(`[PshSM ${this._transport}] doDetect accumulated,will analyze:`, this._output);
     const result = this._handler.detect(this._output);
     logger.info(
-      `[PshSM] doDetect → profile='${this._handler.profile.name}' state=${result.state} isPsh=${result.isPsh} challenge=${result.challengeCode ?? "(none)"}`
+      `[PshSM ${this._transport}] doDetect → profile='${this._handler.profile.name}' state=${result.state} isPsh=${result.isPsh} challenge=${result.challengeCode ?? "(none)"}`
     );
     return this.#detectReply(result);
   }
@@ -922,7 +997,7 @@ export class PshStateMachine {
       result.state === PshState.UNLOCKING
     ) {
       logger.info(
-        `[PshSM] detectReply → 状态明确 '${result.state}', 返回终态`
+        `[PshSM ${this._transport}] detectReply → 状态明确 '${result.state}', 返回终态`
       );
       return {
         send: undefined,
@@ -937,14 +1012,14 @@ export class PshStateMachine {
     // ERROR: 可能是探测噪声，尝试 probeState 确认
     if (result.state === PshState.ERROR && this._probeCount < 2) {
       logger.info(
-        `[PshSM] detectReply → ERROR (第${this._probeCount + 1}次检测), 发起 probeState 二次确认`
+        `[PshSM ${this._transport}] detectReply → ERROR (第${this._probeCount + 1}次检测), 发起 probeState 二次确认`
       );
       return this.#probeAction();
     }
 
     // UNKNOWN / ERROR(超限) → 接受为终态
     logger.info(
-      `[PshSM] detectReply → 状态 '${result.state}' (probeCount=${this._probeCount}), 接受为终态`
+      `[PshSM ${this._transport}] detectReply → 状态 '${result.state}' (probeCount=${this._probeCount}), 接受为终态`
     );
     return {
       send: undefined,
@@ -962,7 +1037,7 @@ export class PshStateMachine {
    * @returns 要求调用方发送 echo 探测的动作
    */
   #probeAction(): PshStateMachineAction {
-    logger.info("[PshSM] probeAction → 发送 echo __PSH_PROBE__");
+    logger.info(`[PshSM ${this._transport}] probeAction → 发送 echo __PSH_PROBE__`);
     return {
       send: "echo __PSH_PROBE__",
       waitMs: 1500,
@@ -982,7 +1057,7 @@ export class PshStateMachine {
    */
   #reply(state: PshState, reason: string): PshStateMachineAction {
     this._state = state;
-    logger.info(`[PshSM] ${reason} → ${state}`);
+    logger.info(`[PshSM ${this._transport}] ${reason} → ${state}`);
     return {
       send: undefined,
       waitMs: 0,

@@ -570,7 +570,7 @@ export async function serialShellLoginHandler(args: {
   }
 
   // ===== 状态机驱动 profile 匹配 + 状态检测 =====
-  const sm = new PshStateMachine();
+  const sm = new PshStateMachine("serial");
   let action = sm.start(banner);
 
   while (!action.done) {

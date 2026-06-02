@@ -398,7 +398,7 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
   console.log("[Step 1] --- Serial Banner ---\n%s\n---", sanitize(banner));
 
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
-  const sm = new PshStateMachine();
+  const sm = new PshStateMachine("serial");
   let action = sm.start(banner);
 
   while (!action.done) {
