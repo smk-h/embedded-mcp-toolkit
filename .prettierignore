@@ -16,7 +16,6 @@ js
 src-old
 docs
 log
-my-psh
 
 # For development
 .gitignore

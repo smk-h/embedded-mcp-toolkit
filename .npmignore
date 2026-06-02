@@ -7,7 +7,6 @@
 .vscode
 
 client
-my-psh
 node_modules
 src
 test
