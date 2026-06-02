@@ -7,11 +7,24 @@ CFLAGS  := -Wall -O2
 LDFLAGS :=
 
 PROJ_ROOT   := $(shell pwd)
-LIB_DIR     := $(PROJ_ROOT)/libs/libqrencode-4.1.1
-INSTALL_DIR := $(LIB_DIR)/_install
+LIBS_DIR    := $(PROJ_ROOT)/libs
 
-LIB_INC := -I$(INSTALL_DIR)/include -I$(LIB_DIR)
-LIB_LIB := -L$(INSTALL_DIR)/lib -lqrencode
+# ---- 头文件目录 ----
+INC_DIRS :=
+INC_DIRS += $(LIBS_DIR)/libqrencode-4.1.1/_install/include
+
+# ---- 库文件目录 ----
+LIB_DIRS :=
+LIB_DIRS += $(LIBS_DIR)/libqrencode-4.1.1/_install/lib
+
+# ---- 链接库 ----
+LIBS :=
+LIBS += qrencode
+LIBS += pthread
+
+# ---- 自动生成编译选项 ----
+LIB_INC   := $(addprefix -I,$(INC_DIRS))
+LIB_LIB   := $(addprefix -L,$(LIB_DIRS)) $(addprefix -l,$(LIBS))
 
 TARGET := psh
 SRCS   := $(wildcard *.c src/*.c)
