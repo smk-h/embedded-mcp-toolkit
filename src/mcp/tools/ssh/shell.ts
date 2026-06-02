@@ -3,7 +3,7 @@ import { text } from "../../tool-registry.js";
 import { logger } from "../../../infra/logger.js";
 import { SSHShell, type SSHShellConfig } from "../../../transport/ssh.js";
 import { getSSHConfig, getKeyProviderConfig } from "../../../infra/config.js";
-import { PshHandler, PshState } from "../../../transport/psh.js";
+import { PshState, PshStateMachine } from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
@@ -471,18 +471,12 @@ export const sshShellLoginConfig = {
 /**
  * @brief ssh_shell_login 处理函数 — 一键登录
  *
- * 完整流程：
+ * 使用 PshStateMachine 状态机驱动 profile 匹配、状态检测与解锁：
  *   1. 建立 SSH 连接，读取 banner
- *   2. 自动匹配 PSH profile（psh / psh_busybox）
- *   3. 探测当前 PSH 状态（UNKNOWN 时发送探测命令）
- *   4. 根据状态分支处理：
- *      - 无 PSH     → 直接返回可用 session
- *      - READY      → PSH 已解锁，直接返回可用 session
- *      - LOCKED     → 执行解锁序列（key 参数直接传入，或走 KeyProvider 回调获取）
- *      - UNLOCKING  → 悬挂的密码提示，需提供 key 完成输入
- *      - ERROR      → 前次解锁失败，关闭连接并提示
- *      - UNKNOWN    → 状态不明，返回 session 但可能需手动交互
- *   5. 解锁成功后将 shell 存入会话表，返回 session_id
+ *   2. 状态机 start(banner) → 自动匹配 profile
+ *   3. 未匹配到则发探测 → feed(channel, output) → 再次匹配
+ *   4. 匹配成功后自动 detect 状态 → UNKNOWN 时自动 probeState
+ *   5. 状态明确后根据终态决定解锁或直接返回可用 session
  *
  * key 参数说明：
  *   - 传入 key：直接使用该密钥解锁，适用于密钥已知的自动化场景
@@ -525,159 +519,159 @@ export async function sshShellLoginHandler(args: {
     };
   }
 
-  // ===== 步骤 2：自动识别 PSH profile =====
-  const handler = PshHandler.matchFromOutput(banner);
+  // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
+  const sm = new PshStateMachine();
+  let action = sm.start(banner);
 
-  if (!handler) {
-    // 未检测到 PSH — shell 已就绪
-    const sessionId = `ssh_${++sessionCounter}`;
-    sessions.set(sessionId, shell);
-    logger.info(`[ssh_shell_login] session opened: ${sessionId} (no PSH)`);
-    return {
-      content: [
-        text(
-          `Session ${sessionId} opened (no PSH detected, shell is ready).\n${banner || "(no banner)"}`
-        ),
-      ],
-    };
+  while (!action.done) {
+    shell.write(action.send!, 1);
+    await new Promise((r) => setTimeout(r, action.waitMs));
+    const output = shell.read(1);
+    action = await sm.feed(shell, output);
   }
 
-  // ===== 步骤 3：探测当前 PSH 状态 =====
-  let detect = handler.detect(banner);
-  if (detect.state === PshState.UNKNOWN) {
-    detect = await handler.probeState(shell);
-  }
+  // ===== 步骤 4：根据状态机终态决定后续动作 =====
+  const handler = action.handler;
 
-  // ===== 步骤 4：根据状态执行对应操作 =====
+  switch (action.state) {
+    case PshState.LOCKED: {
+      if (!handler) {
+        await shell.close();
+        return {
+          content: [text("PSH detected as LOCKED but no handler available.")],
+        };
+      }
 
-  // --- 已解锁：直接返回可用 session ---
-  if (detect.state === PshState.READY) {
-    const sessionId = `ssh_${++sessionCounter}`;
-    sessions.set(sessionId, shell);
-    logger.info(
-      `[ssh_shell_login] session opened: ${sessionId} (PSH already unlocked)`
-    );
-    return {
-      content: [
-        text(
-          `Session ${sessionId} opened (PSH already unlocked).\nProfile: ${handler.profile.name}`
-        ),
-      ],
-    };
-  }
+      // key 参数决定密钥获取方式：
+      //   传入 key → 直接使用，不走 KeyProvider 回调
+      //   未传 key → 通过 KeyProvider（文件 IPC 或终端提示）获取
+      const unlockKey = args.key ?? "";
+      const onKeyRequest = args.key
+        ? undefined
+        : (output: string) => {
+            const keyProvider = new KeyProvider(
+              getKeyProviderConfig("ssh", args.device)
+            );
+            return keyProvider.getKey(output);
+          };
 
-  // --- 解锁中：悬挂的密码提示，需 key 完成输入 ---
-  if (detect.state === PshState.UNLOCKING) {
-    if (!args.key) {
+      const result = await handler.unlock(
+        shell,
+        unlockKey,
+        stepDelay,
+        onKeyRequest
+      );
+
+      if (result.success) {
+        const sessionId = `ssh_${++sessionCounter}`;
+        sessions.set(sessionId, shell);
+        logger.info(
+          `[ssh_shell_login] session opened: ${sessionId} (unlock succeeded)`
+        );
+        return {
+          content: [
+            text(
+              `Session ${sessionId} opened (PSH unlock succeeded).\nProfile: ${handler.profile.name}\nChallenge: ${result.challengeCode ?? "(none)"}`
+            ),
+          ],
+        };
+      }
+
       await shell.close();
       return {
         content: [
           text(
-            `PSH is in UNLOCKING state (dangling password prompt). Provide a key to complete login.`
+            `PSH unlock failed.\nState: ${result.state}\nChallenge: ${result.challengeCode ?? "(none)"}\nAttempts left: ${result.attemptsLeft ?? "(unknown)"}\nError: ${result.error ?? "(none)"}`
           ),
         ],
       };
     }
-    shell.write(args.key, 1);
-    await new Promise((r) => setTimeout(r, stepDelay));
-    const output = shell.read(1);
-    const state = handler.detectState(output);
-    if (state === PshState.READY) {
+
+    case PshState.READY: {
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
+      const profileName = handler ? handler.profile.name : "(none)";
       logger.info(
-        `[ssh_shell_login] session opened: ${sessionId} (UNLOCKING resolved)`
+        `[ssh_shell_login] session opened: ${sessionId} (PSH already unlocked)`
       );
       return {
         content: [
           text(
-            `Session ${sessionId} opened (PSH unlock completed from UNLOCKING state).\nProfile: ${handler.profile.name}`
+            `Session ${sessionId} opened (PSH already unlocked).\nProfile: ${profileName}`
           ),
         ],
       };
     }
-    await shell.close();
-    return {
-      content: [
-        text(
-          `PSH unlock from UNLOCKING state failed. State: ${state}\nOutput: ${output}`
-        ),
-      ],
-    };
-  }
 
-  // --- 错误状态：前次解锁失败 ---
-  if (detect.state === PshState.ERROR) {
-    await shell.close();
-    return {
-      content: [
-        text(
-          `PSH is in ERROR state (previous unlock may have failed). Close and retry.`
-        ),
-      ],
-    };
-  }
-
-  // --- 锁定状态：执行解锁序列 ---
-  if (detect.state === PshState.LOCKED) {
-    // key 参数决定密钥获取方式：
-    //   传入 key → 直接使用，不走 KeyProvider 回调
-    //   未传 key → 通过 KeyProvider（文件 IPC 或终端提示）获取
-    const unlockKey = args.key ?? "";
-    const onKeyRequest = args.key
-      ? undefined
-      : (output: string) => {
-          const keyProvider = new KeyProvider(
-            getKeyProviderConfig("ssh", args.device)
-          );
-          return keyProvider.getKey(output);
+    case PshState.UNLOCKING: {
+      if (!args.key) {
+        await shell.close();
+        return {
+          content: [
+            text(
+              "PSH is in UNLOCKING state (dangling password prompt). Provide a key to complete login."
+            ),
+          ],
         };
-
-    const result = await handler.unlock(
-      shell,
-      unlockKey,
-      stepDelay,
-      onKeyRequest
-    );
-
-    if (result.success) {
-      const sessionId = `ssh_${++sessionCounter}`;
-      sessions.set(sessionId, shell);
-      logger.info(
-        `[ssh_shell_login] session opened: ${sessionId} (unlock succeeded)`
-      );
+      }
+      shell.write(args.key, 1);
+      await new Promise((r) => setTimeout(r, stepDelay));
+      const output = shell.read(1);
+      const finalState = handler
+        ? handler.detectState(output)
+        : PshState.UNKNOWN;
+      if (finalState === PshState.READY) {
+        const sessionId = `ssh_${++sessionCounter}`;
+        sessions.set(sessionId, shell);
+        logger.info(
+          `[ssh_shell_login] session opened: ${sessionId} (UNLOCKING resolved)`
+        );
+        return {
+          content: [
+            text(
+              `Session ${sessionId} opened (PSH unlock completed from UNLOCKING state).\nProfile: ${handler?.profile.name ?? "(none)"}`
+            ),
+          ],
+        };
+      }
+      await shell.close();
       return {
         content: [
           text(
-            `Session ${sessionId} opened (PSH unlock succeeded).\nProfile: ${handler.profile.name}\nChallenge: ${result.challengeCode ?? "(none)"}`
+            `PSH unlock from UNLOCKING state failed. State: ${finalState}\nOutput: ${output}`
           ),
         ],
       };
     }
 
-    await shell.close();
-    return {
-      content: [
-        text(
-          `PSH unlock failed.\nState: ${result.state}\nChallenge: ${result.challengeCode ?? "(none)"}\nAttempts left: ${result.attemptsLeft ?? "(unknown)"}\nError: ${result.error ?? "(none)"}`
-        ),
-      ],
-    };
-  }
+    case PshState.ERROR: {
+      await shell.close();
+      return {
+        content: [
+          text(
+            "PSH is in ERROR state (previous unlock may have failed). Close and retry."
+          ),
+        ],
+      };
+    }
 
-  // --- 未知状态：探测后仍无法判断，返回 session 但可能需手动交互 ---
-  const sessionId = `ssh_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  logger.info(
-    `[ssh_shell_login] session opened: ${sessionId} (PSH state unknown)`
-  );
-  return {
-    content: [
-      text(
-        `Session ${sessionId} opened (PSH state unknown, shell may need manual interaction).\nProfile: ${handler.profile.name}\nBanner: ${banner}`
-      ),
-    ],
-  };
+    default: {
+      // UNKNOWN 或其他未明确状态
+      const sessionId = `ssh_${++sessionCounter}`;
+      sessions.set(sessionId, shell);
+      const profileName = handler ? handler.profile.name : "(none)";
+      logger.info(
+        `[ssh_shell_login] session opened: ${sessionId} (PSH state unknown)`
+      );
+      return {
+        content: [
+          text(
+            `Session ${sessionId} opened (PSH state unknown, shell may need manual interaction).\nProfile: ${profileName}\nBanner: ${banner}`
+          ),
+        ],
+      };
+    }
+  }
 }
 
 // ── 进程退出自动清理 ────────────────────────────────────────

@@ -196,9 +196,9 @@ demoSSHCmd
   .action(() => {
     // 使用 ??= 确保不影响已显式设置的环境变量。
     process.env.DEVICE ??= "board-b";
-    process.env.BOARD_CONFIG_PATH ??= "./configs/config.yaml";
+    process.env.BOARD_CONFIG_PATH ??= "./.embedded/configs/config.yaml";
     process.env.LOG_SAVE ??= "1";
-    process.env.LOG_DIR ??= "./log";
+    process.env.LOG_DIR ??= "./.embedded/log";
     interactiveShell(getSSHConfig()).catch((err: unknown) => {
       console.error("Fatal:", err instanceof Error ? err.message : err);
       process.exit(1);
@@ -221,9 +221,9 @@ demoSSHCmd
   .action(() => {
     // 使用 ??= 确保不影响已显式设置的环境变量。
     process.env.DEVICE ??= "board-b";
-    process.env.BOARD_CONFIG_PATH ??= "./configs/config.yaml";
+    process.env.BOARD_CONFIG_PATH ??= "./.embedded/configs/config.yaml";
     process.env.LOG_SAVE ??= "1";
-    process.env.LOG_DIR ??= "./log";
+    process.env.LOG_DIR ??= "./.embedded/log";
     pshDemoSsh(getSSHConfig()).catch((err: unknown) => {
       console.error("Fatal:", err instanceof Error ? err.message : err);
       process.exit(1);
