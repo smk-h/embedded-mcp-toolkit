@@ -14,3 +14,9 @@ config.yaml
 .npmrc
 *embedded-mcp-toolkit*.tgz
 *embedded-mcp-toolkit*.zip
+
+*.zip
+my-psh/psh_demo2/libs/libqrencode-4.1.1
+*.o
+*.out
+psh
