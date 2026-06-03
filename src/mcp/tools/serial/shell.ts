@@ -9,7 +9,7 @@ import {
   getSerialConfig,
   getKeyProviderConfig,
 } from "../../../infra/config.js";
-import { PshState, PshStateMachine } from "../../../transport/psh.js";
+import { PshState, PshStateMachine, PSH_STATE_DESC } from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
@@ -579,15 +579,16 @@ export async function serialShellLoginHandler(args: {
     action = await sm.feed(shell, shell.read(1));
   }
 
+  const handler = action.handler;
   logger.info(
-    `[serial_shell_login] PshSM state=${action.state} handler=${action.handler?.profile.name ?? "(none)"}`
+    `[serial_shell_login] PshSM 检测完成 → state=${action.state} (${PSH_STATE_DESC[action.state]}), profile=${handler?.profile.name ?? "(无)"}`
   );
 
   // ===== 根据状态机终态分支处理 =====
-  const handler = action.handler;
 
   // --- 已解锁 / 无 PSH ---
   if (action.state === PshState.READY) {
+    logger.info(`[serial_shell_login] shell已可用, profile=${handler?.profile.name ?? "(无)"}`);
     const detail = handler
       ? `(PSH already unlocked)\nProfile: ${handler.profile.name}`
       : "(no PSH detected, shell is ready)";
@@ -597,6 +598,7 @@ export async function serialShellLoginHandler(args: {
   // --- 解锁中：悬挂的密码提示，需 key 完成输入 ---
   if (action.state === PshState.UNLOCKING) {
     if (!args.key) {
+      logger.warn(`[serial_shell_login] PSH处于UNLOCKING状态但未提供密钥`);
       if (!existingId) await shell.close();
       return {
         content: [
@@ -606,11 +608,13 @@ export async function serialShellLoginHandler(args: {
         ],
       };
     }
+    logger.info(`[serial_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`);
     shell.write(args.key, 1);
     await new Promise((r) => setTimeout(r, stepDelay));
     const output = shell.read(1);
     const state = handler?.detectState(output) ?? PshState.UNKNOWN;
     if (state === PshState.READY) {
+      logger.info(`[serial_shell_login] UNLOCKING状态解锁成功`);
       return registerSession(
         shell,
         baseConfig.port,
@@ -618,6 +622,7 @@ export async function serialShellLoginHandler(args: {
         `(PSH unlock completed from UNLOCKING state)\nProfile: ${handler!.profile.name}`
       );
     }
+    logger.error(`[serial_shell_login] UNLOCKING状态解锁失败, finalState=${state}`);
     if (!existingId) await shell.close();
     return {
       content: [
@@ -630,6 +635,7 @@ export async function serialShellLoginHandler(args: {
 
   // --- 错误状态：前次解锁失败 ---
   if (action.state === PshState.ERROR) {
+    logger.error(`[serial_shell_login] PSH处于ERROR状态`);
     if (!existingId) await shell.close();
     return {
       content: [
@@ -643,6 +649,7 @@ export async function serialShellLoginHandler(args: {
   // --- 锁定状态：执行解锁序列 ---
   if (action.state === PshState.LOCKED) {
     if (!handler) {
+      logger.warn(`[serial_shell_login] PSH已锁定但无匹配handler`);
       if (!existingId) await shell.close();
       return { content: [text("PSH LOCKED but no matching handler found.")] };
     }
@@ -657,6 +664,7 @@ export async function serialShellLoginHandler(args: {
           return keyProvider.getKey(output);
         };
 
+    logger.info(`[serial_shell_login] 开始解锁 (profile=${handler.profile.name}, key=${args.key ? "已提供" : "走KeyProvider"})`);
     const result = await handler.unlock(
       shell,
       unlockKey,
@@ -665,6 +673,7 @@ export async function serialShellLoginHandler(args: {
     );
 
     if (result.success) {
+      logger.info(`[serial_shell_login] 解锁成功`);
       return registerSession(
         shell,
         baseConfig.port,
@@ -673,6 +682,7 @@ export async function serialShellLoginHandler(args: {
       );
     }
 
+    logger.error(`[serial_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`);
     if (!existingId) await shell.close();
     return {
       content: [
@@ -684,6 +694,7 @@ export async function serialShellLoginHandler(args: {
   }
 
   // --- 未知状态：探测后仍无法判断，返回 session 但可能需手动交互 ---
+  logger.info(`[serial_shell_login] PSH状态不明, 可能需手动交互`);
   const detail = handler
     ? `(PSH state unknown)\nProfile: ${handler.profile.name}`
     : "(PSH state unknown)";
