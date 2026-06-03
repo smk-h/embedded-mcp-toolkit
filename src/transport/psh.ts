@@ -81,7 +81,7 @@ function logOutputBlock(label: string, output: string, maxLines = 8): void {
  * 解锁序列中的单步操作
  *
  * PSH 解锁通常需要多步交互，每步包含：发送内容 → 等待响应 → 匹配期望。
- * 例如 psh_busybox 的解锁序列：
+ * 例如 psh_generic 的解锁序列：
  *   步骤1: send="debug" → 期望匹配 "Password:"
  *   步骤2: send=密钥(userInput) → 期望匹配 "Enter Debug Mode"
  */
@@ -122,7 +122,7 @@ export interface PshProfile {
     error: string[]; // 解锁失败的特征（如 "Incorrect Password"、"Invalid key"）
   };
   unlockSequence: PshUnlockStep[]; // 解锁交互步骤序列
-  challengeCodePattern?: string; // Challenge Code 提取正则（psh: PSH-XXXX 格式；psh_busybox: Base64 字符串）
+  challengeCodePattern?: string; // Challenge Code 提取正则（psh: PSH-XXXX 格式；psh_generic: Base64 字符串）
   features?: PshFeatures; // 行为特性开关，处理不同设备的细微差异
   allowedCommands?: string[]; // 锁定状态下允许执行的命令列表（如 help、dmesg、debug）
 }
@@ -144,7 +144,7 @@ export interface PshUnlockResult {
   success: boolean;
   state: PshState;
   output: string;
-  challengeCode: string | null; // 提取到的 Challenge Code（psh: PSH-XXXX；psh_busybox: Base64 字符串）
+  challengeCode: string | null; // 提取到的 Challenge Code（psh: PSH-XXXX；psh_generic: Base64 字符串）
   attemptsLeft: number | null; // 剩余尝试次数（如 "4 Times Left" 中的 4），密码错误时有效
   error?: string;
 }
@@ -163,7 +163,7 @@ export interface PshDetectResult {
  *
  * 目前支持两种 PSH 变体：
  * - psh: v2.1 版本，带 PSH-XXXX 格式 Challenge Code，提示符为 locked>
- * - psh_busybox: BusyBox 集成版本，带 QR 码 + Base64 Challenge，提示符为 #
+ * - psh_generic: 通用 # 提示符版本，带 Base64 Challenge，兼容 BusyBox ash 和 Bash
  */
 const BUILTIN_PROFILES: Record<string, PshProfile> = {
   /**
@@ -215,9 +215,9 @@ const BUILTIN_PROFILES: Record<string, PshProfile> = {
   },
 
   /**
-   * PSH (BusyBox) - 带 QR 码 + Base64 Challenge 的解锁方式
+   * PSH (Generic) - # 提示符 + Base64 Challenge 的解锁方式（兼容 BusyBox ash / Bash）
    *
-   * 典型交互流程：
+   * 典型交互流程 (BusyBox):
    *   # ls
    *   'ls' Not Supported, Try 'help'
    *   # debug
@@ -228,18 +228,26 @@ const BUILTIN_PROFILES: Record<string, PshProfile> = {
    *   BusyBox v1.37.0 built-in shell (ash)
    *   #
    *
+   * 典型交互流程 (Bash):
+   *   # debug
+   *   AAwndBxviU0/3Ys3uqOkSiyi6AAL1AE1mCpGPiST9... (Base64 Challenge)
+   *   Password: <密码>
+   *   Enter BASH Mode.
+   *   Bourne-Again Shell (bash)
+   *   root@ATK-IMX6U:~#
+   *
    * 与 psh v2.1 的关键差异：
    *   - 提示符为 #（与普通 root shell 相同），而非 locked>
-   *   - debug 后显示 QR 码 + Base64 编码的 Challenge，而非 PSH-XXXX 格式
+   *   - debug 后显示 Base64 编码的 Challenge，而非 PSH-XXXX 格式
    *   - 密码错误提示为 "Incorrect Password" / "input invaild len param" / "N Times Left"
-   *   - 解锁成功提示为 "Enter Debug Mode"，而非 "Access Granted"
+   *   - 解锁成功提示为 "Enter Debug Mode" / "Enter BASH Mode"，而非 "Access Granted"
    */
-  psh_busybox: {
-    name: "psh_busybox",
+  psh_generic: {
+    name: "psh_generic",
     description:
-      "Protect Shell (BusyBox) - locked shell with QR code + Base64 challenge",
+      "Protect Shell (Generic) - # prompt locked shell with Base64 challenge, supports BusyBox ash and Bash",
     statePatterns: {
-      ready: ["Enter Debug Mode", "built-in shell \\(ash\\)"],
+      ready: ["Enter (Debug|BASH) Mode", "built-in shell \\(ash\\)", "Bourne-Again Shell \\(bash\\)"],
       locked: [
         "Protect Shell \\(psh\\)",
         "Not Supported.*Try 'help'",
@@ -263,7 +271,7 @@ const BUILTIN_PROFILES: Record<string, PshProfile> = {
       {
         send: "",
         expectPattern:
-          "Enter Debug Mode|built-in shell|Incorrect Password|Times Left",
+          "Enter (Debug|BASH) Mode|built-in shell|Bourne-Again Shell|Incorrect Password|Times Left",
         timeoutMs: 15000,
         description: "Submit unlock password",
         userInput: true,
@@ -357,7 +365,7 @@ function buildProfileFromEnv(): PshProfile | null {
  * 3. Profile 配置化 — 不同 PSH 变体的差异通过 profile 配置，而非硬编码
  *
  * 使用方式：
- *   const handler = PshHandler.fromProfile("psh_busybox");
+ *   const handler = PshHandler.fromProfile("psh_generic");
  *   const detect = handler.detect(banner);
  *   if (detect.isPsh && detect.state === PshState.LOCKED) {
  *     const result = await handler.unlock(channel, "123456");
@@ -409,7 +417,7 @@ export class PshHandler {
    * 检测输出是否来自 PSH 终端
    *
    * 通过 locked 状态的特征模式判断当前终端是否为 PSH。
-   * 对于 psh_busybox，# 提示符与普通 root shell 相同，
+   * 对于 psh_generic，# 提示符与普通 root shell 相同，
    * 因此依赖 "Not Supported" / "davinci system commands" 等特征区分。
    */
   isPsh(output: string): boolean {
@@ -426,7 +434,7 @@ export class PshHandler {
    * - ERROR 优先于 UNLOCKING：密码错误时输出中可能同时包含 "Password:" 和 "Incorrect Password"
    * - UNLOCKING 优先于 LOCKED：debug 后输出中可能同时包含 "Protect Shell" 和 "Password:"
    *
-   * 注意：psh_busybox 的锁定提示符为 #，与普通 root shell 相同，
+   * 注意：psh_generic 的锁定提示符为 #，与普通 root shell 相同，
    * 因此不能仅凭 # 判断状态，需要结合上下文（如 "Not Supported" 响应）。
    */
   detectState(output: string): PshState {
@@ -498,7 +506,7 @@ export class PshHandler {
    * 从输出中提取 Challenge Code
    *
    * 对于 psh: 提取 PSH-XXXX-XXXX-XXXX-XXXX 格式的 Challenge Code
-   * 对于 psh_busybox: 提取 QR 码后的 Base64 编码字符串（40 字符以上）
+   * 对于 psh_generic: 提取 QR 码后的 Base64 编码字符串（40 字符以上）
    */
   extractChallengeCode(output: string): string | null {
     if (!this.#compiled.challenge) return null;
@@ -509,7 +517,7 @@ export class PshHandler {
   /**
    * 检测输出中是否包含 QR 码
    *
-   * psh_busybox 的 debug 命令会显示 QR 码 ASCII 艺术，
+   * psh_generic 的 debug 命令会显示 QR 码 ASCII 艺术，
    * 通过 ██ 字符块判断。可用于确认 debug 命令已被 PSH 接收。
    */
   hasQrCode(output: string): boolean {
@@ -519,7 +527,7 @@ export class PshHandler {
   /**
    * 提取剩余尝试次数
    *
-   * psh_busybox 密码错误时显示 "N Times Left"（如 "4 Times Left"），
+   * psh_generic 密码错误时显示 "N Times Left"（如 "4 Times Left"），
    * 提取此数字用于判断是否还有重试机会。
    */
   extractAttemptsLeft(output: string): number | null {
