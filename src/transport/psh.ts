@@ -901,32 +901,32 @@ export interface PshStateMachineAction {
  *       │       │       └─ ≥2次 → 接受 ERROR 终态
  *       │       │
  *       │       └─ UNKNOWN ──▶ probeState() → feed → 分析结果
- *       │                                    │
- *       │                    ┌───────────────┼──────────────────┐
- *       │                    │               │                  │
- *       │               LOCKED /          READY              UNKNOWN /
- *       │               UNLOCKING                            其他
- *       │                    │               │                  │
- *       │                    ▼               ▼                  ▼
- *       │                终态(done)      终态(done)      终态 UNKNOWN(done)
  *       │
- *       │  注: ERROR 在 feed() 内部处理 — 若 probeCount＜2 则再 probeState 确认，
- *       │       避免 "Invalid key → Returning to locked mode" 过渡噪声导致误判；
- *       │       ≥2 次后接受 ERROR 终态。
- *       │
- *       └─ matchFromOutput(banner) 未命中 ──▶ 发 echo 探测
+ *   ├─ heuristicDetect(banner) 命中
+ *   │       │
+ *   │       ├─ UNLOCKING ──▶ 终态 (done, handler=psh_generic)
+ *   │       │   (不发送探测，避免 Password: 状态下探测被当作密码)
+ *   │       │
+ *   │       └─ ERROR ──▶ 发 help 二次确认 → feed() 分析
+ *   │           (可能是上次解锁失败，但不排除非 PSH，需确认)
+ *   │
+ *       └─ 无匹配且无 PSH 特征 ──▶ 发 echo 探测
  *                       │
  *                       ▼ feed(探测输出)
  *        ┌──────────────┴──────────────┐
  *        │                             │
- *    matchFromOutput 命中            未匹配
+ *   matchFromOutput 命中            未匹配
  *        │                             │
  *        ▼                             ▼
- *    detect(输出)                 NOT_PSH (done)
- *        │
- *        ├─ LOCKED / READY / UNLOCKING ──▶ 终态 (done)
- *        │
- *        ├─ ERROR ──▶ probeState() 二次确认
+ *    detect(输出)            heuristicDetect(输出)
+ *        │                     │
+ *        ├─ LOCKED /           ├─ UNLOCKING ──▶ 终态 (done)
+ *        │  READY /            │
+ *        │  UNLOCKING          ├─ ERROR ──▶ 发 help 二次确认 → feed()
+ *        │  ──▶ 终态           │   (可能是 PSH 也可能是噪声, 需确认)
+ *        │                     │
+ *        ├─ ERROR ──▶          └─ UNKNOWN / READY ──▶ NOT_PSH (done)
+ *        │  probeState()
  *        │
  *        └─ UNKNOWN ──▶ probeState() → feed → 终态
  *
@@ -994,7 +994,56 @@ export class PshStateMachine {
       logger.info(`[PshSM:${this._transport}] └── start 结束, 转入 doDetect`);
       return this.#doDetect();
     }
-    // 规则 2: banner 未匹配 → 发探测 echo 命令
+
+    // 规则 2: 启发式检测 — 如果 banner 已有 PSH 状态特征（Password: / Incorrect Password 等），
+    // 不发送探测，避免探测数据被 PSH 当作密码输入导致污染
+    const heuristicState = PshHandler.heuristicDetect(banner);
+    if (heuristicState === PshState.UNLOCKING || heuristicState === PshState.ERROR) {
+      logger.info(
+        `[PshSM:${this._transport}] ├── banner 启发式检测 → ${heuristicState}, 不发送 echo 探测（避免污染密码输入）`
+      );
+      if (heuristicState === PshState.UNLOCKING) {
+        this._handler = PshHandler.fromProfile("psh_generic", this._transport);
+        this._state = heuristicState;
+        this._detectResult = {
+          isPsh: true,
+          state: heuristicState,
+          output: banner,
+          challengeCode: null,
+          attemptsLeft: null,
+        };
+        logger.info(
+          `[PshSM:${this._transport}] └── start 结束 → ${heuristicState} (启发式)`
+        );
+        return {
+          send: undefined,
+          waitMs: 0,
+          state: heuristicState,
+          done: true,
+          handler: this._handler,
+          detectResult: this._detectResult,
+        };
+      }
+      // ERROR: 可能上次解锁失败, 设备已回到 # 锁定提示符
+      // 发 ls 二次确认 — PSH 会返回 "'ls' Not Supported"，匹配 locked pattern
+      logger.info(
+        `[PshSM:${this._transport}] ├── banner ERROR, 发 ls 二次确认是否为 PSH`
+      );
+      this._probeCount++;
+      logger.info(
+        `[PshSM:${this._transport}] └── start 结束, 发 ls 确认 → UNKNOWN`
+      );
+      return {
+        send: "ls",
+        waitMs: 1500,
+        state: PshState.UNKNOWN,
+        done: false,
+        handler: null,
+        detectResult: null,
+      };
+    }
+
+    // 规则 3: banner 未匹配且无 PSH 特征 → 发探测 echo 命令
     logger.info(`[PshSM:${this._transport}] ├── banner 未匹配任何 profile`);
     logger.info(`[PshSM:${this._transport}] └── start 结束, 发 echo 探测 → UNKNOWN`);
     this._state = PshState.UNKNOWN;
@@ -1024,8 +1073,46 @@ export class PshStateMachine {
         logger.info(
           `[PshSM:${this._transport}] ├── 探测后匹配到 profile '${this._handler.profile.name}', 进入状态检测`
         );
+        // probeCount > 0 表示这是二次确认探测（非首次 echo），
+        // 累积输出中可能包含首次探测触发的错误信息（如 Incorrect Password），
+        // 这些历史错误不应影响当前状态判断，因此仅用最新输出来检测
+        if (this._probeCount > 0) {
+          const saved = this._output;
+          this._output = output;
+          const action = this.#doDetect();
+          this._output = saved;
+          logger.info(`[PshSM:${this._transport}] └── feed 结束, 转入 doDetect (仅最新输出, probeCount=${this._probeCount})`);
+          return action;
+        }
         logger.info(`[PshSM:${this._transport}] └── feed 结束, 转入 doDetect`);
         return this.#doDetect();
+      }
+
+      // 探测后仍未匹配 → 尝试启发式检测兜底
+      const heuristic = PshHandler.heuristicDetect(this._output);
+      if (heuristic === PshState.UNLOCKING || heuristic === PshState.ERROR) {
+        logger.info(
+          `[PshSM:${this._transport}] ├── 探测后启发式检测 → ${heuristic}`
+        );
+        if (heuristic === PshState.UNLOCKING) {
+          this._handler = PshHandler.fromProfile("psh_generic", this._transport);
+          return this.#reply(heuristic, `启发式检测到 PSH 状态: ${heuristic}`);
+        }
+        // ERROR: 可能是探测被 PSH 当作密码输入了，但还不能确定就是 PSH
+        // 发 ls 命令做二次确认 — PSH 锁定状态会返回 "'ls' Not Supported, Try 'help'"
+        // 从而匹配 psh_generic 的 locked pattern，普通 shell 则正常列出文件
+        logger.info(
+          `[PshSM:${this._transport}] ├── 探测后 ERROR, 发 ls 二次确认是否为 PSH`
+        );
+        this._probeCount++;
+        return {
+          send: "ls",
+          waitMs: 1500,
+          state: PshState.UNKNOWN,
+          done: false,
+          handler: null,
+          detectResult: null,
+        };
       }
 
       // 探测后仍未匹配 → 不是 PSH 设备
