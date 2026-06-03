@@ -889,46 +889,56 @@ export interface PshStateMachineAction {
  *
  * 状态流转图:
  *
- *   start(banner)
- *       │
- *       ├─ matchFromOutput(banner) 命中 ──▶ detect(banner)
- *       │       │
- *       │       ├─ READY / LOCKED / UNLOCKING ──▶ 终态 (done)
- *       │       │
- *       │       ├─ ERROR ──▶ probeState() 二次确认 (＜2次)
- *       │       │       │     (ERROR 可能是噪声，如 "Invalid key → Returning to locked mode")
- *       │       │       │
- *       │       │       └─ ≥2次 → 接受 ERROR 终态
- *       │       │
- *       │       └─ UNKNOWN ──▶ probeState() → feed → 分析结果
- *       │
- *   ├─ heuristicDetect(banner) 命中
- *   │       │
- *   │       ├─ UNLOCKING ──▶ 终态 (done, handler=psh_generic)
- *   │       │   (不发送探测，避免 Password: 状态下探测被当作密码)
- *   │       │
- *   │       └─ ERROR ──▶ 发 help 二次确认 → feed() 分析
- *   │           (可能是上次解锁失败，但不排除非 PSH，需确认)
- *   │
- *       └─ 无匹配且无 PSH 特征 ──▶ 发 echo 探测
- *                       │
- *                       ▼ feed(探测输出)
- *        ┌──────────────┴──────────────┐
- *        │                             │
- *   matchFromOutput 命中            未匹配
- *        │                             │
- *        ▼                             ▼
- *    detect(输出)            heuristicDetect(输出)
- *        │                     │
- *        ├─ LOCKED /           ├─ UNLOCKING ──▶ 终态 (done)
- *        │  READY /            │
- *        │  UNLOCKING          ├─ ERROR ──▶ 发 help 二次确认 → feed()
- *        │  ──▶ 终态           │   (可能是 PSH 也可能是噪声, 需确认)
- *        │                     │
- *        ├─ ERROR ──▶          └─ UNKNOWN / READY ──▶ NOT_PSH (done)
- *        │  probeState()
- *        │
- *        └─ UNKNOWN ──▶ probeState() → feed → 终态
+ * start(banner)
+ * │
+ * ├─ matchFromOutput(banner) 命中
+ * │   └─ doDetect() → detectReply()
+ * │       ├─ READY / LOCKED / UNLOCKING ──▶ done ✓
+ * │       ├─ ERROR 且 probeCount < 2
+ * │       │   └─ probeAction (echo __PSH_PROBE__) ──▶ feed [有handler] --- 看(2) 
+ * │       └─ UNKNOWN / ERROR 且 probeCount≥2 ──▶ done ✓
+ * │
+ * ├─ heuristicDetect(banner) = UNLOCKING
+ * │   └─ done ✓ (handler=psh_generic, 不发探测避免密码污染)
+ * │
+ * ├─ heuristicDetect(banner) = ERROR
+ * │   └─ 发 ls 二次确认 (probeCount++) ──▶ feed [无handler] --- 看(1)
+ * │      (可能上次解锁失败, 需确认是否为 PSH)
+ * │
+ * └─ 均无匹配 / 启发式返回其他状态
+ *     └─ probeAction (echo __PSH_PROBE__) ──▶ feed [无handler] --- 看(1)
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ * (1)
+ * feed(output) ── 无 handler
+ * │
+ * ├─ matchFromOutput(累积输出) 命中
+ * │   └─ doDetect() → detectReply()
+ * │       (probeCount>0 时仅用最新输出, 避免历史错误干扰)
+ * │       ├─ READY / LOCKED / UNLOCKING ──▶ done ✓
+ * │       ├─ ERROR 且 probeCount < 2
+ * │       │   └─ probeAction ──▶ feed [有handler] --- 看(2)
+ * │       └─ UNKNOWN / ERROR 且 probeCount≥2 ──▶ done ✓
+ * │
+ * ├─ heuristicDetect(累积输出) = UNLOCKING
+ * │   └─ done ✓ (handler=psh_generic)
+ * │
+ * ├─ heuristicDetect(累积输出) = ERROR
+ * │   └─ 发 ls 二次确认 (probeCount++) ──▶ feed [无handler] --- 回到(1)
+ * │      (探测被当作密码, 需进一步确认)
+ * │
+ * └─ 均未匹配 ──▶ READY (非 PSH) ──▶ done ✓
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ * (2)
+ * feed(output) ── 有 handler (profile 已匹配, detect 结果待确认)
+ * │
+ * └─ probeState(channel) ──▶ detectReply()
+ *     (策略: 先读缓冲区, 不行则发 echo __PSH_STATE_PROBE__ 探测)
+ *     ├─ READY / LOCKED / UNLOCKING ──▶ done ✓
+ *     ├─ ERROR 且 probeCount < 2
+ *     │   └─ probeAction ──▶ feed [有handler] --- 回到(2)
+ *     └─ UNKNOWN / ERROR 且 probeCount≥2 ──▶ done ✓
  *
  * 使用方式:
  *   const sm = new PshStateMachine();
