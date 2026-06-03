@@ -22,7 +22,10 @@ const pkg = JSON.parse(
 
 // ── server 实例 ────────────────────────────────────────────
 
-export const server = new McpServer({ name: pkg.name, version: pkg.version });
+export const server = new McpServer(
+  { name: pkg.name, version: pkg.version },
+  { capabilities: { logging: {} } }
+);
 
 // ── 工具批量注册 ───────────────────────────────────────────
 
