@@ -12,6 +12,8 @@
  * ======================================================
  */
 
+import { logger } from "../infra/logger.js";
+
 /** 用户登录状态枚举 */
 export enum UserLoginStatus {
   /** 不需要登录，已可以直接操作设备 */
@@ -313,16 +315,14 @@ export class UserLoginHandler {
         .replace("{probe}", probe);
 
       channel.write(send, 1);
-      console.log(`[UserLogin] 步骤${i + 1} 发送: ${step.description}`);
+      logger.info(`[UserLogin] 步骤${i + 1} 发送: ${step.description}`);
       await this.#wait(timeout);
       const output = channel.read(1);
 
       // 检查错误模式
       if (step.errorPattern && output.includes(step.errorPattern)) {
-        console.log(
-          "[UserLogin] 步骤%d 完成, sh状态: %s",
-          i + 1,
-          step.statusOnError
+        logger.info(
+          `[UserLogin] 步骤${i + 1} 完成, sh状态: ${step.statusOnError}`
         );
         return {
           success: false,
@@ -335,10 +335,8 @@ export class UserLoginHandler {
       // 检查期望模式
       const expectRe = new RegExp(step.expectPattern, "im");
       if (!expectRe.test(output)) {
-        console.log(
-          "[UserLogin] 步骤%d 完成, sh状态: %s",
-          i + 1,
-          step.statusOnError
+        logger.info(
+          `[UserLogin] 步骤${i + 1} 完成, sh状态: ${step.statusOnError}`
         );
         return {
           success: false,
@@ -348,10 +346,8 @@ export class UserLoginHandler {
         };
       }
 
-      console.log(
-        "[UserLogin] 步骤%d 完成, sh状态: %s",
-        i + 1,
-        step.statusOnSuccess
+      logger.info(
+        `[UserLogin] 步骤${i + 1} 完成, sh状态: ${step.statusOnSuccess}`
       );
     }
 
@@ -569,7 +565,7 @@ export class UserLoginStateMachine {
    */
   #reply(state: UserLoginStatus, reason: string): StateMachineAction {
     this._state = state;
-    console.log("[UserLoginSM] %s → %s", reason, state);
+    logger.info(`[UserLoginSM] ${reason} → ${state}`);
     return {
       send: undefined,
       waitMs: 0,

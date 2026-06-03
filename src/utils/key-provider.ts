@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createInterface } from "node:readline";
+import { logger } from "../infra/logger.js";
 
 /**
  * @brief
@@ -73,10 +74,8 @@ export class KeyProvider {
 
     // 写入挑战信息
     writeFileSync(challengeFilePath, output, "utf-8");
-    console.log(
-      "Challenge written to %s, waiting for key in %s ...",
-      challengeFilePath,
-      keyFilePath
+    logger.info(
+      `Challenge written to ${challengeFilePath}, waiting for key in ${keyFilePath} ...`
     );
 
     // 清空可能残留的旧密钥
@@ -142,9 +141,8 @@ export class KeyProvider {
    * @return 用户输入的解锁密钥
    */
   async #fromTerminal(output: string): Promise<string> {
-    console.log(
-      "\n--- Challenge output from device ---\n%s\n----------------------------------\n",
-      output
+    process.stderr.write(
+      `\n--- Challenge output from device ---\n${output}\n----------------------------------\n\n`
     );
 
     return new Promise<string>((resolve) => {
