@@ -2,6 +2,7 @@ import { SerialPort } from "serialport";
 import { createWriteStream, existsSync, mkdirSync, type WriteStream } from "fs";
 import { dirname } from "path";
 import { MAX_BUFFER_SIZE } from "../infra/constants.js";
+import { logTimestamp } from "../utils/timestamp.js";
 import { interactiveLoop } from "./loop.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "./psh.js";
@@ -45,15 +46,6 @@ export interface SerialShellConfig {
  * 通过串口与远端建立交互式 shell 会话，
  * 内部维护输出缓冲区，支持命令发送与输出读取。
  */
-
-/**
- * @brief 日志行内时间戳，格式 [YYYY-MM-DD HH:mm:ss]
- */
-function logTimestamp(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-}
 
 export class SerialShell {
   #serialPort: SerialPort | null = null;
@@ -107,7 +99,7 @@ export class SerialShell {
     if (this.#logStream) {
       // 将缓冲区中剩余的不完整行写入
       if (this.#logLineBuf) {
-        this.#logStream.write(`[${logTimestamp()}] ${this.#logLineBuf}\n`);
+        this.#logStream.write(`${logTimestamp()} ${this.#logLineBuf}\n`);
         this.#logLineBuf = "";
       }
       this.#logStream.end();
@@ -178,9 +170,8 @@ export class SerialShell {
         this.#logLineBuf += text;
         const lines = this.#logLineBuf.split("\n");
         this.#logLineBuf = lines.pop() ?? "";
-        const ts = logTimestamp();
         for (const line of lines) {
-          this.#logStream.write(`[${ts}] ${line}\n`);
+          this.#logStream.write(`${logTimestamp()} ${line.replace(/\r/g, "")}\n`);
         }
       }
     });

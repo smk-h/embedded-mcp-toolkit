@@ -12,6 +12,7 @@ import {
 import { PshState, PshStateMachine, PSH_STATE_DESC } from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
 import { resolve } from "path";
+import { fileTimestamp } from "../../../utils/timestamp.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -42,10 +43,7 @@ function maybeEnableFileLogging(shell: SerialShell, sessionId: string): void {
   const savePath = process.env.SAVE2FILE_PATH;
   if (!savePath || savePath === "none") return;
   const absDir = resolve(savePath);
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-  const logPath = resolve(absDir, `${sessionId}_${ts}.log`);
+  const logPath = resolve(absDir, `${sessionId}_${fileTimestamp()}.log`);
   shell.enableFileLogging(logPath);
   logger.info(`[serial] file logging enabled: ${logPath}`);
 }
