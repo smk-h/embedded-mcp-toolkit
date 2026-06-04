@@ -118,6 +118,7 @@ export async function startMcpServer() {
     BOARD_CONFIG_PATH: process.env.BOARD_CONFIG_PATH,
     LOG_SAVE: process.env.LOG_SAVE,
     LOG_DIR: process.env.LOG_DIR,
+    SAVE2FILE_PATH: process.env.SAVE2FILE_PATH,
   };
   logger.info(`MCP server starting... cwd: ${process.cwd()}`);
   logger.info(`MCP server env: ${JSON.stringify(envVars)}`);

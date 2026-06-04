@@ -1,4 +1,6 @@
 import { SerialPort } from "serialport";
+import { createWriteStream, existsSync, mkdirSync, type WriteStream } from "fs";
+import { dirname } from "path";
 import { MAX_BUFFER_SIZE } from "../infra/constants.js";
 import { interactiveLoop } from "./loop.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
@@ -43,13 +45,31 @@ export interface SerialShellConfig {
  * 通过串口与远端建立交互式 shell 会话，
  * 内部维护输出缓冲区，支持命令发送与输出读取。
  */
+
+/**
+ * @brief 日志行内时间戳，格式 [YYYY-MM-DD HH:mm:ss]
+ */
+function logTimestamp(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 export class SerialShell {
   #serialPort: SerialPort | null = null;
   #buffer = "";
 
-  #collecting = false; // 是否开启输出收集，open/write 控制
-  #overflow = false; // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
-  #config: SerialShellConfig; // 串口连接配置
+  // 输出收集开关：由 open/write 控制，为 true 时接收到的数据才会写入 #buffer
+  #collecting = false;
+  // 缓冲区溢出策略：false=丢弃新数据(保留旧)，true=覆盖最早数据(保留新)
+  #overflow = false;
+  // 串口连接配置（端口号、波特率、数据位等）
+  #config: SerialShellConfig;
+  // 数据日志文件写入流（通过 enableFileLogging 激活）
+  #logStream: WriteStream | null = null;
+  // 日志行缓冲区：串口数据按物理时序分 chunk 到达，一行可能被拆成多次 "data" 事件。
+  // 缓冲不完整行，遇换行符时整行输出，保证同一行只有一个时间戳（该行实际到达完成的时刻）。
+  #logLineBuf = "";
 
   /**
    * @brief 构造函数
@@ -62,6 +82,37 @@ export class SerialShell {
   /** @brief 获取当前串口设备路径 */
   getPort(): string {
     return this.#config.port;
+  }
+
+  /**
+   * @brief 启用串口数据写入日志文件
+   *
+   * 将串口接收到的所有原始数据实时写入指定日志文件，
+   * 与内存缓冲区 #buffer 并行工作，互不影响。
+   *
+   * @param logPath 日志文件完整路径（目录会自动创建）
+   */
+  enableFileLogging(logPath: string): void {
+    const dir = dirname(logPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    this.#logStream = createWriteStream(logPath, { flags: "a" });
+  }
+
+  /**
+   * @brief 关闭数据日志文件流
+   */
+  disableFileLogging(): void {
+    if (this.#logStream) {
+      // 将缓冲区中剩余的不完整行写入
+      if (this.#logLineBuf) {
+        this.#logStream.write(`[${logTimestamp()}] ${this.#logLineBuf}\n`);
+        this.#logLineBuf = "";
+      }
+      this.#logStream.end();
+      this.#logStream = null;
+    }
   }
 
   /**
@@ -95,7 +146,7 @@ export class SerialShell {
    *
    * 打开串口设备，注册数据监听。
    * 此时不收集输出数据，需调用 write() 后才开始收集。
-   *
+   * https://serialport.io/docs/guide-usage
    * @return 串口启动时的初始输出（banner / prompt）
    */
   async open(): Promise<string> {
@@ -118,17 +169,31 @@ export class SerialShell {
     this.#serialPort = serialPort;
     this.#collecting = false;
 
+    // 监听串口数据接收事件：将收到的二进制数据转为字符串后追加到内部缓冲区
     serialPort.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      const text = data.toString();
+      this.#appendBuffer(text);
+      // 若启用了文件日志，按行写入（缓冲不完整行，遇换行符时输出带时间戳的完整行）
+      if (this.#logStream) {
+        this.#logLineBuf += text;
+        const lines = this.#logLineBuf.split("\n");
+        this.#logLineBuf = lines.pop() ?? "";
+        const ts = logTimestamp();
+        for (const line of lines) {
+          this.#logStream.write(`[${ts}] ${line}\n`);
+        }
+      }
     });
+    // 关闭事件：串口被物理断开或系统关闭时触发，清空句柄防止野指针
     serialPort.on("close", () => {
       this.#serialPort = null;
     });
+    // 错误事件：串口通信出错时触发，清空句柄
     serialPort.on("error", () => {
       this.#serialPort = null;
     });
 
-    // 收集 banner 后停止
+    // 打开后短暂收集 banner 输出（如登录提示、shell 提示符），然后停止收集
     this.#collecting = true;
     await new Promise((r) => setTimeout(r, 500));
     const banner = this.#buffer;
@@ -207,9 +272,10 @@ export class SerialShell {
   /**
    * @brief 关闭串口连接
    *
-   * 释放所有资源，清空缓冲区。
+   * 释放所有资源，清空缓冲区，关闭日志文件流。
    */
   async close(): Promise<void> {
+    this.disableFileLogging();
     if (this.#serialPort) {
       const port = this.#serialPort;
       this.#serialPort = null;
