@@ -588,6 +588,11 @@ export async function serialShellLoginHandler(args: {
         ],
       };
     }
+    // open 成功后立即注册会话并启用日志，确保解锁/探测过程的串口数据被保存
+    const newId = `serial_${++sessionCounter}`;
+    sessions.set(newId, shell);
+    portToSession.set(baseConfig.port, newId);
+    maybeEnableFileLogging(shell, newId);
   }
 
   // ===== 状态机驱动 profile 匹配 + 状态检测 =====
@@ -865,12 +870,14 @@ function registerSession(
   existingId: string | undefined,
   detail: string
 ) {
-  if (existingId) {
+  // 若已通过 portToSession 注册（如提前在 shell.login 中注册），直接复用
+  const registeredId = existingId ?? portToSession.get(port);
+  if (registeredId && sessions.has(registeredId)) {
     logger.info(
-      `[serial_shell_login] session reused: ${existingId} port=${port}`
+      `[serial_shell_login] session reused: ${registeredId} port=${port}`
     );
     return {
-      content: [text(`Session ${existingId} on ${port} (existing, ${detail})`)],
+      content: [text(`Session ${registeredId} on ${port} (existing, ${detail})`)],
     };
   }
   const sessionId = `serial_${++sessionCounter}`;
