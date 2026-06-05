@@ -9,9 +9,9 @@
  * 导出单例 logger 对象，通过 logger.info / error / warn 写入日志。
  */
 
-import { mkdirSync, appendFileSync, existsSync } from "fs";
+import { mkdirSync, appendFileSync, existsSync, statSync } from "fs";
 import { join } from "path";
-import { fileTimestamp, logTimestamp } from "../utils/timestamp.js";
+import { beijingFields, fileTimestamp, logTimestamp } from "../utils/timestamp.js";
 
 /**
  * @brief 日志记录器
@@ -37,6 +37,14 @@ class Logger {
       mkdirSync(dir, { recursive: true });
     }
     this.logFile = join(dir, `${fileTimestamp()}.log`);
+
+    // 新文件或空文件时写入统一头部
+    const isNew = !existsSync(this.logFile) || statSync(this.logFile).size === 0;
+    if (isNew) {
+      const f = beijingFields();
+      const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
+      appendFileSync(this.logFile, `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`);
+    }
   }
 
   /** 写入一行到日志文件 */
