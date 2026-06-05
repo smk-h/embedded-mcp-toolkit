@@ -12,6 +12,7 @@
 import { mkdirSync, appendFileSync, existsSync, statSync } from "fs";
 import { join } from "path";
 import { beijingFields, fileTimestamp, logTimestamp } from "../utils/timestamp.js";
+import { sanitizeLine } from "../utils/terminal-sanitizer.js";
 
 /**
  * @brief 日志记录器
@@ -53,8 +54,7 @@ class Logger {
     if (!this.logFile) return;
     try {
       const line = `${logTimestamp()} [${level}] ${message}\n`;
-      // 移除非法控制字符，确保能安全编码为 UTF-8
-      const safe = line.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+      const safe = sanitizeLine(line);
       appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
     } catch {
       /* 静默失败，不影响主流程 */
