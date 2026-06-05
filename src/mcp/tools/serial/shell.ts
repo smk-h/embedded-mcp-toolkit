@@ -11,9 +11,6 @@ import {
 } from "../../../infra/config.js";
 import { PshState, PshStateMachine, PSH_STATE_DESC } from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
-import { resolve } from "path";
-import { fileTimestamp } from "../../../utils/timestamp.js";
-
 // ── 会话存储 ────────────────────────────────────────────────
 
 /**
@@ -29,24 +26,6 @@ const portToSession = new Map<string, string>();
 
 /** @brief 会话自增计数器，用于生成唯一 session_id */
 let sessionCounter = 0;
-
-/**
- * @brief 若配置了 SAVE2FILE_PATH 环境变量，则为指定会话启用数据日志记录
- *
- * 读取环境变量 SAVE2FILE_PATH，若值为 "none" 或空则跳过；
- * 否则在 {SAVE2FILE_PATH}/{sessionId}_{YYYY-MM-DD_HH-mm-ss}.log 创建日志文件。
- *
- * @param shell     SerialShell 实例
- * @param sessionId 会话 ID（如 serial_1）
- */
-function maybeEnableFileLogging(shell: SerialShell, sessionId: string): void {
-  const savePath = process.env.SAVE2FILE_PATH;
-  if (!savePath || savePath === "none") return;
-  const absDir = resolve(savePath);
-  const logPath = resolve(absDir, `${sessionId}_${fileTimestamp()}.log`);
-  shell.fileLogger.enable(logPath);
-  logger.info(`[serial] file logging enabled: ${logPath}`);
-}
 
 // ── serial_open ─────────────────────────────────────────────
 
@@ -184,7 +163,7 @@ export async function serialOpenHandler(args: {
   sessions.set(sessionId, shell);
   portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
-  maybeEnableFileLogging(shell, sessionId);
+  shell.fileLogger.enableFromEnv(sessionId);
 
   return {
     content: [
@@ -592,7 +571,7 @@ export async function serialShellLoginHandler(args: {
     const newId = `serial_${++sessionCounter}`;
     sessions.set(newId, shell);
     portToSession.set(baseConfig.port, newId);
-    maybeEnableFileLogging(shell, newId);
+    shell.fileLogger.enableFromEnv(newId);
   }
 
   // ===== 状态机驱动 profile 匹配 + 状态检测 =====
@@ -884,7 +863,7 @@ function registerSession(
   sessions.set(sessionId, shell);
   portToSession.set(port, sessionId);
   logger.info(`[serial_shell_login] session opened: ${sessionId} port=${port}`);
-  maybeEnableFileLogging(shell, sessionId);
+  shell.fileLogger.enableFromEnv(sessionId);
   return {
     content: [text(`Session ${sessionId} opened on ${port} ${detail}`)],
   };

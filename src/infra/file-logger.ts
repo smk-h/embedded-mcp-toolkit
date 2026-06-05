@@ -1,7 +1,8 @@
 import { createWriteStream, existsSync, mkdirSync, statSync, type WriteStream } from "fs";
-import { dirname } from "path";
-import { beijingFields, logTimestamp } from "../utils/timestamp.js";
+import { dirname, resolve } from "path";
+import { beijingFields, fileTimestamp, logTimestamp } from "../utils/timestamp.js";
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
+import { logger } from "./logger.js";
 
 /**
  * @brief 原始数据文件日志记录器
@@ -38,6 +39,23 @@ export class FileLogger {
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
       this.#logStream.write(`=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`);
     }
+  }
+
+  /**
+   * @brief 根据环境变量 SAVE2FILE_PATH 自动启用日志
+   *
+   * 若 SAVE2FILE_PATH 值为 "none" 或空则跳过；
+   * 否则在 {SAVE2FILE_PATH}/{sessionId}_{YYYY-MM-DD_HH-mm-ss}.log 创建日志文件。
+   *
+   * @param sessionId 会话 ID（如 serial_1）
+   */
+  enableFromEnv(sessionId: string): void {
+    const savePath = process.env.SAVE2FILE_PATH;
+    if (!savePath || savePath === "none") return;
+    const absDir = resolve(savePath);
+    const logPath = resolve(absDir, `${sessionId}_${fileTimestamp()}.log`);
+    this.enable(logPath);
+    logger.info(`[file-logger] file logging enabled: ${logPath}`);
   }
 
   /**
