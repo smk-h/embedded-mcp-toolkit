@@ -279,11 +279,8 @@ export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
 
       const keyProvider = new KeyProvider(getKeyProviderConfig("ssh"));
 
-      const result = await handler.unlock(
-        shell,
-        "",
-        1500,
-        (output: string) => keyProvider.getKey(output)
+      const result = await handler.unlock(shell, "", 1500, (output: string) =>
+        keyProvider.getKey(output)
       );
 
       console.log("[Step 4] Unlock result:");
@@ -300,9 +297,7 @@ export async function pshDemoSsh(config: SSHShellConfig): Promise<void> {
       console.log("            error        : %s", result.error ?? "(none)");
 
       if (result.success) {
-        console.log(
-          "[Step 4] Unlock succeeded! Entering interactive shell.\n"
-        );
+        console.log("[Step 4] Unlock succeeded! Entering interactive shell.\n");
         await interactiveLoop(shell, "ssh");
       } else if (result.attemptsLeft && result.attemptsLeft > 0) {
         console.log(

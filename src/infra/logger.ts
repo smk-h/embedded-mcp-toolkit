@@ -11,7 +11,11 @@
 
 import { mkdirSync, appendFileSync, existsSync, statSync } from "fs";
 import { join } from "path";
-import { beijingFields, fileTimestamp, logTimestamp } from "../utils/timestamp.js";
+import {
+  beijingFields,
+  fileTimestamp,
+  logTimestamp,
+} from "../utils/timestamp.js";
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
 
 /**
@@ -40,11 +44,15 @@ class Logger {
     this.logFile = join(dir, `${fileTimestamp()}.log`);
 
     // 新文件或空文件时写入统一头部
-    const isNew = !existsSync(this.logFile) || statSync(this.logFile).size === 0;
+    const isNew =
+      !existsSync(this.logFile) || statSync(this.logFile).size === 0;
     if (isNew) {
       const f = beijingFields();
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
-      appendFileSync(this.logFile, `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`);
+      appendFileSync(
+        this.logFile,
+        `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`
+      );
     }
   }
 

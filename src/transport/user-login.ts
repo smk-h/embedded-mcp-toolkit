@@ -368,10 +368,7 @@ export class UserLoginHandler {
    * @returns 配置好的 UserLoginHandler 实例
    * @throws {Error} 当 profile 名称不存在时抛出
    */
-  static fromProfile(
-    name: string,
-    config: UserLoginConfig
-  ): UserLoginHandler {
+  static fromProfile(name: string, config: UserLoginConfig): UserLoginHandler {
     const profile = BUILTIN_PROFILES[name];
     if (!profile) throw new Error(`Unknown user login profile: ${name}`);
     return new UserLoginHandler(config, profile);
@@ -393,10 +390,10 @@ export class UserLoginHandler {
  * 状态机分析输出后告诉调用方下一步该做什么。
  */
 export interface StateMachineAction {
-  send?: string;                    // 下一步要发送的命令（undefined 表示已达终态）
-  waitMs: number;                   // 发送后等待多久再读取（毫秒）
-  state: UserLoginStatus;           // 当前检测到的状态
-  done: boolean;                    // 是否为终态（不需继续交互）
+  send?: string; // 下一步要发送的命令（undefined 表示已达终态）
+  waitMs: number; // 发送后等待多久再读取（毫秒）
+  state: UserLoginStatus; // 当前检测到的状态
+  done: boolean; // 是否为终态（不需继续交互）
 }
 
 /**
@@ -508,12 +505,18 @@ export class UserLoginStateMachine {
     // ── 探测结果分析 ──
     if (hasProbe && !hasPassword) {
       // 收到了探针回显且不在密码提示中 → 已登录
-      return this.#reply(UserLoginStatus.NO_LOGIN_REQUIRED, "探针回显正常，已登录");
+      return this.#reply(
+        UserLoginStatus.NO_LOGIN_REQUIRED,
+        "探针回显正常，已登录"
+      );
     }
 
     if (hasPassword && hasLogin) {
       // 密码提示 + 登录提示同时出现 → 探测被当密码吃掉，回到登录
-      return this.#reply(UserLoginStatus.WAITING_USERNAME, "探测被吞，终端回到 login:");
+      return this.#reply(
+        UserLoginStatus.WAITING_USERNAME,
+        "探测被吞，终端回到 login:"
+      );
     }
 
     if (hasPassword && !hasLogin) {
@@ -527,7 +530,10 @@ export class UserLoginStateMachine {
 
     if (hasIncorrect) {
       // 含 incorrect → 探测被当密码，验证失败
-      return this.#reply(UserLoginStatus.WAITING_USERNAME, "探测被当密码，验证失败");
+      return this.#reply(
+        UserLoginStatus.WAITING_USERNAME,
+        "探测被当密码，验证失败"
+      );
     }
 
     // 都不匹配 → 状态异常

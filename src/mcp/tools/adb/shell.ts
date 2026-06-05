@@ -104,7 +104,9 @@ export async function adbShellOpenHandler(args: { device?: string }) {
   } else {
     serialSource = `adb devices auto-discovery`;
   }
-  logger.info(`[adb_shell_open] device=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`);
+  logger.info(
+    `[adb_shell_open] device=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`
+  );
 
   const config: AdbShellConfig = {
     serialNo,
@@ -121,9 +123,7 @@ export async function adbShellOpenHandler(args: { device?: string }) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error(`[adb_shell_open] open failed: ${errMsg}`);
     return {
-      content: [
-        text(`ADB shell open failed: ${errMsg}`),
-      ],
+      content: [text(`ADB shell open failed: ${errMsg}`)],
     };
   }
 
@@ -341,10 +341,7 @@ export function adbShellListHandler() {
     return { content: [text("No active ADB shell sessions.")] };
   }
 
-  const lines: string[] = [
-    `Active sessions: ${ids.length}`,
-    "",
-  ];
+  const lines: string[] = [`Active sessions: ${ids.length}`, ""];
   for (const id of ids) {
     const shell = sessions.get(id)!;
     lines.push(`  [${id}]`);

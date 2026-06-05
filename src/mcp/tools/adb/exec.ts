@@ -47,7 +47,9 @@ export function execAdb(args: string[], timeout?: number): string {
       stdio: ["pipe", "pipe", "ignore"],
     }) as string;
   } catch (err) {
-    logger.error(`[adb] execAdb failed: ${err instanceof Error ? err.message : String(err)}`);
+    logger.error(
+      `[adb] execAdb failed: ${err instanceof Error ? err.message : String(err)}`
+    );
     return "";
   }
 }
@@ -114,16 +116,13 @@ export async function adbDeviceListHandler() {
       content: [
         text(
           "No ADB devices found.\n" +
-          "(Check USB connection, enable USB debugging, and ensure adb is in PATH)"
+            "(Check USB connection, enable USB debugging, and ensure adb is in PATH)"
         ),
       ],
     };
   }
 
-  const lines: string[] = [
-    `Found ${devices.length} device(s):`,
-    "",
-  ];
+  const lines: string[] = [`Found ${devices.length} device(s):`, ""];
   for (let i = 0; i < devices.length; i++) {
     const d = devices[i];
     lines.push(`  [${i + 1}] SerialNo: ${d.serialNo}`);
@@ -201,7 +200,9 @@ export async function adbExecHandler(args: {
   }
   cmdArgs.push(...args.command.split(/\s+/));
 
-  logger.info(`[adb_exec] command=${args.command} device=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`);
+  logger.info(
+    `[adb_exec] command=${args.command} device=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`
+  );
 
   const output = execAdb(cmdArgs);
 

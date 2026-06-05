@@ -316,7 +316,7 @@ export async function userLoginDemoSerial(
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[Step 1] Open serial failed:", errorMsg);
-    await shell.close().catch(() => { });
+    await shell.close().catch(() => {});
     return {
       success: false,
       status: UserLoginStatus.ERROR,
@@ -441,17 +441,16 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
       );
 
       if (action.detectResult) {
-        console.log("[Step 4] Challenge      : %s\n",
-          action.detectResult.challengeCode ?? "(none)");
+        console.log(
+          "[Step 4] Challenge      : %s\n",
+          action.detectResult.challengeCode ?? "(none)"
+        );
       }
 
       const keyProvider = new KeyProvider(getKeyProviderConfig("serial"));
 
-      const result = await handler.unlock(
-        shell,
-        "",
-        1500,
-        (output: string) => keyProvider.getKey(output)
+      const result = await handler.unlock(shell, "", 1500, (output: string) =>
+        keyProvider.getKey(output)
       );
 
       console.log("[Step 4] Unlock result:");
@@ -468,9 +467,7 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
       console.log("            error        : %s", result.error ?? "(none)");
 
       if (result.success) {
-        console.log(
-          "[Step 4] Unlock succeeded! Entering interactive shell.\n"
-        );
+        console.log("[Step 4] Unlock succeeded! Entering interactive shell.\n");
         await interactiveLoop(shell, "serial");
       } else if (result.attemptsLeft && result.attemptsLeft > 0) {
         console.log(
@@ -482,7 +479,9 @@ export async function pshDemoSerial(config: SerialShellConfig): Promise<void> {
     }
 
     case PshState.READY:
-      console.log("[Step 4] Shell is already unlocked, entering interactive shell.\n");
+      console.log(
+        "[Step 4] Shell is already unlocked, entering interactive shell.\n"
+      );
       await interactiveLoop(shell, "serial");
       break;
 

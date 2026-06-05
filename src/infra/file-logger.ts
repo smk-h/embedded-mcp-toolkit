@@ -1,6 +1,16 @@
-import { createWriteStream, existsSync, mkdirSync, statSync, type WriteStream } from "fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  statSync,
+  type WriteStream,
+} from "fs";
 import { dirname, resolve } from "path";
-import { beijingFields, fileTimestamp, logTimestamp } from "../utils/timestamp.js";
+import {
+  beijingFields,
+  fileTimestamp,
+  logTimestamp,
+} from "../utils/timestamp.js";
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
 import { logger } from "./logger.js";
 
@@ -37,7 +47,9 @@ export class FileLogger {
     if (isNew) {
       const f = beijingFields();
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
-      this.#logStream.write(`=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`);
+      this.#logStream.write(
+        `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`
+      );
     }
   }
 

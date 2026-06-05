@@ -9,7 +9,11 @@ import {
   getSerialConfig,
   getKeyProviderConfig,
 } from "../../../infra/config.js";
-import { PshState, PshStateMachine, PSH_STATE_DESC } from "../../../transport/psh.js";
+import {
+  PshState,
+  PshStateMachine,
+  PSH_STATE_DESC,
+} from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -593,7 +597,9 @@ export async function serialShellLoginHandler(args: {
 
   // --- 已解锁 / 无 PSH ---
   if (action.state === PshState.READY) {
-    logger.info(`[serial_shell_login] shell已可用, profile=${handler?.profile.name ?? "(无)"}`);
+    logger.info(
+      `[serial_shell_login] shell已可用, profile=${handler?.profile.name ?? "(无)"}`
+    );
     const detail = handler
       ? `(PSH already unlocked)\nProfile: ${handler.profile.name}`
       : "(no PSH detected, shell is ready)";
@@ -613,7 +619,9 @@ export async function serialShellLoginHandler(args: {
         ],
       };
     }
-    logger.info(`[serial_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`);
+    logger.info(
+      `[serial_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`
+    );
     shell.write(args.key, 1);
     await new Promise((r) => setTimeout(r, stepDelay));
     const output = shell.read(1);
@@ -627,7 +635,9 @@ export async function serialShellLoginHandler(args: {
         `(PSH unlock completed from UNLOCKING state)\nProfile: ${handler!.profile.name}`
       );
     }
-    logger.error(`[serial_shell_login] UNLOCKING状态解锁失败, finalState=${state}`);
+    logger.error(
+      `[serial_shell_login] UNLOCKING状态解锁失败, finalState=${state}`
+    );
     if (!existingId) await shell.close();
     return {
       content: [
@@ -669,7 +679,9 @@ export async function serialShellLoginHandler(args: {
           return keyProvider.getKey(output);
         };
 
-    logger.info(`[serial_shell_login] 开始解锁 (profile=${handler.profile.name}, key=${args.key ? "已提供" : "走KeyProvider"})`);
+    logger.info(
+      `[serial_shell_login] 开始解锁 (profile=${handler.profile.name}, key=${args.key ? "已提供" : "走KeyProvider"})`
+    );
     const result = await handler.unlock(
       shell,
       unlockKey,
@@ -687,7 +699,9 @@ export async function serialShellLoginHandler(args: {
       );
     }
 
-    logger.error(`[serial_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`);
+    logger.error(
+      `[serial_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`
+    );
     if (!existingId) await shell.close();
     return {
       content: [
@@ -856,7 +870,9 @@ function registerSession(
       `[serial_shell_login] session reused: ${registeredId} port=${port}`
     );
     return {
-      content: [text(`Session ${registeredId} on ${port} (existing, ${detail})`)],
+      content: [
+        text(`Session ${registeredId} on ${port} (existing, ${detail})`),
+      ],
     };
   }
   const sessionId = `serial_${++sessionCounter}`;

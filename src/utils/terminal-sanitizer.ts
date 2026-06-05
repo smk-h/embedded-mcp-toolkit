@@ -18,10 +18,10 @@ const CONTROL_CHARS: Record<number, string> = {
   0x06: "[ACK]",
   0x07: "[BEL]",
   0x08: "[BS]",
-  0x0B: "[VT]",
-  0x0C: "[FF]",
-  0x0E: "[SO]",
-  0x0F: "[SI]",
+  0x0b: "[VT]",
+  0x0c: "[FF]",
+  0x0e: "[SO]",
+  0x0f: "[SI]",
   0x10: "[DLE]",
   0x11: "[DC1]",
   0x12: "[DC2]",
@@ -32,13 +32,13 @@ const CONTROL_CHARS: Record<number, string> = {
   0x17: "[ETB]",
   0x18: "[CAN]",
   0x19: "[EM]",
-  0x1A: "[SUB]",
-  0x1B: "[ESC]",
-  0x1C: "[FS]",
-  0x1D: "[GS]",
-  0x1E: "[RS]",
-  0x1F: "[US]",
-  0x7F: "[DEL]",
+  0x1a: "[SUB]",
+  0x1b: "[ESC]",
+  0x1c: "[FS]",
+  0x1d: "[GS]",
+  0x1e: "[RS]",
+  0x1f: "[US]",
+  0x7f: "[DEL]",
 };
 
 /** @brief 匹配所有非打印控制字符（保留 \t 0x09、\n 0x0A） */
@@ -96,5 +96,8 @@ export function sanitizeLine(line: string): string {
   // CONTROL_RE 匹配 0x00-0x08、0x0B-0x0C、0x0E-0x1F、0x7F（不含 \t 0x09、\n 0x0A）
   // 对每个匹配到的控制字符，取其 charCode 查映射表 CONTROL_CHARS
   // 找到则替换为 "[ESC]" 等可见标记，找不到则丢弃（?? 确保空字符串不被误判为 falsy）
-  return stripped.replace(CONTROL_RE, (ch) => CONTROL_CHARS[ch.charCodeAt(0)] ?? "");
+  return stripped.replace(
+    CONTROL_RE,
+    (ch) => CONTROL_CHARS[ch.charCodeAt(0)] ?? ""
+  );
 }

@@ -203,11 +203,11 @@ type CopyTask =
   | { type: "dir"; src: string; dest: string; description?: string }
   | { type: "json"; src: string; dest: string }
   | {
-    type: "pattern";
-    srcDir: string;
-    destDir: string;
-    match: (entry: string) => boolean;
-  }
+      type: "pattern";
+      srcDir: string;
+      destDir: string;
+      match: (entry: string) => boolean;
+    }
   | { type: "configYaml"; src: string; dest: string };
 
 /**
@@ -215,9 +215,9 @@ type CopyTask =
  * @details 将一组 CopyTask 归入同一个 label，并带 condition 控制是否执行。
  */
 interface TaskGroup {
-  label: string;     // 分组标签，用于日志输出
+  label: string; // 分组标签，用于日志输出
   condition: boolean; // 条件为 true 时才执行该组任务
-  tasks: CopyTask[];  // 任务列表
+  tasks: CopyTask[]; // 任务列表
 }
 
 // ============================================================

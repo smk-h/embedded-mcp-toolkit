@@ -109,11 +109,19 @@ export class AdbShell {
         devices.push(parts[0]);
       }
     }
-    logger.info(`[adb] discoverDevice: raw output: ${raw.split(/\r?\n/).filter(l => l.trim().length > 0).join("; ")}`);
-    logger.info(`[adb] discoverDevice: ${devices.length} device(s) found: ${devices.length > 0 ? devices.join(", ") : "none"}`);
+    logger.info(
+      `[adb] discoverDevice: raw output: ${raw
+        .split(/\r?\n/)
+        .filter((l) => l.trim().length > 0)
+        .join("; ")}`
+    );
+    logger.info(
+      `[adb] discoverDevice: ${devices.length} device(s) found: ${devices.length > 0 ? devices.join(", ") : "none"}`
+    );
     // 0 台：无可用设备
     if (devices.length === 0) {
-      const msg = "No ADB device found. Check USB connection and USB debugging.";
+      const msg =
+        "No ADB device found. Check USB connection and USB debugging.";
       logger.error(`[adb] discoverDevice failed: ${msg}`);
       throw new Error(msg);
     }

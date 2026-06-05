@@ -3,7 +3,11 @@ import { text } from "../../tool-registry.js";
 import { logger } from "../../../infra/logger.js";
 import { SSHShell, type SSHShellConfig } from "../../../transport/ssh.js";
 import { getSSHConfig, getKeyProviderConfig } from "../../../infra/config.js";
-import { PshState, PshStateMachine, PSH_STATE_DESC } from "../../../transport/psh.js";
+import {
+  PshState,
+  PshStateMachine,
+  PSH_STATE_DESC,
+} from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
@@ -559,7 +563,9 @@ export async function sshShellLoginHandler(args: {
             return keyProvider.getKey(output);
           };
 
-      logger.info(`[ssh_shell_login] 开始解锁 (profile=${handler.profile.name}, key=${args.key ? "已提供" : "走KeyProvider"})`);
+      logger.info(
+        `[ssh_shell_login] 开始解锁 (profile=${handler.profile.name}, key=${args.key ? "已提供" : "走KeyProvider"})`
+      );
       const result = await handler.unlock(
         shell,
         unlockKey,
@@ -580,7 +586,9 @@ export async function sshShellLoginHandler(args: {
         };
       }
 
-      logger.error(`[ssh_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`);
+      logger.error(
+        `[ssh_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`
+      );
       await shell.close();
       return {
         content: [
@@ -594,7 +602,9 @@ export async function sshShellLoginHandler(args: {
     case PshState.READY: {
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
-      logger.info(`[ssh_shell_login] shell已可用, session=${sessionId}, profile=${handler?.profile.name ?? "(无)"}`);
+      logger.info(
+        `[ssh_shell_login] shell已可用, session=${sessionId}, profile=${handler?.profile.name ?? "(无)"}`
+      );
       return {
         content: [
           text(
@@ -606,7 +616,9 @@ export async function sshShellLoginHandler(args: {
 
     case PshState.UNLOCKING: {
       if (!args.key) {
-        logger.warn(`[ssh_shell_login] PSH处于UNLOCKING状态但未提供密钥, 关闭连接`);
+        logger.warn(
+          `[ssh_shell_login] PSH处于UNLOCKING状态但未提供密钥, 关闭连接`
+        );
         await shell.close();
         return {
           content: [
@@ -616,7 +628,9 @@ export async function sshShellLoginHandler(args: {
           ],
         };
       }
-      logger.info(`[ssh_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`);
+      logger.info(
+        `[ssh_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`
+      );
       shell.write(args.key, 1);
       await new Promise((r) => setTimeout(r, stepDelay));
       const output = shell.read(1);
@@ -626,7 +640,9 @@ export async function sshShellLoginHandler(args: {
       if (finalState === PshState.READY) {
         const sessionId = `ssh_${++sessionCounter}`;
         sessions.set(sessionId, shell);
-        logger.info(`[ssh_shell_login] UNLOCKING状态解锁成功, session=${sessionId}`);
+        logger.info(
+          `[ssh_shell_login] UNLOCKING状态解锁成功, session=${sessionId}`
+        );
         return {
           content: [
             text(
@@ -635,7 +651,9 @@ export async function sshShellLoginHandler(args: {
           ],
         };
       }
-      logger.error(`[ssh_shell_login] UNLOCKING状态解锁失败, finalState=${finalState}`);
+      logger.error(
+        `[ssh_shell_login] UNLOCKING状态解锁失败, finalState=${finalState}`
+      );
       await shell.close();
       return {
         content: [
@@ -662,7 +680,9 @@ export async function sshShellLoginHandler(args: {
       // UNKNOWN 或其他未明确状态
       const sessionId = `ssh_${++sessionCounter}`;
       sessions.set(sessionId, shell);
-      logger.info(`[ssh_shell_login] PSH状态不明, session=${sessionId}, 可能需手动交互`);
+      logger.info(
+        `[ssh_shell_login] PSH状态不明, session=${sessionId}, 可能需手动交互`
+      );
       return {
         content: [
           text(
