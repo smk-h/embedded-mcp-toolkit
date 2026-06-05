@@ -5,7 +5,7 @@
  */
 
 /** 当前北京时间各字段 */
-function beijingFields() {
+export function beijingFields() {
   const now = new Date();
   const bj = new Date(
     now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" })

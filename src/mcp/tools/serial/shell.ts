@@ -44,7 +44,7 @@ function maybeEnableFileLogging(shell: SerialShell, sessionId: string): void {
   if (!savePath || savePath === "none") return;
   const absDir = resolve(savePath);
   const logPath = resolve(absDir, `${sessionId}_${fileTimestamp()}.log`);
-  shell.enableFileLogging(logPath);
+  shell.fileLogger.enable(logPath);
   logger.info(`[serial] file logging enabled: ${logPath}`);
 }
 

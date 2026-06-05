@@ -1,8 +1,6 @@
 import { SerialPort } from "serialport";
-import { createWriteStream, existsSync, mkdirSync, type WriteStream } from "fs";
-import { dirname } from "path";
 import { MAX_BUFFER_SIZE } from "../infra/constants.js";
-import { logTimestamp } from "../utils/timestamp.js";
+import { FileLogger } from "../infra/file-logger.js";
 import { interactiveLoop } from "./loop.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "./psh.js";
@@ -57,11 +55,8 @@ export class SerialShell {
   #overflow = false;
   // 串口连接配置（端口号、波特率、数据位等）
   #config: SerialShellConfig;
-  // 数据日志文件写入流（通过 enableFileLogging 激活）
-  #logStream: WriteStream | null = null;
-  // 日志行缓冲区：串口数据按物理时序分 chunk 到达，一行可能被拆成多次 "data" 事件。
-  // 缓冲不完整行，遇换行符时整行输出，保证同一行只有一个时间戳（该行实际到达完成的时刻）。
-  #logLineBuf = "";
+  /** 原始数据文件日志记录器 */
+  readonly fileLogger = new FileLogger();
 
   /**
    * @brief 构造函数
@@ -74,37 +69,6 @@ export class SerialShell {
   /** @brief 获取当前串口设备路径 */
   getPort(): string {
     return this.#config.port;
-  }
-
-  /**
-   * @brief 启用串口数据写入日志文件
-   *
-   * 将串口接收到的所有原始数据实时写入指定日志文件，
-   * 与内存缓冲区 #buffer 并行工作，互不影响。
-   *
-   * @param logPath 日志文件完整路径（目录会自动创建）
-   */
-  enableFileLogging(logPath: string): void {
-    const dir = dirname(logPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    this.#logStream = createWriteStream(logPath, { flags: "a" });
-  }
-
-  /**
-   * @brief 关闭数据日志文件流
-   */
-  disableFileLogging(): void {
-    if (this.#logStream) {
-      // 将缓冲区中剩余的不完整行写入
-      if (this.#logLineBuf) {
-        this.#logStream.write(`${logTimestamp()} ${this.#logLineBuf}\n`);
-        this.#logLineBuf = "";
-      }
-      this.#logStream.end();
-      this.#logStream = null;
-    }
   }
 
   /**
@@ -166,14 +130,7 @@ export class SerialShell {
       const text = data.toString();
       this.#appendBuffer(text);
       // 若启用了文件日志，按行写入（缓冲不完整行，遇换行符时输出带时间戳的完整行）
-      if (this.#logStream) {
-        this.#logLineBuf += text;
-        const lines = this.#logLineBuf.split("\n");
-        this.#logLineBuf = lines.pop() ?? "";
-        for (const line of lines) {
-          this.#logStream.write(`${logTimestamp()} ${line.replace(/\r/g, "")}\n`);
-        }
-      }
+      this.fileLogger.write(text);
     });
     // 关闭事件：串口被物理断开或系统关闭时触发，清空句柄防止野指针
     serialPort.on("close", () => {
@@ -266,7 +223,7 @@ export class SerialShell {
    * 释放所有资源，清空缓冲区，关闭日志文件流。
    */
   async close(): Promise<void> {
-    this.disableFileLogging();
+    this.fileLogger.disable();
     if (this.#serialPort) {
       const port = this.#serialPort;
       this.#serialPort = null;
