@@ -96,6 +96,7 @@ export async function sshShellOpenHandler(args: {
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
   logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
+  shell.fileLogger.enableFromEnv(sessionId);
 
   return {
     content: [text(`Session ${sessionId} opened.\n${banner || "(no banner)"}`)],
@@ -538,6 +539,7 @@ export async function sshShellLoginHandler(args: {
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
   logger.info(`[ssh_shell_login] session opened: ${sessionId}`);
+  shell.fileLogger.enableFromEnv(sessionId);
 
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
   const sm = new PshStateMachine("ssh");

@@ -5,6 +5,7 @@ import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "./psh.js";
 import { KeyProvider } from "../utils/key-provider.js";
 import { getKeyProviderConfig } from "../infra/config.js";
+import { FileLogger } from "../infra/file-logger.js";
 
 /**
  * @brief SSH Shell 连接配置
@@ -40,6 +41,9 @@ export class SSHShell {
   #collecting = false; // 是否开启输出收集，open/write 控制
   #overflow = false; // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
   #config: SSHShellConfig; // SSH 连接配置
+
+  /** @brief 文件日志记录器，用于将 shell 输出写入本地文件 */
+  readonly fileLogger = new FileLogger();
 
   /**
    * @brief 构造函数
@@ -112,10 +116,14 @@ export class SSHShell {
     });
     // 监听 stream 的 data/stderr 事件，收集输出到内部缓冲区
     stream.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      const text = data.toString();
+      this.#appendBuffer(text);
+      this.fileLogger.write(text);
     });
     stream.stderr.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      const text = data.toString();
+      this.#appendBuffer(text);
+      this.fileLogger.write(text);
     });
     stream.on("close", () => {
       this.#stream = null;
@@ -198,6 +206,7 @@ export class SSHShell {
    * 释放所有资源，清空缓冲区。
    */
   async close(): Promise<void> {
+    this.fileLogger.disable();
     if (this.#stream) {
       this.#stream.close();
       this.#stream = null;
