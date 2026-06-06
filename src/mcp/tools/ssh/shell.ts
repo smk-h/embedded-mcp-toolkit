@@ -80,7 +80,18 @@ export async function sshShellOpenHandler(args: {
 
   const shell = new SSHShell(config);
 
-  const banner = await shell.open();
+  let banner: string;
+  try {
+    banner = await shell.open();
+  } catch (err) {
+    return {
+      content: [
+        text(
+          `SSH connection failed: ${err instanceof Error ? err.message : String(err)}`
+        ),
+      ],
+    };
+  }
 
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
@@ -523,6 +534,11 @@ export async function sshShellLoginHandler(args: {
     };
   }
 
+  // open 成功后立即注册会话，确保后续解锁/探测过程可被其他工具访问
+  const sessionId = `ssh_${++sessionCounter}`;
+  sessions.set(sessionId, shell);
+  logger.info(`[ssh_shell_login] session opened: ${sessionId}`);
+
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
   const sm = new PshStateMachine("ssh");
   let action = sm.start(banner);
@@ -545,6 +561,7 @@ export async function sshShellLoginHandler(args: {
       if (!handler) {
         logger.warn(`[ssh_shell_login] PSH 已锁定但无匹配 handler, 关闭连接`);
         await shell.close();
+        sessions.delete(sessionId);
         return {
           content: [text("PSH detected as LOCKED but no handler available.")],
         };
@@ -574,8 +591,6 @@ export async function sshShellLoginHandler(args: {
       );
 
       if (result.success) {
-        const sessionId = `ssh_${++sessionCounter}`;
-        sessions.set(sessionId, shell);
         logger.info(`[ssh_shell_login] 解锁成功, session=${sessionId}`);
         return {
           content: [
@@ -590,6 +605,7 @@ export async function sshShellLoginHandler(args: {
         `[ssh_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`
       );
       await shell.close();
+      sessions.delete(sessionId);
       return {
         content: [
           text(
@@ -600,8 +616,6 @@ export async function sshShellLoginHandler(args: {
     }
 
     case PshState.READY: {
-      const sessionId = `ssh_${++sessionCounter}`;
-      sessions.set(sessionId, shell);
       logger.info(
         `[ssh_shell_login] shell已可用, session=${sessionId}, profile=${handler?.profile.name ?? "(无)"}`
       );
@@ -620,6 +634,7 @@ export async function sshShellLoginHandler(args: {
           `[ssh_shell_login] PSH处于UNLOCKING状态但未提供密钥, 关闭连接`
         );
         await shell.close();
+        sessions.delete(sessionId);
         return {
           content: [
             text(
@@ -638,8 +653,6 @@ export async function sshShellLoginHandler(args: {
         ? handler.detectState(output)
         : PshState.UNKNOWN;
       if (finalState === PshState.READY) {
-        const sessionId = `ssh_${++sessionCounter}`;
-        sessions.set(sessionId, shell);
         logger.info(
           `[ssh_shell_login] UNLOCKING状态解锁成功, session=${sessionId}`
         );
@@ -655,6 +668,7 @@ export async function sshShellLoginHandler(args: {
         `[ssh_shell_login] UNLOCKING状态解锁失败, finalState=${finalState}`
       );
       await shell.close();
+      sessions.delete(sessionId);
       return {
         content: [
           text(
@@ -667,6 +681,7 @@ export async function sshShellLoginHandler(args: {
     case PshState.ERROR: {
       logger.error(`[ssh_shell_login] PSH处于ERROR状态, 关闭连接`);
       await shell.close();
+      sessions.delete(sessionId);
       return {
         content: [
           text(
@@ -678,8 +693,6 @@ export async function sshShellLoginHandler(args: {
 
     default: {
       // UNKNOWN 或其他未明确状态
-      const sessionId = `ssh_${++sessionCounter}`;
-      sessions.set(sessionId, shell);
       logger.info(
         `[ssh_shell_login] PSH状态不明, session=${sessionId}, 可能需手动交互`
       );
