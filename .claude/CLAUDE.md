@@ -27,6 +27,7 @@
 | `device_info_tool` | 获取当前设备配置（SSH、串口、KeyProvider） | `device?` |
 | `version_tool` | 获取 MCP 服务器版本和工具包信息 | 无 |
 | `greet_tool` | 打招呼测试 | `name` |
+| `notify_demo_tool` | 演示服务端→客户端通知（日志/工具列表变更） | `type`, `message?`, `level?` |
 
 ### SSH 工具（需先 open 获取 session_id）
 
@@ -40,6 +41,7 @@
 | `ssh_shell_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
 | `ssh_shell_connection` | 检查远端板卡上活跃的 SSH 连接 | `session_id` |
 | `ssh_shell_login` | **一键登录**（连接 + PSH 检测 + 解锁） | `device?`, `key?`, `timeout?`(ms) |
+| `ssh_build` | 在远端执行编译命令，分类错误/警告，返回结构化结果（**需等待编译完成**，默认最多 10 分钟） | `session_id`, `command`, `cwd?`, `maxWait?`(ms), `pollInterval?`(ms), `classify?` |
 
 ### 串口工具（需先 open 获取 session_id）
 
@@ -52,6 +54,7 @@
 | `serial_list` | 列出所有活跃串口会话 | 无 |
 | `serial_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
 | `serial_shell_login` | **一键登录**（连接 + PSH 检测 + 解锁） | `device?`, `key?`, `timeout?`(ms) |
+| `serial_enter_uboot` | 重启设备并进入 U-Boot 命令行 | `session_id`, `timeout?`(s) |
 
 ### ADB 工具
 
@@ -79,6 +82,7 @@
 |-------|------|---------|
 | `port_scan_tool` | 扫描 Windows 设备管理器中的 COM/LPT 端口 | 无 |
 | `network_scan_tool` | 扫描 Windows 网络适配器信息 | 无 |
+| `subnet_check_tool` | 分析目标 IP 的子网信息（IP/掩码/网关/CIDR） | `target_ip` |
 | `power_shell_open` | 打开交互式 PowerShell 会话 | `workingDir?` |
 | `power_shell_close` | 关闭 PowerShell 会话 | `session_id` |
 | `power_shell_write` | 向 PowerShell 发送命令 | `session_id`, `command`, `clear?` |
@@ -99,7 +103,9 @@
 ### 工作流模式
 - **简单执行**（一次性）: `ssh_shell_login` / `serial_shell_login` / `adb_exec` → 直接执行并返回结果
 - **交互式**（多步）: `ssh_shell_open` / `adb_shell_open` => `write` + `read` / `exec` + ... => `close`
-- **本地探测**（Windows 主机）: `port_scan_tool` → `serial_open`；`adb_device_list` → `adb_shell_open`
+- **远程编译**: `ssh_shell_login` / `ssh_shell_open` => `ssh_build` → 结构化错误/警告反馈
+- **U-Boot 操作**: `serial_shell_login` => `serial_enter_uboot` → 进入 U-Boot 命令行
+- **本地探测**（Windows 主机）: `port_scan_tool` → `serial_open`；`adb_device_list` → `adb_shell_open`；`subnet_check_tool` → 子网分析
 - **调试串口**（控制字符）: 数据通过 `serial_write` 的 `command` 参数发送，换行符按配置追加
 
 ### 参数说明

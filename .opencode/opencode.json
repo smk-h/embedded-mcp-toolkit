@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "instructions": [".claude/CLAUDE.md"],
   "mcp": {
     "embedded-board": {
       "type": "local",
