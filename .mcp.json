@@ -11,7 +11,7 @@
         "BOARD_CONFIG_PATH": "./.embedded/configs/config.yaml",
         "LOG_SAVE": "1",
         "LOG_DIR": "./.embedded/log",
-        "SAVE2FILE_PATH": "none"
+        "SAVE2FILE_PATH": "./.embedded/log"
       }
     }
   }

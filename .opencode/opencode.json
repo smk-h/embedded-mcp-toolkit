@@ -6,6 +6,7 @@
       "type": "local",
       "command": ["node", "./bin/embedded-mcp-toolkit-cli.js"],
       "enabled": true,
+      "timeout": 600000,
       "environment": {
         "DEVICE": "board-b",
         "BOARD_CONFIG_PATH": "./.embedded/configs/config.yaml",
