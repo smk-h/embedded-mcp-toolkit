@@ -304,10 +304,25 @@ export async function sshBuildHandler(args: {
   const deadline: number = Date.now() + maxWait;
   let exitCode: number | null = null;
   const markerRegex = new RegExp(`${BUILD_MARKER}:(\\d+)`);
+  let echoStripped = false;
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    const chunk: string = shell.drain();
+    let chunk: string = shell.drain();
+
+    if (!echoStripped) {
+      // PTY echoes the command back; the echoed text contains the marker
+      // pattern literally, which would cause a premature match. Strip the
+      // echoed command line from the first drain before checking markers.
+      echoStripped = true;
+      const escapedCmd = fullCommand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const cmdEchoRe = new RegExp(
+        `(?:^|\\n)(?:\\x1b\\[[0-9;]*m|\\[.*?~])*[^\\n]*${escapedCmd}[^\\n]*\\r?\\n?`,
+        'g'
+      );
+      chunk = chunk.replace(cmdEchoRe, '');
+    }
+
     allOutput += chunk;
 
     const match = allOutput.match(markerRegex);
