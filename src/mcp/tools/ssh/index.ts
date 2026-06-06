@@ -20,6 +20,7 @@ import {
   sshShellLoginConfig,
   sshShellLoginHandler,
 } from "./shell.js";
+import { sshBuildConfig, sshBuildHandler } from "./build.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
@@ -40,4 +41,5 @@ export const mcpSshTools: ToolEntry[] = [
     sshConnectionsHandler
   ),
   mcpDefineTool("ssh_shell_login", sshShellLoginConfig, sshShellLoginHandler),
+  mcpDefineTool("ssh_build", sshBuildConfig, sshBuildHandler),
 ];

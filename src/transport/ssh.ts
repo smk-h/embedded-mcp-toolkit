@@ -176,6 +176,23 @@ export class SSHShell {
   }
 
   /**
+   * @brief 排空缓冲区但不停止数据收集
+   *
+   * 返回当前缓冲区内容并清空，但保持 #collecting 为 true，
+   * 用于长耗时命令执行期间持续接收输出数据。与 read(1) 不同的是，
+   * read(1) 在读取后会停止数据收集（#collecting = false），
+   * 而 drain() 不清除收集状态。
+   *
+   * @return 缓冲区中的文本内容
+   */
+  drain(): string {
+    const data = this.#buffer;
+    this.#buffer = "";
+    this.#overflow = false;
+    return data;
+  }
+
+  /**
    * @brief 关闭 shell 会话和 SSH 连接
    *
    * 释放所有资源，清空缓冲区。

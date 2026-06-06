@@ -18,7 +18,7 @@ import { KeyProvider } from "../../../utils/key-provider.js";
  * 以 session_id 为键，SSHShell 实例为值，
  * 所有 SSH MCP 工具通过此表查找和共享会话。
  */
-const sessions = new Map<string, SSHShell>();
+export const sessions = new Map<string, SSHShell>();
 
 /** @brief 会话自增计数器，用于生成唯一 session_id */
 let sessionCounter = 0;
