@@ -82,22 +82,33 @@ export function sanitize(raw: string): string {
 /**
  * @brief 清理日志行中的控制字符
  *
- * 移除回车符 \r，并将所有非打印控制字符替换为可见标记。
+ * 1. 先剥离 ANSI 转义序列（CSI、OSC 等）
+ * 2. 移除回车符 \r
+ * 3. 将非打印控制字符替换为可见标记（如 [ESC]、[BEL]）
+ *
  * 保留制表符 \t 和换行符 \n。
  * 供 FileLogger 和 Logger 共用。
- *
- * @param line 原始日志行（可能含控制字符）
- * @returns    纯文本的日志行，控制字符已转为可见标记
+ * 
+ * CSI(Control Sequence Introducer): ESC[参数+字母, 如颜色/光标控制
+ * OSC(Operating System Command): ESC]内容BEL, 如窗口标题 
+ * 
+ * @param line 原始日志行（可能含控制字符和 ANSI 序列）
+ * @returns    纯文本的日志行，ANSI 序列已剥离，控制字符已转为可见标记
  */
 export function sanitizeLine(line: string): string {
-  // 移除所有回车符。串口输出常以 \r\n 结尾，\n 已作行分隔符处理，\r 是冗余的终端控制字符
-  const stripped = line.replace(/\r/g, "");
+  // 例：输入 "\x1b[0;32m[SUCCESS]\x1b[0m 编译完成！\x1b]0;title\x07\r\n"
+  const stripped = line
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "[CSI]")     // "\x1b[0;32m"→"[CSI]"
+    .replace(/\x1b\][^\x07]*\x07/g, "[OSC]")        // "\x1b]0;title\x07"→"[OSC]"
+    .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "[ANSI]"); // 其他 ESC 开头序列 → "[ANSI]"
 
-  // CONTROL_RE 匹配 0x00-0x08、0x0B-0x0C、0x0E-0x1F、0x7F（不含 \t 0x09、\n 0x0A）
-  // 对每个匹配到的控制字符，取其 charCode 查映射表 CONTROL_CHARS
-  // 找到则替换为 "[ESC]" 等可见标记，找不到则丢弃（?? 确保空字符串不被误判为 falsy）
-  return stripped.replace(
+  // 此时："[CSI][SUCCESS][CSI] 编译完成！[OSC]\r\n"
+  const noCr = stripped.replace(/\r/g, "");
+  // 此时："[CSI][SUCCESS][CSI] 编译完成！[OSC]\n"
+
+  return noCr.replace(
     CONTROL_RE,
     (ch) => CONTROL_CHARS[ch.charCodeAt(0)] ?? ""
   );
+  // 最终："[CSI][SUCCESS][CSI] 编译完成！[OSC]\n"
 }

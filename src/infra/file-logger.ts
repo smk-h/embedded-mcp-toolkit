@@ -47,6 +47,7 @@ export class FileLogger {
     if (isNew) {
       const f = beijingFields();
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
+      this.#logStream.write("\uFEFF");
       this.#logStream.write(
         `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`
       );
