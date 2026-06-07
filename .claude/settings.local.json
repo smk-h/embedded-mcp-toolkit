@@ -16,5 +16,11 @@
   },
   "enabledMcpjsonServers": [
     "embedded-board"
-  ]
+  ],
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline --config .claude/ccstatusline-settings.json",
+    "padding": 0,
+    "refreshInterval": 5
+  }
 }
