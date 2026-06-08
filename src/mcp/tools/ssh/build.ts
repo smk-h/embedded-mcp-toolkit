@@ -182,7 +182,7 @@ function buildRemoteCommand(
 ): string {
   const buildCmd = `${command} 2>&1`;
   if (cwd) {
-    return `cd ${cwd} || { echo "${marker}:1"; exit 1; }; ${buildCmd}; echo "${marker}:$?"`;
+    return `(cd ${cwd} && ${buildCmd}); echo "${marker}:$?"`;
   }
   return `${buildCmd}; echo "${marker}:$?"`;
 }
