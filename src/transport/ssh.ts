@@ -196,7 +196,6 @@ export class SSHShell {
   drain(): string {
     const data = this.#buffer;
     this.#buffer = "";
-    this.#overflow = false;
     return data;
   }
 

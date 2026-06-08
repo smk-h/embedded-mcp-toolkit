@@ -279,61 +279,78 @@ export async function sshBuildHandler(args: {
   pollInterval?: number;
   classify?: boolean;
 }) {
-  const maxWait: number = args.maxWait ?? 600000;
-  const pollInterval: number = args.pollInterval ?? 2000;
-  const doClassify: boolean = args.classify ?? true;
+  // ── 参数默认值 ──
+  const maxWait: number = args.maxWait ?? 600000;   // 最大等待 10 分钟
+  const pollInterval: number = args.pollInterval ?? 2000; // 每 2 秒轮询一次
+  const doClassify: boolean = args.classify ?? true;      // 默认开启输出分类
 
   logger.info(
     `[ssh_build] session_id=${args.session_id} cwd=${args.cwd ?? "(none)"} command=${args.command} maxWait=${maxWait} pollInterval=${pollInterval} classify=${doClassify}`
   );
 
+  // ── 步骤 1：查找 SSH 会话 ──
   const shell = sessions.get(args.session_id);
   if (!shell) {
     return { content: [text(`Session ${args.session_id} not found.`)] };
   }
 
+  // ── 步骤 2：构造远端命令 ──
+  // fullCommand 形如：
+  //   cd <cwd> || { echo "___MCP_BUILD_DONE___:1"; exit 1; }; <command> 2>&1; echo "___MCP_BUILD_DONE___:$?"
+  // 或（无 cwd）：
+  //   <command> 2>&1; echo "___MCP_BUILD_DONE___:$?"
+  //
+  // 其中 cd 失败分支的 echo "___MCP_BUILD_DONE___:1" 会在 PTY 回显中出现 :1，
+  // 而 :1 会被 ___MCP_BUILD_DONE___:(\d+) 正则匹配，导致误检测。
+  // 因此必须在检测完成标记之前剥离 PTY 回显行（见步骤 4）。
   const fullCommand: string = buildRemoteCommand(
     args.command,
     args.cwd,
     BUILD_MARKER
   );
 
-  shell.write(fullCommand, 1);
+  // ── 步骤 3：发送命令 ──
+  // 先排空残留数据，再用 clear=0（追加模式）写入命令，overflow=true 确保缓冲满时保留最新数据
+  shell.drain();
+  shell.write(fullCommand, 0);
 
+  // ── 步骤 4：剥离 PTY 回显 ──
+  // PTY 会将用户输入的命令原样回显，回显是发送命令后收到的第一行数据（以 \n 结尾）。
+  // 回显中 cd 失败分支的 echo "___MCP_BUILD_DONE___:1" 会被后续正则误匹配，
+  // 因此先剥离回显行，\n 之后的所有数据才是真实构建输出。
   let allOutput: string = "";
-  const deadline: number = Date.now() + maxWait;
-  let exitCode: number | null = null;
-  const markerRegex = new RegExp(`${BUILD_MARKER}:(\\d+)`);
-  let echoStripped = false;
-
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    let chunk: string = shell.drain();
-
-    if (!echoStripped) {
-      // PTY echoes the command back; the echoed text contains the marker
-      // pattern literally, which would cause a premature match. Strip the
-      // echoed command line from the first drain before checking markers.
-      echoStripped = true;
-      const escapedCmd = fullCommand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const cmdEchoRe = new RegExp(
-        `(?:^|\\n)(?:\\x1b\\[[0-9;]*m|\\[.*?~])*[^\\n]*${escapedCmd}[^\\n]*\\r?\\n?`,
-        'g'
-      );
-      chunk = chunk.replace(cmdEchoRe, '');
-    }
-
-    allOutput += chunk;
-
-    const match = allOutput.match(markerRegex);
-    if (match) {
-      exitCode = parseInt(match[1], 10);
-      const markerIndex: number = allOutput.search(markerRegex);
-      allOutput = allOutput.substring(0, markerIndex).trimEnd();
+  let echoBuffer: string = "";
+  let echoRetries = 10;
+  while (echoRetries > 0) {
+    echoRetries--;
+    await new Promise(r => setTimeout(r, 200));
+    echoBuffer += shell.drain();
+    const nlIdx = echoBuffer.indexOf("\n");
+    if (nlIdx !== -1) {
+      allOutput = echoBuffer.substring(nlIdx + 1);
       break;
     }
   }
 
+  // ── 步骤 5：回显剥离完成后，轮询缓冲区检测完成标记 ──
+  const deadline: number = Date.now() + maxWait;
+  let exitCode: number | null = null;
+  const markerRegex = new RegExp(`${BUILD_MARKER}:(\\d+)`);
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    allOutput += shell.drain();
+
+    const match = allOutput.match(markerRegex);
+    if (match) {
+      exitCode = parseInt(match[1], 10);
+      allOutput = allOutput.substring(0, allOutput.search(markerRegex)).trimEnd();
+      break;
+    }
+  }
+
+  // ── 步骤 6：超时处理 ──
+  // 如果在截止时间内未检测到完成标记，视为编译超时
   if (exitCode === null) {
     const collector = createCollector();
     if (doClassify) {
@@ -357,12 +374,14 @@ export async function sshBuildHandler(args: {
     };
   }
 
+  // ── 步骤 7：构建成功/失败，格式化输出 ──
   const status: string = exitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED";
   logger.info(
     `[ssh_build] completed exitCode=${exitCode} outputLength=${allOutput.length}`
   );
 
   if (doClassify) {
+    // 按行分类：error / warning / info
     const collector = createCollector();
     collectOutput(collector, allOutput);
     logger.info(
@@ -377,6 +396,7 @@ export async function sshBuildHandler(args: {
     };
   }
 
+  // 不分类时直接返回原始输出
   return {
     content: [
       text(
