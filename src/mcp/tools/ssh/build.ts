@@ -15,14 +15,28 @@ import { sessions } from "./shell.js";
 /** @brief 编译完成标记，用于检测命令执行结束 */
 const BUILD_MARKER = "___MCP_BUILD_DONE___";
 
+/** @brief 非分类模式下返回的尾部行数 */
+const TAIL_LINES = 50;
+
+/**
+ * @brief 取字符串最后 N 行（不足 N 行则返回全部）
+ */
+function tailLines(text: string, n: number): string {
+  const lines = text.split("\n");
+  if (lines.length <= n) {
+    return text || "(no output)";
+  }
+  return `...(truncated ${lines.length - n} lines)\n${lines.slice(-n).join("\n")}`;
+}
+
 /** @brief 输出行分类 */
 type BuildCategory = "error" | "warning" | "info";
 
-/** @brief 编译输出分类采集队列 */
+/** @brief 编译输出分类采集队列（info 只计数不存储，避免内存膨胀） */
 interface BuildCollector {
   errors: string[];
   warnings: string[];
-  info: string[];
+  infoCount: number;
 }
 
 /**
@@ -37,7 +51,16 @@ interface BuildCollector {
 function classifyLine(line: string): BuildCategory {
   const lower = line.toLowerCase();
 
-  // 错误模式匹配
+  // ──────────────────── 错误模式匹配 ────────────────────
+  //   error: / fatal:         — 通用编译错误/致命错误前缀（如 "error: expected ';'"）
+  //   undefined reference      — 链接阶段：未定义引用（ld 经典报错）
+  //   No rule to make          — make：无规则可生成目标（缺少 Makefile 目标）
+  //   make[N]: ***             — make：严重构建失败标记
+  //   cannot find              — 编译/链接：找不到文件或符号（如 "cannot find -lfoo"）
+  //   collect2: error          — GCC 包装器调用 ld 失败
+  //   ld returned              — ld 非零退出（链接阶段失败汇总）
+  //   failed: / failed         — 构建步骤显式失败（如 "make: *** [all] Error 2"）
+  //   no such file or directory — 文件系统：找不到源文件或头文件
   if (
     /\berror\b[:\s]/i.test(line) ||
     /\bfatal\b[:\s]/i.test(line) ||
@@ -53,12 +76,17 @@ function classifyLine(line: string): BuildCategory {
     return "error";
   }
 
-  // 警告模式匹配
+  // ──────────────────── 警告模式匹配 ────────────────────
+  //   warning: / warning       — 通用编译警告前缀（如 "warning: unused variable"）
+  //   warn: / warn             — 简写形式的警告日志
+  //   deprecated               — 弃用 API 提示
+  //   [-W...]                  — GCC/Clang 警告标识（如 "[-Wreturn-type]"、"[-Wimplicit]"）
+  //                             注意：匹配 [-W 方括号形式，避免误判命令行中的 -Wall/-Wextra 等编译选项
   if (
     /\bwarning\b[:\s]/i.test(line) ||
     /\bwarn\b[:\s]/i.test(line) ||
     /\bdeprecated\b/i.test(line) ||
-    /-W[a-z]+/i.test(lower)
+    /\[-W[a-z]/i.test(line)
   ) {
     return "warning";
   }
@@ -70,7 +98,7 @@ function classifyLine(line: string): BuildCategory {
  * @brief 创建空的编译输出采集器
  */
 function createCollector(): BuildCollector {
-  return { errors: [], warnings: [], info: [] };
+  return { errors: [], warnings: [], infoCount: 0 };
 }
 
 /**
@@ -98,7 +126,7 @@ function collectOutput(collector: BuildCollector, rawOutput: string): void {
         collector.warnings.push(trimmed);
         break;
       default:
-        collector.info.push(trimmed);
+        collector.infoCount++;
         break;
     }
   }
@@ -111,18 +139,15 @@ function collectOutput(collector: BuildCollector, rawOutput: string): void {
  *   1. 构建状态摘要（成功/失败、退出码、统计）
  *   2. 错误列表（带编号）
  *   3. 警告列表（带编号）
- *   4. 完整构建日志
  *
  * @param collector  分类采集队列
  * @param exitCode   编译退出码
- * @param rawOutput  完整原始输出
  * @param sessionId  会话 ID，用于标识结果归属
  * @return 结构化的编译结果文本
  */
 function formatBuildResult(
   collector: BuildCollector,
   exitCode: number,
-  rawOutput: string,
   sessionId: string
 ): string {
   const statusLabel = exitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED";
@@ -131,7 +156,7 @@ function formatBuildResult(
   // 状态摘要
   parts.push(`[session: ${sessionId}] ${statusLabel} (exit code: ${exitCode})`);
   parts.push(
-    `Summary: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s), ${collector.info.length} info line(s)`
+    `Summary: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s), ${collector.infoCount} info line(s)`
   );
 
   // 错误列表
@@ -156,11 +181,7 @@ function formatBuildResult(
     }
   }
 
-  // 完整构建日志
-  parts.push("");
-  parts.push("=== BUILD LOG ===");
-  parts.push(rawOutput || "(no output)");
-
+  // 跳过完整构建日志（体量巨大，多数场景下 errors + warnings 足以分析问题）
   return parts.join("\n");
 }
 
@@ -182,6 +203,22 @@ function buildRemoteCommand(
 ): string {
   const buildCmd = `${command} 2>&1`;
   if (cwd) {
+    // 命令结构: (cd <cwd> && <buildCmd>); echo "<marker>:$?"
+    //
+    // [()] 括号创建子 shell，cd 仅影响子 shell 工作目录，不污染父 shell
+    //     cd 成功: 子 shell 工作目录切换到 cwd，继续执行 buildCmd
+    //     cd 失败: 子 shell 工作目录不变，跳过 buildCmd，退出码为 cd 的非零值
+    //
+    // [&&] 逻辑与短路
+    //     左侧成功(exit 0): 继续执行右侧 buildCmd
+    //     左侧失败(exit ≠0): 跳过右侧 buildCmd，子 shell 退出码为左侧值
+    //
+    // [;] 分号无条件连接，无论子 shell 成功或失败，echo 始终执行
+    //
+    // [$?] 捕获上一条命令（即子 shell）的退出码
+    //     cd 成功 + buildCmd 成功 → "$?:0"
+    //     cd 成功 + buildCmd 失败 → "$?:buildCmd 退出码"
+    //     cd 失败                 → "$?:cd 退出码(非零)"
     return `(cd ${cwd} && ${buildCmd}); echo "${marker}:$?"`;
   }
   return `${buildCmd}; echo "${marker}:$?"`;
@@ -328,8 +365,12 @@ export async function sshBuildHandler(args: {
     const nlIdx = echoBuffer.indexOf("\n");
     if (nlIdx !== -1) {
       allOutput = echoBuffer.substring(nlIdx + 1);
+      logger.info({ retries: 10 - echoRetries, echoLine: echoBuffer.substring(0, nlIdx) }, "PTY echo stripped successfully");
       break;
     }
+  }
+  if (echoRetries === 0) {
+    logger.warn({ echoBuffer }, "Failed to strip PTY echo: no newline found within retry limit");
   }
 
   // ── 步骤 5：回显剥离完成后，轮询缓冲区检测完成标记 ──
@@ -349,59 +390,45 @@ export async function sshBuildHandler(args: {
     }
   }
 
-  // ── 步骤 6：超时处理 ──
-  // 如果在截止时间内未检测到完成标记，视为编译超时
-  if (exitCode === null) {
-    const collector = createCollector();
-    if (doClassify) {
-      collectOutput(collector, allOutput);
-      return {
-        content: [
-          text(
-            `Build timed out after ${maxWait}ms.\n` +
-              `Partial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n` +
-              formatBuildResult(collector, -1, allOutput, args.session_id)
-          ),
-        ],
-      };
-    }
-    return {
-      content: [
-        text(
-          `Build timed out after ${maxWait}ms.\n\nPartial output:\n${allOutput || "(no output)"}`
-        ),
-      ],
-    };
-  }
+  // ── 步骤 6：超时/完成，统一格式化输出 ──
+  // exitCode 为 null 表示超时（未检测到完成标记），否则为实际退出码
+  const timedOut = exitCode === null;
+  // 超时时用 -1 作为退出码占位符，统一为 number 类型便于下游使用
+  // exitCode! 是 TypeScript 非空断言运算符（Non-null Assertion Operator）：
+  //   - exitCode 的类型是 number | null，TS 编译器无法从 timedOut===false 推断出此处 exitCode 非 null
+  //   - ! 告诉编译器："我确定这里不是 null/undefined，请当作 number 类型使用"
+  //   - 这是纯编译期提示，不产生任何运行时代码，运行时 exitCode 如果实际为 null 则会原值传递
+  //   - 此处安全：timedOut===false 意味着 exitCode !== null 已由上文 === 判断保证
+  const resolvedExitCode = timedOut ? -1 : exitCode!;
+  const header = timedOut
+    ? `Build timed out after ${maxWait}ms.`
+    : `${resolvedExitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED"} (exit code: ${resolvedExitCode})`;
 
-  // ── 步骤 7：构建成功/失败，格式化输出 ──
-  const status: string = exitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED";
-  logger.info(
-    `[ssh_build] completed exitCode=${exitCode} outputLength=${allOutput.length}`
-  );
+  if (timedOut) {
+    logger.warn(`[ssh_build] timed out after ${maxWait}ms, outputLength=${allOutput.length}`);
+  } else {
+    logger.info(`[ssh_build] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`);
+  }
 
   if (doClassify) {
-    // 按行分类：error / warning / info
     const collector = createCollector();
     collectOutput(collector, allOutput);
-    logger.info(
-      `[ssh_build] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.info.length} info lines`
-    );
+    if (!timedOut) {
+      logger.info(
+        `[ssh_build] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.infoCount} info lines`
+      );
+    }
+    const prefix = timedOut
+      ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
+      : "";
     return {
-      content: [
-        text(
-          formatBuildResult(collector, exitCode, allOutput, args.session_id)
-        ),
-      ],
+      content: [text(prefix + formatBuildResult(collector, resolvedExitCode, args.session_id))],
     };
   }
 
-  // 不分类时直接返回原始输出
   return {
     content: [
-      text(
-        `${status} (exit code: ${exitCode})\n\n${allOutput || "(no output)"}`
-      ),
+      text(`${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`),
     ],
   };
 }
