@@ -97,6 +97,33 @@ class Logger {
     console.warn(...args);
   }
 
+  /**
+   * 写入带分隔符的内容块到日志文件（仅文件，不输出到终端）
+   *
+   * 格式:
+   *   [YYYY-MM-DD HH:mm:ss] [LEVEL] [context] 描述::
+   *   ----------------------------
+   *       缩进 4 空格的内容行
+   *   ----------------------------
+   */
+  block(level: string, context: string, description: string, content: string): void {
+    this.ensureInit();
+    if (!this.logFile) return;
+    try {
+      const parts: string[] = [];
+      parts.push(`${logTimestamp()} [${level}] [${context}] ${description}::`);
+      parts.push("----------------------------");
+      for (const line of content.split("\n")) {
+        parts.push(`    ${line}`);
+      }
+      parts.push("----------------------------");
+      const safe = sanitizeLine(parts.join("\n") + "\n");
+      appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
+    } catch {
+      /* 静默失败，不影响主流程 */
+    }
+  }
+
   /** 是否启用了文件保存 */
   get isEnabled(): boolean {
     return this.logFile !== null;

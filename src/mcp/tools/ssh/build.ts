@@ -52,39 +52,40 @@ function classifyLine(line: string): BuildCategory {
   const lower = line.toLowerCase();
 
   // ──────────────────── 错误模式匹配 ────────────────────
-  //   error: / fatal:         — 通用编译错误/致命错误前缀（如 "error: expected ';'"）
+  //   error: / fatal: / [ERROR] — 通用编译错误/致命错误前缀（含日志格式 [ERROR]）
   //   undefined reference      — 链接阶段：未定义引用（ld 经典报错）
   //   No rule to make          — make：无规则可生成目标（缺少 Makefile 目标）
-  //   make[N]: ***             — make：严重构建失败标记
-  //   cannot find              — 编译/链接：找不到文件或符号（如 "cannot find -lfoo"）
+  //   make[N]: *** / make: *** — make：严重构建失败标记
+  //   cannot find / can't find — 编译/链接：找不到文件或符号（如 "cannot find -lfoo"）
   //   collect2: error          — GCC 包装器调用 ld 失败
   //   ld returned              — ld 非零退出（链接阶段失败汇总）
   //   failed: / failed         — 构建步骤显式失败（如 "make: *** [all] Error 2"）
   //   no such file or directory — 文件系统：找不到源文件或头文件
   if (
-    /\berror\b[:\s]/i.test(line) ||
+    /\berror\b[:\s\]]/i.test(line) ||
     /\bfatal\b[:\s]/i.test(line) ||
     /undefined reference/i.test(line) ||
     /No rule to make/i.test(line) ||
-    /make\[.+\]: \*\*\*/i.test(line) ||
+    /make(?:\[.+\])?: \*\*\*/i.test(line) ||
     /cannot find/i.test(line) ||
+    /can'?t\s+find/i.test(line) ||
     /collect2: error/i.test(line) ||
     /ld returned/i.test(line) ||
-    /\bfailed\b[:\s]/i.test(line) ||
+    /\bfailed\b[:\s\]]/i.test(line) ||
     /no such file or directory/i.test(line)
   ) {
     return "error";
   }
 
   // ──────────────────── 警告模式匹配 ────────────────────
-  //   warning: / warning       — 通用编译警告前缀（如 "warning: unused variable"）
-  //   warn: / warn             — 简写形式的警告日志
+  //   warning: / [WARNING]     — 通用编译警告前缀（含日志格式 [WARNING]）
+  //   warn: / [WARN]           — 简写形式的警告日志
   //   deprecated               — 弃用 API 提示
   //   [-W...]                  — GCC/Clang 警告标识（如 "[-Wreturn-type]"、"[-Wimplicit]"）
   //                             注意：匹配 [-W 方括号形式，避免误判命令行中的 -Wall/-Wextra 等编译选项
   if (
-    /\bwarning\b[:\s]/i.test(line) ||
-    /\bwarn\b[:\s]/i.test(line) ||
+    /\bwarning\b[:\s\]]/i.test(line) ||
+    /\bwarn\b[:\s\]]/i.test(line) ||
     /\bdeprecated\b/i.test(line) ||
     /\[-W[a-z]/i.test(line)
   ) {
@@ -418,11 +419,16 @@ export async function sshBuildHandler(args: {
         `[ssh_build] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.infoCount} info lines`
       );
     }
+
+    // 将分类摘要写入日志文件
+    const formatted = formatBuildResult(collector, resolvedExitCode, args.session_id);
+    logger.block("INFO", `ssh_build:${args.session_id}`, "build classified", formatted);
+
     const prefix = timedOut
       ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
       : "";
     return {
-      content: [text(prefix + formatBuildResult(collector, resolvedExitCode, args.session_id))],
+      content: [text(prefix + formatted)],
     };
   }
 
