@@ -284,47 +284,6 @@ export function powerShellReadHandler(args: {
   return { content: [text(output || "(no output)")] };
 }
 
-// ── power_shell_list ────────────────────────────────────────
-
-/**
- * @brief power_shell_list 工具配置
- *
- * 列出当前所有活跃的 PowerShell Shell 会话。
- */
-export const powerShellListConfig = {
-  description: "List all active PowerShell shell sessions.",
-  inputSchema: fromJsonSchema<Record<string, never>>({
-    type: "object",
-    properties: {},
-  }),
-};
-
-/**
- * @brief power_shell_list 处理函数
- *
- * 遍历会话存储表，返回所有活跃会话的 session_id 列表。
- *
- * @return MCP 响应，包含活跃会话列表或"无活跃会话"提示
- */
-export function powerShellListHandler() {
-  logger.info("[power_shell_list]");
-  const activeSessions = registry.listByType("powershell");
-
-  if (activeSessions.length === 0) {
-    return { content: [text("No active PowerShell sessions.")] };
-  }
-
-  const lines: string[] = [
-    `Active PowerShell sessions: ${activeSessions.length}`,
-    "",
-  ];
-  for (const s of activeSessions) {
-    lines.push(`  [${s.id}]  local  ${s.connectionInfo}`);
-  }
-
-  return { content: [text(lines.join("\n"))] };
-}
-
 // ── power_shell_exec ────────────────────────────────────────
 
 /**

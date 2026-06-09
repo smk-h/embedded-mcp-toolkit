@@ -14,8 +14,7 @@ import {
   powerShellWriteHandler,
   powerShellReadConfig,
   powerShellReadHandler,
-  powerShellListConfig,
-  powerShellListHandler,
+
   powerShellExecConfig,
   powerShellExecHandler,
 } from "./powershell.js";
@@ -49,11 +48,6 @@ export const mcpWinTools: ToolEntry[] = [
     "power_shell_read",
     powerShellReadConfig,
     powerShellReadHandler
-  ),
-  mcpDefineTool(
-    "power_shell_list",
-    powerShellListConfig,
-    powerShellListHandler
   ),
   mcpDefineTool(
     "power_shell_exec",

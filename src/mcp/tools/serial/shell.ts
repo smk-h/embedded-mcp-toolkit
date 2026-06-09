@@ -361,47 +361,6 @@ export function serialReadHandler(args: {
   return { content: [text(output || "(no output)")] };
 }
 
-// ── serial_list ──────────────────────────────────────────────
-
-/**
- * @brief serial_list 工具配置
- *
- * 列出当前所有活跃的串口会话及其端口信息。
- */
-export const serialListConfig = {
-  description: "List all active serial sessions with port and session ID.",
-  inputSchema: fromJsonSchema<Record<string, never>>({
-    type: "object",
-    properties: {},
-  }),
-};
-
-/**
- * @brief serial_list 处理函数
- *
- * 遍历会话存储表，返回每个活跃会话的 session_id 和对应端口。
- *
- * @return MCP 响应，包含活跃会话列表或"无活跃会话"提示
- */
-export function serialListHandler() {
-  logger.info("[serial_list]");
-  const activeSessions = registry.listByType("serial");
-
-  if (activeSessions.length === 0) {
-    return { content: [text("No active serial sessions.")] };
-  }
-
-  const lines: string[] = [
-    `Active serial sessions: ${activeSessions.length}`,
-    "",
-  ];
-  for (const s of activeSessions) {
-    lines.push(`  [${s.id}]  ${s.deviceName}  ${s.connectionInfo}`);
-  }
-
-  return { content: [text(lines.join("\n"))] };
-}
-
 // ── serial_exec ──────────────────────────────────────────────
 
 /**

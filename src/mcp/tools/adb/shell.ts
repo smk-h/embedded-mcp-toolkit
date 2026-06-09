@@ -320,46 +320,6 @@ export function adbShellReadHandler(args: {
   return { content: [text(output || "(no output)")] };
 }
 
-// ── adb_shell_list ──────────────────────────────────────────
-
-/**
- * @brief adb_shell_list 工具配置
- *
- * 列出当前所有活跃的 ADB Shell 会话。
- */
-export const adbShellListConfig = {
-  description: "List all active ADB shell sessions.",
-  inputSchema: fromJsonSchema<Record<string, never>>({
-    type: "object",
-    properties: {},
-  }),
-};
-
-/**
- * @brief adb_shell_list 处理函数
- *
- * 遍历会话存储表，返回所有活跃会话的 session_id 列表。
- *
- * @returns MCP 响应，包含活跃会话列表或"无活跃会话"提示
- */
-export function adbShellListHandler() {
-  logger.info("[adb_shell_list]");
-  const activeSessions = registry.listByType("adb");
-
-  if (activeSessions.length === 0) {
-    return { content: [text("No active ADB shell sessions.")] };
-  }
-
-  const lines: string[] = [`Active sessions: ${activeSessions.length}`, ""];
-  for (const s of activeSessions) {
-    lines.push(`  [${s.id}]`);
-    lines.push(`  Device:     ${s.deviceName}`);
-    lines.push(`  SerialNo:   ${s.connectionInfo}`);
-  }
-
-  return { content: [text(lines.join("\n"))] };
-}
-
 // ── adb_shell_exec ──────────────────────────────────────────
 
 /**

@@ -282,44 +282,6 @@ export function sshShellReadHandler(args: {
   return { content: [text(output || "(no output)")] };
 }
 
-// ── ssh_shell_list ──────────────────────────────────────────
-
-/**
- * @brief ssh_shell_list 工具配置
- *
- * 列出当前所有活跃的 SSH Shell 会话。
- */
-export const sshShellListConfig = {
-  description: "List all active SSH shell sessions.",
-  inputSchema: fromJsonSchema<Record<string, never>>({
-    type: "object",
-    properties: {},
-  }),
-};
-
-/**
- * @brief ssh_shell_list 处理函数
- *
- * 遍历会话存储表，返回所有活跃会话的 session_id 列表。
- *
- * @return MCP 响应，包含活跃会话列表或"无活跃会话"提示
- */
-export function sshShellListHandler() {
-  logger.info("[ssh_shell_list]");
-  const sessions = registry.listByType("ssh");
-
-  if (sessions.length === 0) {
-    return { content: [text("No active SSH sessions.")] };
-  }
-
-  const lines: string[] = [`Active SSH sessions: ${sessions.length}`, ""];
-  for (const s of sessions) {
-    lines.push(`  [${s.id}]  ${s.deviceName}  ${s.connectionInfo}`);
-  }
-
-  return { content: [text(lines.join("\n"))] };
-}
-
 // ── ssh_shell_exec ──────────────────────────────────────────
 
 /**

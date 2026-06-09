@@ -28,6 +28,7 @@
 | `version_tool` | 获取 MCP 服务器版本和工具包信息 | 无 |
 | `greet_tool` | 打招呼测试 | `name` |
 | `notify_demo_tool` | 演示服务端→客户端通知（日志/工具列表变更） | `type`, `message?`, `level?` |
+| `session_info` | 查询会话信息（按 session_id/device/all 三种模式） | `session_id?`, `device?` |
 
 ### SSH 工具（需先 open 获取 session_id）
 
@@ -37,7 +38,6 @@
 | `ssh_shell_close` | 关闭 SSH Shell 会话 | `session_id` |
 | `ssh_shell_write` | 向 SSH Shell 发送命令 | `session_id`, `command`, `clear?` |
 | `ssh_shell_read` | 读取 SSH Shell 输出 | `session_id`, `clear?` |
-| `ssh_shell_list` | 列出所有活跃 SSH 会话 | 无 |
 | `ssh_shell_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
 | `ssh_shell_connection` | 检查远端板卡上活跃的 SSH 连接 | `session_id` |
 | `ssh_shell_login` | **一键登录**（连接 + PSH 检测 + 解锁） | `device?`, `key?`, `timeout?`(ms) |
@@ -51,7 +51,6 @@
 | `serial_close` | 关闭串口会话 | `session_id` |
 | `serial_write` | 向串口发送命令 | `session_id`, `command`, `clear?` |
 | `serial_read` | 读取串口输出 | `session_id`, `clear?` |
-| `serial_list` | 列出所有活跃串口会话 | 无 |
 | `serial_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
 | `serial_shell_login` | **一键登录**（连接 + PSH 检测 + 解锁） | `device?`, `key?`, `timeout?`(ms) |
 | `serial_enter_uboot` | 重启设备并进入 U-Boot 命令行 | `session_id`, `timeout?`(s) |
@@ -66,7 +65,6 @@
 | `adb_shell_close` | 关闭 ADB Shell 会话并终止子进程 | `session_id` |
 | `adb_shell_write` | 向 ADB Shell 发送命令 | `session_id`, `command`, `clear?` |
 | `adb_shell_read` | 读取 ADB Shell 输出 | `session_id`, `clear?` |
-| `adb_shell_list` | 列出所有活跃 ADB Shell 会话 | 无 |
 | `adb_shell_exec` | 发送命令 + 等待 + 读取（write+delay+read） | `session_id`, `command`, `delay?`(ms), `clear?` |
 
 #### 一次性命令（无需 session）
@@ -87,7 +85,6 @@
 | `power_shell_close` | 关闭 PowerShell 会话 | `session_id` |
 | `power_shell_write` | 向 PowerShell 发送命令 | `session_id`, `command`, `clear?` |
 | `power_shell_read` | 读取 PowerShell 输出 | `session_id`, `clear?` |
-| `power_shell_list` | 列出所有活跃 PowerShell 会话 | 无 |
 | `power_shell_exec` | 发送命令 + 等待 + 读取 | `session_id`, `command`, `delay?`(ms), `clear?` |
 
 ## 使用指南
