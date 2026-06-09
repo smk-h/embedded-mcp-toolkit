@@ -98,30 +98,55 @@ class Logger {
   }
 
   /**
-   * 写入带分隔符的内容块到日志文件（仅文件，不输出到终端）
+   * 写入带分隔符的内容块到日志文件和终端
    *
    * 格式:
    *   [YYYY-MM-DD HH:mm:ss] [LEVEL] [context] 描述::
    *   ----------------------------
    *       缩进 4 空格的内容行
    *   ----------------------------
+   *
+   * @param level       日志级别 (INFO, WARN, ERROR)
+   * @param context     上下文标识 (如 "psh", "ssh_build:ssh_1")
+   * @param description 块描述/标签
+   * @param content     块内容
+   * @param maxLines    最大保留行数，正数=截断省略中间行，-1=全部显示（默认 -1）
    */
-  block(level: string, context: string, description: string, content: string): void {
+  block(level: string, context: string, description: string, content: string, maxLines = -1): void {
     this.ensureInit();
-    if (!this.logFile) return;
-    try {
-      const parts: string[] = [];
-      parts.push(`${logTimestamp()} [${level}] [${context}] ${description}::`);
-      parts.push("----------------------------");
-      for (const line of content.split("\n")) {
-        parts.push(`    ${line}`);
+    if (!content) return;
+
+    let display = content;
+    if (maxLines > 0) {
+      const lines = content.split(/\r?\n/);
+      if (lines.length > maxLines) {
+        const half = Math.floor(maxLines / 2);
+        const head = lines.slice(0, half).join("\n");
+        const tail = lines.slice(-half).join("\n");
+        display = `${head}\n...[${lines.length - maxLines} lines omitted]...\n${tail}`;
       }
-      parts.push("----------------------------");
-      const safe = sanitizeLine(parts.join("\n") + "\n");
-      appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
-    } catch {
-      /* 静默失败，不影响主流程 */
     }
+
+    const parts: string[] = [];
+    const ctxTag = context ? `[${context}] ` : "";
+    parts.push(`${logTimestamp()} [${level}] ${ctxTag}${description}:`);
+    parts.push("----------------------------");
+    for (const line of display.split("\n")) {
+      parts.push(`    ${line}`);
+    }
+    parts.push("----------------------------");
+
+    if (this.logFile) {
+      try {
+        const safe = sanitizeLine(parts.join("\n") + "\n");
+        appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
+      } catch {
+        /* 静默失败，不影响主流程 */
+      }
+    }
+
+    const indented = display.split("\n").map((line) => `    ${line}`).join("\n");
+    process.stderr.write(`${description}:\n----------------------------\n${indented}\n----------------------------\n`);
   }
 
   /** 是否启用了文件保存 */

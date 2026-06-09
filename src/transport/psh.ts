@@ -47,35 +47,7 @@ function truncateMatch(text: string, maxLen = 60): string {
   return firstLine.slice(0, maxLen) + "...";
 }
 
-/**
- * 记录原始终端输出块（分析前调用）
- *
- * 用 `----------------------------` 分隔线包裹输出内容，
- * 超过 maxLines 时保留头部和尾部，中间行省略。
- *
- * @param label    - 日志标签（如 "[PshSM ${this._transport}] start banner"）
- * @param output   - 终端原始输出
- * @param maxLines - 最大保留行数（默认 8）
- */
-function logOutputBlock(label: string, output: string, maxLines = 8): void {
-  if (!output) return;
-  const lines = output.split(/\r?\n/);
-  let display: string;
-  if (lines.length <= maxLines) {
-    display = output;
-  } else {
-    const head = lines.slice(0, maxLines / 2).join("\n");
-    const tail = lines.slice(-maxLines / 2).join("\n");
-    display = `${head}\n...[${lines.length - maxLines} lines omitted]...\n${tail}`;
-  }
-  const indented = display
-    .split("\n")
-    .map((line) => `    ${line}`)
-    .join("\n");
-  logger.info(
-    `${label}:\n----------------------------\n${indented}\n----------------------------\n`
-  );
-}
+
 
 /**
  * 解锁序列中的单步操作
@@ -500,7 +472,7 @@ export class PshHandler {
    * 适用于连接后读取 banner/缓冲区内容来判断初始状态。
    */
   detect(output: string): PshDetectResult {
-    logOutputBlock(`[PshHandler:${this.transport}] detect 输出:`, output);
+    logger.block("INFO", "", `[PshHandler:${this.transport}] detect 输出`, output, 8);
     const state = this.detectState(output);
     const isPsh = state !== PshState.UNKNOWN || this.isPsh(output);
     const challengeCode = this.extractChallengeCode(output);
@@ -639,10 +611,7 @@ export class PshHandler {
       await this.#wait(stepDelay);
 
       lastOutput = channel.read(1);
-      logOutputBlock(
-        `[PshHandler:${this.transport}] 步骤 ${stepNum} 响应:`,
-        lastOutput
-      );
+      logger.block("INFO", "", `[PshHandler:${this.transport}] 步骤 ${stepNum} 响应`, lastOutput, 8);
       const state = this.detectState(lastOutput);
       logger.info(
         `[PshHandler:${this.transport}] 步骤 ${stepNum}: 当前状态 → ${state}`
@@ -753,10 +722,7 @@ export class PshHandler {
     // 第一步：静默读取已有输出，尝试判断状态
     const pending = channel.read(0);
     if (pending) {
-      logOutputBlock(
-        `[PshHandler:${this.transport}] probeState → 缓冲区已有输出:`,
-        pending
-      );
+      logger.block("INFO", "", `[PshHandler:${this.transport}] probeState → 缓冲区已有输出`, pending, 8);
       const result = this.detect(pending);
       if (result.state !== PshState.UNKNOWN) {
         logger.info(
@@ -780,10 +746,7 @@ export class PshHandler {
     await this.#wait(Math.min(timeoutMs, 2000));
     const output = channel.read(1);
     if (output) {
-      logOutputBlock(
-        `[PshHandler:${this.transport}] probeState → 探测响应:`,
-        output
-      );
+      logger.block("INFO", "", `[PshHandler:${this.transport}] probeState → 探测响应`, output, 8);
     } else {
       logger.info(`[PshHandler:${this.transport}] probeState → 探测无响应`);
     }
@@ -1049,7 +1012,7 @@ export class PshStateMachine {
   start(banner: string): PshStateMachineAction {
     this._output = banner;
     logger.info(`[PshSM:${this._transport}] ┌── start ── 开始分析 banner`);
-    logOutputBlock(`[PshSM:${this._transport}] banner 原始输出:`, banner);
+    logger.block("INFO", "", `[PshSM:${this._transport}] banner 原始输出`, banner, 8);
 
     // 规则 1: banner 能匹配到 PSH profile
     this._handler = PshHandler.matchFromOutput(banner, this._transport); // 从BUILTIN_PROFILES中匹配
@@ -1137,7 +1100,7 @@ export class PshStateMachine {
     logger.info(
       `[PshSM:${this._transport}] ┌── feed ── 收到输出, probeCount=${this._probeCount}`
     );
-    logOutputBlock(`[PshSM:${this._transport}] feed 输出:`, output);
+    logger.block("INFO", "", `[PshSM:${this._transport}] feed 输出`, output, 8);
 
     // ── 首次探测结果分析 (banner 未匹配过 profile) ──
     if (!this._handler) {

@@ -406,9 +406,9 @@ export async function sshBuildHandler(args: {
     : `${resolvedExitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED"} (exit code: ${resolvedExitCode})`;
 
   if (timedOut) {
-    logger.warn(`[ssh_build] timed out after ${maxWait}ms, outputLength=${allOutput.length}`);
+    logger.warn(`[ssh_build:${args.session_id}] timed out after ${maxWait}ms, outputLength=${allOutput.length}`);
   } else {
-    logger.info(`[ssh_build] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`);
+    logger.info(`[ssh_build:${args.session_id}] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`);
   }
 
   if (doClassify) {
@@ -416,7 +416,7 @@ export async function sshBuildHandler(args: {
     collectOutput(collector, allOutput);
     if (!timedOut) {
       logger.info(
-        `[ssh_build] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.infoCount} info lines`
+        `[ssh_build:${args.session_id}] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.infoCount} info lines`
       );
     }
 
