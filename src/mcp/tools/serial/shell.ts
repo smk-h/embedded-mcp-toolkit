@@ -174,7 +174,7 @@ export async function serialOpenHandler(args: {
     type: "serial",
     deviceName,
     connectionInfo: `${config.port} @ ${config.baudRate ?? 115200}`,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
   shell.fileLogger.enableFromEnv(sessionId);
@@ -569,7 +569,7 @@ export async function serialShellLoginHandler(args: {
       type: "serial",
       deviceName,
       connectionInfo: `${baseConfig.port} @ ${baseConfig.baudRate ?? 115200}`,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(), // UTC
     });
     shell.fileLogger.enableFromEnv(newId);
   }

@@ -19,6 +19,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../infra/logger.js";
 import { registry, type SessionMeta } from "../../sessions/registry.js";
+import { formatBeijingTime } from "../../../utils/timestamp.js";
 
 // ── session_info ──────────────────────────────────────────
 
@@ -65,7 +66,7 @@ function formatSessionMeta(s: SessionMeta): string[] {
     `  Type:         ${s.type}`,
     `  Device:       ${s.deviceName}`,
     `  Connection:   ${s.connectionInfo}`,
-    `  Created:      ${s.createdAt}`,
+    `  Created:      ${formatBeijingTime(s.createdAt)}`,
     "",
   ];
 }

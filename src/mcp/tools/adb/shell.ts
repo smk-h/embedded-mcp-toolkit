@@ -136,7 +136,7 @@ export async function adbShellOpenHandler(args: { device?: string }) {
     type: "adb",
     deviceName,
     connectionInfo: shell.getSerialNo(),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
 

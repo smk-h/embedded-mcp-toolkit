@@ -39,3 +39,20 @@ export function logTimestamp(): string {
   const f = beijingFields();
   return `[${f.y}-${f.m}-${f.d} ${f.hh}:${f.mm}:${f.ss}]`;
 }
+
+/**
+ * @brief 将 UTC 时间转为北京时间(CST)显示
+ *
+ * 格式: YYYY-MM-DD HH:mm:ss
+ */
+export function formatBeijingTime(utc: string): string {
+  const d = new Date(utc);
+  const bj = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+  const y = bj.getFullYear();
+  const m = String(bj.getMonth() + 1).padStart(2, "0");
+  const day = String(bj.getDate()).padStart(2, "0");
+  const h = String(bj.getHours()).padStart(2, "0");
+  const min = String(bj.getMinutes()).padStart(2, "0");
+  const s = String(bj.getSeconds()).padStart(2, "0");
+  return `${y}-${m}-${day} ${h}:${min}:${s}`;
+}

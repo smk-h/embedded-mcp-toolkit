@@ -102,7 +102,7 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
     type: "powershell",
     deviceName: "local",
     connectionInfo: shell.getWorkingDir(),
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[power_shell_open] session opened: ${sessionId}`);
 

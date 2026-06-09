@@ -103,7 +103,7 @@ export async function sshShellOpenHandler(args: {
     type: "ssh",
     deviceName,
     connectionInfo: `${config.host}:${config.port ?? 22}`,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
@@ -523,7 +523,7 @@ export async function sshShellLoginHandler(args: {
     type: "ssh",
     deviceName,
     connectionInfo: `${config.host}:${config.port ?? 22}`,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[ssh_shell_login] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
