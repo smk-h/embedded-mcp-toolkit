@@ -15,6 +15,7 @@ import {
   PSH_STATE_DESC,
 } from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
+import { registry } from "../../sessions/registry.js";
 // ── 会话存储 ────────────────────────────────────────────────
 
 /**
@@ -111,6 +112,7 @@ export async function serialOpenHandler(args: {
     `[serial_open] device=${args.device ?? "(default)"} port=${args.port ?? "(auto)"} baudRate=${args.baudRate ?? 115200}`
   );
   // 获取设备配置，显式参数覆盖设备配置
+  const deviceName = args.device ?? process.env.DEVICE ?? "default";
   const baseConfig: SerialShellConfig = getSerialConfig(args.device);
   const config: SerialShellConfig = {
     port: args.port ?? baseConfig.port,
@@ -128,10 +130,11 @@ export async function serialOpenHandler(args: {
       | "odd"
       | undefined,
     lineEnding: baseConfig.lineEnding,
+    deviceName,
   };
 
   if (config.port === "none") {
-    const msg = `Device '${args.device ?? "(default)"}' does not support serial (port is none).`;
+    const msg = `Device '${deviceName}' does not support serial (port is none).`;
     logger.warn(msg);
     return { content: [text(msg)] };
   }
@@ -166,6 +169,13 @@ export async function serialOpenHandler(args: {
   const sessionId = `serial_${++sessionCounter}`;
   sessions.set(sessionId, shell);
   portToSession.set(config.port, sessionId);
+  registry.register({
+    id: sessionId,
+    type: "serial",
+    deviceName,
+    connectionInfo: `${config.port} @ ${config.baudRate ?? 115200}`,
+    createdAt: new Date().toISOString(),
+  });
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
   shell.fileLogger.enableFromEnv(sessionId);
 
@@ -222,6 +232,7 @@ export async function serialCloseHandler(args: { session_id: string }) {
   const port = shell.getPort();
   await shell.close();
   sessions.delete(args.session_id);
+  registry.unregister(args.session_id);
   if (port) {
     portToSession.delete(port);
   }
@@ -374,16 +385,21 @@ export const serialListConfig = {
  */
 export function serialListHandler() {
   logger.info("[serial_list]");
-  if (sessions.size === 0) {
+  const activeSessions = registry.listByType("serial");
+
+  if (activeSessions.length === 0) {
     return { content: [text("No active serial sessions.")] };
   }
 
-  const lines: string[] = [];
-  for (const [sessionId, shell] of sessions) {
-    lines.push(`${sessionId} -> ${shell.getPort()}`);
+  const lines: string[] = [
+    `Active serial sessions: ${activeSessions.length}`,
+    "",
+  ];
+  for (const s of activeSessions) {
+    lines.push(`  [${s.id}]  ${s.deviceName}  ${s.connectionInfo}`);
   }
 
-  return { content: [text(`Active serial sessions:\n${lines.join("\n")}`)] };
+  return { content: [text(lines.join("\n"))] };
 }
 
 // ── serial_exec ──────────────────────────────────────────────
@@ -533,10 +549,11 @@ export async function serialShellLoginHandler(args: {
   logger.info(
     `[serial_shell_login] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 1500} key=${args.key ? "***" : "(none)"}`
   );
+  const deviceName = args.device ?? process.env.DEVICE ?? "default";
   const baseConfig: SerialShellConfig = getSerialConfig(args.device);
 
   if (baseConfig.port === "none") {
-    const msg = `Device '${args.device ?? "(default)"}' does not support serial (port is none).`;
+    const msg = `Device '${deviceName}' does not support serial (port is none).`;
     logger.warn(msg);
     return { content: [text(msg)] };
   }
@@ -545,8 +562,19 @@ export async function serialShellLoginHandler(args: {
 
   // ===== 打开串口（或复用已有 session）=====
   const existingId = portToSession.get(baseConfig.port);
+  let newSessionId: string | undefined;
   let shell: SerialShell;
   let banner: string;
+
+  // 失败时清理新建会话的辅助函数
+  const cleanupNewSession = async (): Promise<void> => {
+    if (newSessionId) {
+      await shell.close();
+      sessions.delete(newSessionId);
+      portToSession.delete(baseConfig.port);
+      registry.unregister(newSessionId);
+    }
+  };
 
   if (existingId && sessions.has(existingId)) {
     shell = sessions.get(existingId)!;
@@ -559,6 +587,7 @@ export async function serialShellLoginHandler(args: {
       stopBits: baseConfig.stopBits as 1 | 1.5 | 2 | undefined,
       parity: baseConfig.parity as "none" | "even" | "odd" | undefined,
       lineEnding: baseConfig.lineEnding,
+      deviceName,
     });
     try {
       banner = await shell.open();
@@ -573,8 +602,16 @@ export async function serialShellLoginHandler(args: {
     }
     // open 成功后立即注册会话并启用日志，确保解锁/探测过程的串口数据被保存
     const newId = `serial_${++sessionCounter}`;
+    newSessionId = newId;
     sessions.set(newId, shell);
     portToSession.set(baseConfig.port, newId);
+    registry.register({
+      id: newId,
+      type: "serial",
+      deviceName,
+      connectionInfo: `${baseConfig.port} @ ${baseConfig.baudRate ?? 115200}`,
+      createdAt: new Date().toISOString(),
+    });
     shell.fileLogger.enableFromEnv(newId);
   }
 
@@ -610,7 +647,9 @@ export async function serialShellLoginHandler(args: {
   if (action.state === PshState.UNLOCKING) {
     if (!args.key) {
       logger.warn(`[serial_shell_login] PSH处于UNLOCKING状态但未提供密钥`);
-      if (!existingId) await shell.close();
+      if (!existingId) {
+        await cleanupNewSession();
+      }
       return {
         content: [
           text(
@@ -665,7 +704,9 @@ export async function serialShellLoginHandler(args: {
   if (action.state === PshState.LOCKED) {
     if (!handler) {
       logger.warn(`[serial_shell_login] PSH已锁定但无匹配handler`);
-      if (!existingId) await shell.close();
+      if (!existingId) {
+        await cleanupNewSession();
+      }
       return { content: [text("PSH LOCKED but no matching handler found.")] };
     }
 
@@ -902,6 +943,7 @@ export async function disposeAllSerialSessions(): Promise<void> {
     } catch (err) {
       logger.error(`[serial_dispose] session ${id} close failed:`, err);
     }
+    registry.unregister(id);
   }
   sessions.clear();
   portToSession.clear();

@@ -20,6 +20,7 @@ import { text } from "../../tool-registry.js";
 import { logger } from "../../../infra/logger.js";
 import { resolveAdbSerial, resolveDeviceName } from "../../../infra/config.js";
 import { AdbShell, type AdbShellConfig } from "../../../transport/adb.js";
+import { registry } from "../../sessions/registry.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -130,6 +131,13 @@ export async function adbShellOpenHandler(args: { device?: string }) {
   // open() 成功后才将 shell 存入会话表，后续操作通过 session_id 复用该进程
   const sessionId = `adb_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  registry.register({
+    id: sessionId,
+    type: "adb",
+    deviceName,
+    connectionInfo: shell.getSerialNo(),
+    createdAt: new Date().toISOString(),
+  });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
 
   return {
@@ -184,6 +192,7 @@ export async function adbShellCloseHandler(args: { session_id: string }) {
 
   await shell.close();
   sessions.delete(args.session_id);
+  registry.unregister(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -335,18 +344,17 @@ export const adbShellListConfig = {
  */
 export function adbShellListHandler() {
   logger.info("[adb_shell_list]");
-  const ids = [...sessions.keys()];
+  const activeSessions = registry.listByType("adb");
 
-  if (ids.length === 0) {
+  if (activeSessions.length === 0) {
     return { content: [text("No active ADB shell sessions.")] };
   }
 
-  const lines: string[] = [`Active sessions: ${ids.length}`, ""];
-  for (const id of ids) {
-    const shell = sessions.get(id)!;
-    lines.push(`  [${id}]`);
-    lines.push(`  Device:     ${shell.getDeviceName()}`);
-    lines.push(`  SerialNo:   ${shell.getSerialNo()}`);
+  const lines: string[] = [`Active sessions: ${activeSessions.length}`, ""];
+  for (const s of activeSessions) {
+    lines.push(`  [${s.id}]`);
+    lines.push(`  Device:     ${s.deviceName}`);
+    lines.push(`  SerialNo:   ${s.connectionInfo}`);
   }
 
   return { content: [text(lines.join("\n"))] };
@@ -449,6 +457,7 @@ export async function disposeAllAdbShellSessions(): Promise<void> {
     } catch (err) {
       logger.error(`[adb_dispose] session ${id} close failed:`, err);
     }
+    registry.unregister(id);
   }
   sessions.clear();
 }

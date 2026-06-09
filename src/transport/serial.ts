@@ -35,6 +35,8 @@ export interface SerialShellConfig {
   loginUsername?: string;
   /** 串口登录密码（用于 userLoginDemoSerial 等需要串口认证的场景） */
   loginPassword?: string;
+  /** 设备别名（可选，用于会话注册和列表展示） */
+  deviceName?: string;
 }
 
 /**
@@ -69,6 +71,11 @@ export class SerialShell {
   /** @brief 获取当前串口设备路径 */
   getPort(): string {
     return this.#config.port;
+  }
+
+  /** @brief 获取设备别名，未配置时返回 "(unknown)" */
+  getDeviceName(): string {
+    return this.#config.deviceName ?? "(unknown)";
   }
 
   /**

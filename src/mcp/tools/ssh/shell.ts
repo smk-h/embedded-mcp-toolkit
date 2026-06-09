@@ -9,6 +9,7 @@ import {
   PSH_STATE_DESC,
 } from "../../../transport/psh.js";
 import { KeyProvider } from "../../../utils/key-provider.js";
+import { registry } from "../../sessions/registry.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -71,9 +72,11 @@ export async function sshShellOpenHandler(args: {
     `[ssh_shell_open] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 10}`
   );
   const config: SSHShellConfig = getSSHConfig(args.device);
+  const deviceName = args.device ?? process.env.DEVICE ?? "default";
+  config.deviceName = deviceName;
 
   if (config.host === "none") {
-    const msg = `Device '${args.device ?? "(default)"}' does not support SSH (host is none).`;
+    const msg = `Device '${deviceName}' does not support SSH (host is none).`;
     logger.warn(msg);
     return { content: [text(msg)] };
   }
@@ -95,6 +98,13 @@ export async function sshShellOpenHandler(args: {
 
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  registry.register({
+    id: sessionId,
+    type: "ssh",
+    deviceName,
+    connectionInfo: `${config.host}:${config.port ?? 22}`,
+    createdAt: new Date().toISOString(),
+  });
   logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
 
@@ -146,6 +156,7 @@ export async function sshShellCloseHandler(args: { session_id: string }) {
 
   await shell.close();
   sessions.delete(args.session_id);
+  registry.unregister(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -295,13 +306,18 @@ export const sshShellListConfig = {
  */
 export function sshShellListHandler() {
   logger.info("[ssh_shell_list]");
-  const ids = [...sessions.keys()];
+  const sessions = registry.listByType("ssh");
 
-  if (ids.length === 0) {
-    return { content: [text("No active sessions.")] };
+  if (sessions.length === 0) {
+    return { content: [text("No active SSH sessions.")] };
   }
 
-  return { content: [text(`Active sessions: ${ids.join(", ")}`)] };
+  const lines: string[] = [`Active SSH sessions: ${sessions.length}`, ""];
+  for (const s of sessions) {
+    lines.push(`  [${s.id}]  ${s.deviceName}  ${s.connectionInfo}`);
+  }
+
+  return { content: [text(lines.join("\n"))] };
 }
 
 // ── ssh_shell_exec ──────────────────────────────────────────
@@ -511,9 +527,11 @@ export async function sshShellLoginHandler(args: {
     `[ssh_shell_login] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 1500} key=${args.key ? "***" : "(none)"}`
   );
   const config: SSHShellConfig = getSSHConfig(args.device);
+  const deviceName = args.device ?? process.env.DEVICE ?? "default";
+  config.deviceName = deviceName;
 
   if (config.host === "none") {
-    const msg = `Device '${args.device ?? "(default)"}' does not support SSH (host is none).`;
+    const msg = `Device '${deviceName}' does not support SSH (host is none).`;
     logger.warn(msg);
     return { content: [text(msg)] };
   }
@@ -538,6 +556,13 @@ export async function sshShellLoginHandler(args: {
   // open 成功后立即注册会话，确保后续解锁/探测过程可被其他工具访问
   const sessionId = `ssh_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  registry.register({
+    id: sessionId,
+    type: "ssh",
+    deviceName,
+    connectionInfo: `${config.host}:${config.port ?? 22}`,
+    createdAt: new Date().toISOString(),
+  });
   logger.info(`[ssh_shell_login] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
 
@@ -564,6 +589,7 @@ export async function sshShellLoginHandler(args: {
         logger.warn(`[ssh_shell_login] PSH 已锁定但无匹配 handler, 关闭连接`);
         await shell.close();
         sessions.delete(sessionId);
+        registry.unregister(sessionId);
         return {
           content: [text("PSH detected as LOCKED but no handler available.")],
         };
@@ -608,6 +634,7 @@ export async function sshShellLoginHandler(args: {
       );
       await shell.close();
       sessions.delete(sessionId);
+      registry.unregister(sessionId);
       return {
         content: [
           text(
@@ -637,6 +664,7 @@ export async function sshShellLoginHandler(args: {
         );
         await shell.close();
         sessions.delete(sessionId);
+        registry.unregister(sessionId);
         return {
           content: [
             text(
@@ -671,6 +699,7 @@ export async function sshShellLoginHandler(args: {
       );
       await shell.close();
       sessions.delete(sessionId);
+      registry.unregister(sessionId);
       return {
         content: [
           text(
@@ -684,6 +713,7 @@ export async function sshShellLoginHandler(args: {
       logger.error(`[ssh_shell_login] PSH处于ERROR状态, 关闭连接`);
       await shell.close();
       sessions.delete(sessionId);
+      registry.unregister(sessionId);
       return {
         content: [
           text(
@@ -726,6 +756,7 @@ export async function disposeAllSshSessions(): Promise<void> {
     } catch (err) {
       logger.error(`[ssh_dispose] session ${id} close failed:`, err);
     }
+    registry.unregister(id);
   }
   sessions.clear();
 }

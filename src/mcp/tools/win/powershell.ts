@@ -15,6 +15,7 @@ import {
   PowerShellShell,
   type PowerShellShellConfig,
 } from "../../../transport/powershell.js";
+import { registry } from "../../sessions/registry.js";
 
 // ── 会话存储 ────────────────────────────────────────────────
 
@@ -96,6 +97,13 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
 
   const sessionId = `power_${++sessionCounter}`;
   sessions.set(sessionId, shell);
+  registry.register({
+    id: sessionId,
+    type: "powershell",
+    deviceName: "local",
+    connectionInfo: shell.getWorkingDir(),
+    createdAt: new Date().toISOString(),
+  });
   logger.info(`[power_shell_open] session opened: ${sessionId}`);
 
   return {
@@ -150,6 +158,7 @@ export async function powerShellCloseHandler(args: { session_id: string }) {
 
   await shell.close();
   sessions.delete(args.session_id);
+  registry.unregister(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -299,13 +308,21 @@ export const powerShellListConfig = {
  */
 export function powerShellListHandler() {
   logger.info("[power_shell_list]");
-  const ids = [...sessions.keys()];
+  const activeSessions = registry.listByType("powershell");
 
-  if (ids.length === 0) {
+  if (activeSessions.length === 0) {
     return { content: [text("No active PowerShell sessions.")] };
   }
 
-  return { content: [text(`Active sessions: ${ids.join(", ")}`)] };
+  const lines: string[] = [
+    `Active PowerShell sessions: ${activeSessions.length}`,
+    "",
+  ];
+  for (const s of activeSessions) {
+    lines.push(`  [${s.id}]  local  ${s.connectionInfo}`);
+  }
+
+  return { content: [text(lines.join("\n"))] };
 }
 
 // ── power_shell_exec ────────────────────────────────────────
@@ -404,6 +421,7 @@ export async function disposeAllPowerShellSessions(): Promise<void> {
     } catch (err) {
       logger.error(`[power_dispose] session ${id} close failed:`, err);
     }
+    registry.unregister(id);
   }
   sessions.clear();
 }

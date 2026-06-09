@@ -10,12 +10,13 @@ import { FileLogger } from "../infra/file-logger.js";
 /**
  * @brief SSH Shell 连接配置
  *
- * @param host     目标主机地址
- * @param port     SSH 端口，默认 22
- * @param username 登录用户名
- * @param password 密码认证（与 privateKey 二选一）
- * @param privateKey   密钥认证（与 password 二选一）
- * @param passphrase   密钥解密口令（privateKey 加密时需要）
+ * @param host       目标主机地址
+ * @param port       SSH 端口，默认 22
+ * @param username   登录用户名
+ * @param password   密码认证（与 privateKey 二选一）
+ * @param privateKey 密钥认证（与 password 二选一）
+ * @param passphrase 密钥解密口令（privateKey 加密时需要）
+ * @param deviceName 设备别名（可选，用于会话注册和列表展示）
  */
 export interface SSHShellConfig {
   host: string;
@@ -24,6 +25,7 @@ export interface SSHShellConfig {
   password?: string;
   privateKey?: string;
   passphrase?: string;
+  deviceName?: string;
 }
 
 /**
@@ -51,6 +53,26 @@ export class SSHShell {
    */
   constructor(config: SSHShellConfig) {
     this.#config = config;
+  }
+
+  /** @brief 获取 SSH 目标主机地址 */
+  getHost(): string {
+    return this.#config.host;
+  }
+
+  /** @brief 获取 SSH 端口号，未配置时返回默认值 22 */
+  getPort(): number {
+    return this.#config.port ?? 22;
+  }
+
+  /** @brief 获取 SSH 登录用户名 */
+  getUsername(): string {
+    return this.#config.username;
+  }
+
+  /** @brief 获取设备别名，未配置时返回 "(unknown)" */
+  getDeviceName(): string {
+    return this.#config.deviceName ?? "(unknown)";
   }
 
   /**

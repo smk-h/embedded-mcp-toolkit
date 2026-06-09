@@ -6,6 +6,7 @@ import { greetConfig, greetHandler } from "./greet.js";
 import { versionConfig, versionHandler } from "./version.js";
 import { deviceInfoConfig, deviceInfoHandler } from "./device-info.js";
 import { notifyDemoConfig, notifyDemoHandler } from "./notify-demo.js";
+import { sessionInfoConfig, sessionInfoHandler } from "./session_info.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
@@ -18,4 +19,5 @@ export const mcpBasicTools: ToolEntry[] = [
   mcpDefineTool("version_tool", versionConfig, versionHandler),
   mcpDefineTool("device_info_tool", deviceInfoConfig, deviceInfoHandler),
   mcpDefineTool("notify_demo_tool", notifyDemoConfig, notifyDemoHandler),
+  mcpDefineTool("session_info", sessionInfoConfig, sessionInfoHandler),
 ];
