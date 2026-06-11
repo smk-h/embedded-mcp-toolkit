@@ -15,7 +15,8 @@ import {
   type ChildProcess,
   type ExecSyncOptionsWithStringEncoding,
 } from "child_process";
-import { MAX_BUFFER_SIZE } from "../infra/constants.js";
+
+import { OutputBuffer } from "./output-buffer.js";
 import { logger } from "../infra/logger.js";
 
 // ── 一次性执行工具 ──────────────────────────────────────────
@@ -89,10 +90,7 @@ export interface PowerShellShellConfig {
  */
 export class PowerShellShell {
   #process: ChildProcess | null = null;
-  #buffer = "";
-
-  #collecting = false; // 是否开启输出收集，open/write 控制
-  #overflow = false; // 缓冲区满时是否覆盖最早数据（clear=0 时为 true）
+  #output = new OutputBuffer();
   #config: PowerShellShellConfig;
 
   /**
@@ -106,32 +104,6 @@ export class PowerShellShell {
   /** @brief 获取当前工作目录 */
   getWorkingDir(): string {
     return this.#config.workingDir ?? process.cwd();
-  }
-
-  /**
-   * @brief 向缓冲区追加数据（内部方法）
-   *
-   * 根据 #collecting 和 #overflow 状态决定数据写入行为：
-   * - #collecting=false：未开启收集，丢弃数据
-   * - #collecting=true, #overflow=false（clear=1 模式）：
-   *   缓冲区满时丢弃新数据，保留已有内容
-   * - #collecting=true, #overflow=true（clear=0 模式）：
-   *   缓冲区满时覆盖最早的数据，保留最新内容
-   *
-   * @param data 待追加的文本数据
-   */
-  #appendBuffer(data: string): void {
-    if (!this.#collecting) return;
-    this.#buffer += data;
-    if (this.#buffer.length > MAX_BUFFER_SIZE) {
-      if (this.#overflow) {
-        // 覆盖模式：保留最新的 MAX_BUFFER_SIZE 字节
-        this.#buffer = this.#buffer.slice(-MAX_BUFFER_SIZE);
-      } else {
-        // 丢弃模式：截断到 MAX_BUFFER_SIZE，丢弃溢出部分
-        this.#buffer = this.#buffer.substring(0, MAX_BUFFER_SIZE);
-      }
-    }
   }
 
   /**
@@ -156,31 +128,24 @@ export class PowerShellShell {
     });
 
     this.#process = proc;
-    this.#collecting = false;
 
     proc.stdout?.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      this.#output.append(data.toString());
     });
     proc.stderr?.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      this.#output.append(data.toString());
     });
     proc.on("close", () => {
       this.#process = null;
-      this.#collecting = false;
     });
     proc.on("error", () => {
       this.#process = null;
-      this.#collecting = false;
     });
 
     // 收集 banner 后停止
-    this.#collecting = true;
+    this.#output.startCollecting();
     await new Promise((r) => setTimeout(r, 800));
-    const banner = this.#buffer;
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
-    return banner;
+    return this.#output.read(1);
   }
 
   /**
@@ -197,13 +162,7 @@ export class PowerShellShell {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("PowerShell shell not open. Call open() first.");
     }
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-    } else {
-      this.#overflow = true;
-    }
-    this.#collecting = true;
+    this.#output.prepareWrite(clear);
     this.#process.stdin!.write(`${cmd}\n`);
   }
 
@@ -218,13 +177,7 @@ export class PowerShellShell {
    * @return 缓冲区中的文本内容
    */
   read(clear: number = 1): string {
-    const data = this.#buffer;
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-      this.#collecting = false;
-    }
-    return data;
+    return this.#output.read(clear);
   }
 
   /**
@@ -260,8 +213,6 @@ export class PowerShellShell {
         }
       }
     }
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
+    this.#output.reset();
   }
 }

@@ -1,7 +1,8 @@
 import { SerialPort } from "serialport";
-import { MAX_BUFFER_SIZE } from "../infra/constants.js";
-import { FileLogger } from "../infra/file-logger.js";
+
 import { interactiveLoop } from "./loop.js";
+import { OutputBuffer } from "./output-buffer.js";
+import { FileLogger } from "../infra/file-logger.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "./psh.js";
 import { KeyProvider } from "../utils/key-provider.js";
@@ -49,13 +50,7 @@ export interface SerialShellConfig {
 
 export class SerialShell {
   #serialPort: SerialPort | null = null;
-  #buffer = "";
-
-  // 输出收集开关：由 open/write 控制，为 true 时接收到的数据才会写入 #buffer
-  #collecting = false;
-  // 缓冲区溢出策略：false=丢弃新数据(保留旧)，true=覆盖最早数据(保留新)
-  #overflow = false;
-  // 串口连接配置（端口号、波特率、数据位等）
+  #output = new OutputBuffer();
   #config: SerialShellConfig;
   /** 原始数据文件日志记录器 */
   readonly fileLogger = new FileLogger();
@@ -76,32 +71,6 @@ export class SerialShell {
   /** @brief 获取设备别名，未配置时返回 "(unknown)" */
   getDeviceName(): string {
     return this.#config.deviceName ?? "(unknown)";
-  }
-
-  /**
-   * @brief 向缓冲区追加数据（内部方法）
-   *
-   * 根据 #collecting 和 #overflow 状态决定数据写入行为：
-   * - #collecting=false：未开启收集，丢弃数据
-   * - #collecting=true, #overflow=false（clear=1 模式）：
-   *   缓冲区满时丢弃新数据，保留已有内容
-   * - #collecting=true, #overflow=true（clear=0 模式）：
-   *   缓冲区满时覆盖最早的数据，保留最新内容
-   *
-   * @param data 待追加的文本数据
-   */
-  #appendBuffer(data: string): void {
-    if (!this.#collecting) return;
-    this.#buffer += data;
-    if (this.#buffer.length > MAX_BUFFER_SIZE) {
-      if (this.#overflow) {
-        // 覆盖模式：保留最新的 MAX_BUFFER_SIZE 字节
-        this.#buffer = this.#buffer.slice(-MAX_BUFFER_SIZE);
-      } else {
-        // 丢弃模式：截断到 MAX_BUFFER_SIZE，丢弃溢出部分
-        this.#buffer = this.#buffer.substring(0, MAX_BUFFER_SIZE);
-      }
-    }
   }
 
   /**
@@ -130,12 +99,10 @@ export class SerialShell {
     });
 
     this.#serialPort = serialPort;
-    this.#collecting = false;
-
     // 监听串口数据接收事件：将收到的二进制数据转为字符串后追加到内部缓冲区
     serialPort.on("data", (data: Buffer) => {
       const text = data.toString();
-      this.#appendBuffer(text);
+      this.#output.append(text);
       // 若启用了文件日志，按行写入（缓冲不完整行，遇换行符时输出带时间戳的完整行）
       this.fileLogger.write(text);
     });
@@ -149,13 +116,9 @@ export class SerialShell {
     });
 
     // 打开后短暂收集 banner 输出（如登录提示、shell 提示符），然后停止收集
-    this.#collecting = true;
+    this.#output.startCollecting();
     await new Promise((r) => setTimeout(r, 500));
-    const banner = this.#buffer;
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
-    return banner;
+    return this.#output.read(1);
   }
 
   /**
@@ -172,13 +135,7 @@ export class SerialShell {
     if (!this.#serialPort || !this.#serialPort.isOpen) {
       throw new Error("Serial not open. Call open() first.");
     }
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-    } else {
-      this.#overflow = true;
-    }
-    this.#collecting = true;
+    this.#output.prepareWrite(clear);
     this.#serialPort.write(`${cmd}${this.#config.lineEnding ?? "\n"}`);
   }
 
@@ -194,13 +151,7 @@ export class SerialShell {
     if (!this.#serialPort || !this.#serialPort.isOpen) {
       throw new Error("Serial not open. Call open() first.");
     }
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-    } else {
-      this.#overflow = true;
-    }
-    this.#collecting = true;
+    this.#output.prepareWrite(clear);
     this.#serialPort.write(data);
   }
 
@@ -215,13 +166,7 @@ export class SerialShell {
    * @return 缓冲区中的文本内容
    */
   read(clear: number = 1): string {
-    const data = this.#buffer;
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-      this.#collecting = false;
-    }
-    return data;
+    return this.#output.read(clear);
   }
 
   /**
@@ -254,9 +199,7 @@ export class SerialShell {
         });
       });
     }
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
+    this.#output.reset();
   }
 }
 

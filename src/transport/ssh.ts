@@ -1,6 +1,7 @@
 import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
-import { MAX_BUFFER_SIZE } from "../infra/constants.js";
+
 import { interactiveLoop } from "./loop.js";
+import { OutputBuffer } from "./output-buffer.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "./psh.js";
 import { KeyProvider } from "../utils/key-provider.js";
@@ -38,11 +39,8 @@ export interface SSHShellConfig {
 export class SSHShell {
   #client: Client | null = null;
   #stream: ClientChannel | null = null;
-  #buffer = "";
-
-  #collecting = false; // 是否开启输出收集，open/write 控制
-  #overflow = false; // 缓冲区满时是否覆盖最早数据（clear=0 时为 true，允许覆盖）
-  #config: SSHShellConfig; // SSH 连接配置
+  #output = new OutputBuffer();
+  #config: SSHShellConfig;
 
   /** @brief 文件日志记录器，用于将 shell 输出写入本地文件 */
   readonly fileLogger = new FileLogger();
@@ -76,32 +74,6 @@ export class SSHShell {
   }
 
   /**
-   * @brief 向缓冲区追加数据（内部方法）
-   *
-   * 根据 #collecting 和 #overflow 状态决定数据写入行为：
-   * - #collecting=false：未开启收集，丢弃数据
-   * - #collecting=true, #overflow=false（clear=1 模式）：
-   *   缓冲区满时丢弃新数据，保留已有内容
-   * - #collecting=true, #overflow=true（clear=0 模式）：
-   *   缓冲区满时覆盖最早的数据，保留最新内容
-   *
-   * @param data 待追加的文本数据
-   */
-  #appendBuffer(data: string): void {
-    if (!this.#collecting) return;
-    this.#buffer += data;
-    if (this.#buffer.length > MAX_BUFFER_SIZE) {
-      if (this.#overflow) {
-        // 覆盖模式：保留最新的 MAX_BUFFER_SIZE 字节
-        this.#buffer = this.#buffer.slice(-MAX_BUFFER_SIZE);
-      } else {
-        // 丢弃模式：截断到 MAX_BUFFER_SIZE，丢弃溢出部分
-        this.#buffer = this.#buffer.substring(0, MAX_BUFFER_SIZE);
-      }
-    }
-  }
-
-  /**
    * @brief 打开 SSH 连接并启动交互式 shell
    *
    * 建立 SSH 连接，分配 PTY 伪终端，启动远端登录 shell。
@@ -128,7 +100,6 @@ export class SSHShell {
     });
 
     this.#client = client;
-    this.#collecting = false;
     // 连接成功后分配 PTY 伪终端（xterm, 80x24），启动远端 shell
     const stream = await new Promise<ClientChannel>((resolve, reject) => {
       client.shell({ term: "xterm", cols: 80, rows: 24 }, (err, stream) => {
@@ -139,12 +110,12 @@ export class SSHShell {
     // 监听 stream 的 data/stderr 事件，收集输出到内部缓冲区
     stream.on("data", (data: Buffer) => {
       const text = data.toString();
-      this.#appendBuffer(text);
+      this.#output.append(text);
       this.fileLogger.write(text);
     });
     stream.stderr.on("data", (data: Buffer) => {
       const text = data.toString();
-      this.#appendBuffer(text);
+      this.#output.append(text);
       this.fileLogger.write(text);
     });
     stream.on("close", () => {
@@ -154,13 +125,9 @@ export class SSHShell {
     this.#stream = stream;
 
     // 收集 banner 后停止
-    this.#collecting = true;
+    this.#output.startCollecting();
     await new Promise((r) => setTimeout(r, 500)); // 等待 500ms 收集 banner（登录提示、motd 等），然后停止收集
-    const banner = this.#buffer;
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
-    return banner; // 返回收集到的 banner 文本
+    return this.#output.read(1);
   }
 
   /**
@@ -175,13 +142,7 @@ export class SSHShell {
    */
   write(cmd: string, clear: number = 1): void {
     if (!this.#stream) throw new Error("Shell not open. Call open() first.");
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-    } else {
-      this.#overflow = true;
-    }
-    this.#collecting = true;
+    this.#output.prepareWrite(clear);
     this.#stream.write(`${cmd}\n`);
   }
 
@@ -196,29 +157,21 @@ export class SSHShell {
    * @return 缓冲区中的文本内容
    */
   read(clear: number = 1): string {
-    const data = this.#buffer;
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-      this.#collecting = false;
-    }
-    return data;
+    return this.#output.read(clear);
   }
 
   /**
    * @brief 排空缓冲区但不停止数据收集
    *
-   * 返回当前缓冲区内容并清空，但保持 #collecting 为 true，
-   * 用于长耗时命令执行期间持续接收输出数据。与 read(1) 不同的是，
-   * read(1) 在读取后会停止数据收集（#collecting = false），
+   * 返回当前缓冲区内容并清空，保持输出收集状态。
+   * 用于长时间命令执行期间持续接收输出数据。
+   * 与 read(1) 不同的是，read(1) 在读取后会停止数据收集，
    * 而 drain() 不清除收集状态。
    *
    * @return 缓冲区中的文本内容
    */
   drain(): string {
-    const data = this.#buffer;
-    this.#buffer = "";
-    return data;
+    return this.#output.drain();
   }
 
   /**
@@ -236,9 +189,7 @@ export class SSHShell {
       this.#client.end();
       this.#client = null;
     }
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
+    this.#output.reset();
   }
 }
 

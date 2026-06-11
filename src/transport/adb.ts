@@ -29,7 +29,7 @@
  */
 import { execSync, spawn, type ChildProcess } from "child_process";
 
-import { MAX_BUFFER_SIZE } from "../infra/constants.js";
+import { OutputBuffer } from "./output-buffer.js";
 import { logger } from "../infra/logger.js";
 
 // ── 配置 ────────────────────────────────────────────────────
@@ -55,9 +55,7 @@ export interface AdbShellConfig {
  */
 export class AdbShell {
   #process: ChildProcess | null = null;
-  #buffer = "";
-  #collecting = false;
-  #overflow = false;
+  #output = new OutputBuffer();
   #config: AdbShellConfig;
 
   /**
@@ -135,25 +133,6 @@ export class AdbShell {
   }
 
   /**
-   * @brief 向缓冲区追加数据（内部方法）
-   *
-   * @param data 待追加的文本数据
-   */
-  #appendBuffer(data: string): void {
-    if (!this.#collecting) {
-      return;
-    }
-    this.#buffer += data;
-    if (this.#buffer.length > MAX_BUFFER_SIZE) {
-      if (this.#overflow) {
-        this.#buffer = this.#buffer.slice(-MAX_BUFFER_SIZE);
-      } else {
-        this.#buffer = this.#buffer.substring(0, MAX_BUFFER_SIZE);
-      }
-    }
-  }
-
-  /**
    * @brief 启动持久化 adb shell 进程
    *
    * 通过 spawn 启动 adb -s <serialNo> shell 进程，
@@ -192,19 +171,17 @@ export class AdbShell {
     });
 
     this.#process = proc;
-    this.#collecting = false;
 
     // 阶段3: 注册 stdout/stderr 数据监听，写入内部缓冲区
     proc.stdout?.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      this.#output.append(data.toString());
     });
     proc.stderr?.on("data", (data: Buffer) => {
-      this.#appendBuffer(data.toString());
+      this.#output.append(data.toString());
     });
     // 子进程退出时清理引用，避免对已死进程写 stdin
     proc.on("close", () => {
       this.#process = null;
-      this.#collecting = false;
     });
     // 记录完整 adb 命令日志
     logger.info(`[adb] executing: adb -s ${serialNo} shell`);
@@ -212,17 +189,12 @@ export class AdbShell {
     // 子进程启动失败时同样清理引用
     proc.on("error", () => {
       this.#process = null;
-      this.#collecting = false;
     });
 
     // 阶段4: 等待 shell 启动完成，收集 banner 后停止收集，清空缓冲区
-    this.#collecting = true;
+    this.#output.startCollecting();
     await new Promise((r) => setTimeout(r, 800));
-    const banner = this.#buffer;
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
-    return banner;
+    return this.#output.read(1);
   }
 
   /**
@@ -238,13 +210,7 @@ export class AdbShell {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("ADB shell not open. Call open() first.");
     }
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-    } else {
-      this.#overflow = true;
-    }
-    this.#collecting = true;
+    this.#output.prepareWrite(clear);
     this.#process.stdin!.write(`${cmd}\n`);
   }
 
@@ -257,13 +223,7 @@ export class AdbShell {
    * @returns 缓冲区中的文本内容
    */
   read(clear: number = 1): string {
-    const data = this.#buffer;
-    if (clear) {
-      this.#buffer = "";
-      this.#overflow = false;
-      this.#collecting = false;
-    }
-    return data;
+    return this.#output.read(clear);
   }
 
   /**
@@ -299,8 +259,6 @@ export class AdbShell {
         }
       }
     }
-    this.#buffer = "";
-    this.#collecting = false;
-    this.#overflow = false;
+    this.#output.reset();
   }
 }
