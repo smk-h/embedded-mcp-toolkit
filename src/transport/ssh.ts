@@ -131,19 +131,19 @@ export class SSHShell {
   }
 
   /**
-   * @brief 向 shell 发送命令
+   * @brief 向 SSH shell 发送数据
    *
-   * 发送命令到远端 shell 执行，同时控制缓冲区的清空与溢出行为。
+   * 发送数据到远端 shell 执行。SSH 已分配 PTY 伪终端，\x03 会被远端
+   * 终端驱动自动转换为 SIGINT，因此通过本方法直接写入即可中断命令。
    *
-   * @param cmd   要执行的命令字符串
-   * @param clear 清空标志，控制缓冲区行为：
-   *              - 1（默认）：清空缓冲区后开始收集，写满时丢弃新数据
-   *              - 0：不清空缓冲区，继续追加写入，写满时覆盖最早的数据
+   * @param data              要发送的数据
+   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
+   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
    */
-  write(cmd: string, clear: number = 1): void {
+  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
     if (!this.#stream) throw new Error("Shell not open. Call open() first.");
     this.#output.prepareWrite(clear);
-    this.#stream.write(`${cmd}\n`);
+    this.#stream.write(appendLineEnding ? `${data}\n` : data);
   }
 
   /**

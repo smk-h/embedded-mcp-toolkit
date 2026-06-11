@@ -122,37 +122,31 @@ export class SerialShell {
   }
 
   /**
-   * @brief 向串口 shell 发送命令
+   * @brief 向串口 shell 发送数据
    *
-   * 发送命令到串口执行，同时控制缓冲区的清空与溢出行为。
-   *
-   * @param cmd   要执行的命令字符串
-   * @param clear 清空标志，控制缓冲区行为：
-   *              - 1（默认）：清空缓冲区后开始收集，写满时丢弃新数据
-   *              - 0：不清空缓冲区，继续追加写入，写满时覆盖最早的数据
+   * @param data              要发送的数据
+   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
+   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(控制字符)
    */
-  write(cmd: string, clear: number = 1): void {
+  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
     if (!this.#serialPort || !this.#serialPort.isOpen) {
       throw new Error("Serial not open. Call open() first.");
     }
     this.#output.prepareWrite(clear);
-    this.#serialPort.write(`${cmd}${this.#config.lineEnding ?? "\n"}`);
+    this.#serialPort.write(appendLineEnding ? `${data}${this.#config.lineEnding ?? "\n"}` : data);
   }
 
   /**
    * @brief 发送原始数据到串口（不追加换行符）
    *
+   * write() 的便捷别名，等价于 write(data, clear, false)。
    * 用于发送控制字符等场景，如 "\x15"（Ctrl+u）、"\x03"（Ctrl+C）等。
    *
    * @param data  要发送的原始字符串
    * @param clear 清空标志（同 write），默认 1
    */
   sendRaw(data: string, clear: number = 1): void {
-    if (!this.#serialPort || !this.#serialPort.isOpen) {
-      throw new Error("Serial not open. Call open() first.");
-    }
-    this.#output.prepareWrite(clear);
-    this.#serialPort.write(data);
+    this.write(data, clear, false);
   }
 
   /**

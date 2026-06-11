@@ -196,22 +196,33 @@ export class AdbShell {
     await new Promise((r) => setTimeout(r, 800));
     return this.#output.read(1);
   }
-
+  
   /**
-   * @brief 向 ADB shell 进程发送命令
+   * @brief 向 ADB shell 进程发送数据
    *
-   * @param cmd   要执行的命令字符串
-   * @param clear 清空标志：
-   *              1（默认）= 清空缓冲区后开始收集
-   *              0 = 不清空缓冲区，继续追加写入
+   * @param data              要发送的数据
+   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
+   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
    * @throws 当 shell 未打开时抛出错误
    */
-  write(cmd: string, clear: number = 1): void {
+  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("ADB shell not open. Call open() first.");
     }
     this.#output.prepareWrite(clear);
-    this.#process.stdin!.write(`${cmd}\n`);
+    this.#process.stdin!.write(appendLineEnding ? `${data}\n` : data);
+  }
+
+  /**
+   * @brief 排空缓冲区但不停止数据收集
+   *
+   * 返回当前缓冲区内容并清空，保持收集状态不变。
+   * 用于长时间命令（如 logcat）持续接收输出时轮询取走新数据。
+   *
+   * @returns 缓冲区中的文本内容
+   */
+  drain(): string {
+    return this.#output.drain();
   }
 
   /**
