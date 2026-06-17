@@ -1,14 +1,33 @@
 @echo off
 REM Claude Code 启动脚本
 REM 设置环境变量并启动 Claude Code
+REM %MODEL_PROVIDER%: "deepseek" | "glm"
 
-set ANTHROPIC_AUTH_TOKEN=sk-sp-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-set ANTHROPIC_BASE_URL=https://coding.dashscope.aliyuncs.com/apps/anthropic
+set MODEL_PROVIDER=deepseek
+
+if "%MODEL_PROVIDER%"=="deepseek" (
+    REM DeepSeek 配置
+    set ANTHROPIC_AUTH_TOKEN=<your-deepseek-api-key>
+    set ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+    set ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash
+    set ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-flash
+    set ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-flash
+    echo Using DeepSeek provider...
+) else if "%MODEL_PROVIDER%"=="glm" (
+    REM GLM (智谱) 配置
+    set ANTHROPIC_AUTH_TOKEN=<your-glm-api-key>
+    set ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/paas/v4/anthropic
+    set ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-4-flash
+    set ANTHROPIC_DEFAULT_SONNET_MODEL=glm-4-flash
+    set ANTHROPIC_DEFAULT_OPUS_MODEL=glm-4-flash
+    echo Using GLM provider...
+) else (
+    echo Unknown MODEL_PROVIDER value: %MODEL_PROVIDER%
+    exit /b 1
+)
+
 set API_TIMEOUT_MS=3000000
 set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-set ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-5
-set ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5
-set ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5
 
 echo "environment set success! Starting Claude Code..."
 claude
