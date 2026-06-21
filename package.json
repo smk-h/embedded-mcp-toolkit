@@ -30,7 +30,8 @@
     "win:open-home": "start %USERPROFILE%",
     "win:open-devmgr": "devmgmt.msc",
     "win:open-netadapter": "ncpa.cpl",
-    "win:open-node-global": "for /f \"delims=\" %d in ('npm root -g') do @start \"\" \"%d\""
+    "win:open-node-global": "for /f \"delims=\" %d in ('npm root -g') do @start \"\" \"%d\"",
+    "win:open-psprofile": "powershell -NoProfile -Command \"start $PROFILE\""
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
