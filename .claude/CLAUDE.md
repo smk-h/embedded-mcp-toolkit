@@ -197,6 +197,7 @@
 | **board-shell** | 打开交互式 shell | `/board-shell <板卡名>` |
 | **board-deploy** | 部署文件到板卡 | `/board-deploy <板卡名> <本地路径> <远程路径>` |
 | **board-unlock** | 解锁受保护 shell | `/board-unlock <板卡名> [密钥]` |
+| **dev-upgrade** | 并行编译内核+进入 U-Boot 等待升级 | `/dev-upgrade` |
 
 ## 文件 IPC 解锁
 
