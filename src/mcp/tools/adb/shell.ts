@@ -17,9 +17,9 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
-import { resolveAdbSerial, resolveDeviceName } from "../../../infra/config.js";
-import { AdbShell, type AdbShellConfig } from "../../../transport/adb.js";
+import { logger } from "../../../shared/logger.js";
+import { resolveAdbSerial, resolveDeviceName } from "../../../shared/config.js";
+import { AdbShell, type AdbShellConfig } from "../../../transports/adb.js";
 import { registry } from "../../sessions/registry.js";
 
 // ── 会话存储 ────────────────────────────────────────────────

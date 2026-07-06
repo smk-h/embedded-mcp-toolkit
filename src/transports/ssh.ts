@@ -3,10 +3,10 @@ import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
 import { interactiveLoop } from "./loop.js";
 import { OutputBuffer } from "./output-buffer.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
-import { PshState, PshStateMachine } from "./psh.js";
-import { KeyProvider } from "../utils/key-provider.js";
-import { getKeyProviderConfig } from "../infra/config.js";
-import { FileLogger } from "../infra/file-logger.js";
+import { PshState, PshStateMachine } from "../services/psh.js";
+import { KeyProvider } from "../services/key-provider.js";
+import { getKeyProviderConfig } from "../shared/config.js";
+import { FileLogger } from "../shared/file-logger.js";
 
 /**
  * @brief SSH Shell 连接配置
@@ -140,7 +140,11 @@ export class SSHShell {
    * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
    * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
    */
-  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
+  write(
+    data: string,
+    clear: number = 1,
+    appendLineEnding: boolean = true
+  ): void {
     if (!this.#stream) throw new Error("Shell not open. Call open() first.");
     this.#output.prepareWrite(clear);
     this.#stream.write(appendLineEnding ? `${data}\n` : data);

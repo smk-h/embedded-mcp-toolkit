@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
+import { logger } from "../../../shared/logger.js";
 
 // ── 读取 package.json 获取版本信息 ──
 

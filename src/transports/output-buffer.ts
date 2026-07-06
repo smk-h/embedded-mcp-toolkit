@@ -1,4 +1,4 @@
-import { MAX_BUFFER_SIZE } from "../infra/constants.js";
+import { MAX_BUFFER_SIZE } from "../shared/constants.js";
 
 /**
  * @brief 输出缓冲区管理器

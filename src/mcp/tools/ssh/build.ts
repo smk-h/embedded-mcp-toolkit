@@ -9,7 +9,7 @@
 
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
+import { logger } from "../../../shared/logger.js";
 import { sessions } from "./shell.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
@@ -318,9 +318,9 @@ export async function sshBuildHandler(args: {
   classify?: boolean;
 }) {
   // ── 参数默认值 ──
-  const maxWait: number = args.maxWait ?? 600000;   // 最大等待 10 分钟
+  const maxWait: number = args.maxWait ?? 600000; // 最大等待 10 分钟
   const pollInterval: number = args.pollInterval ?? 2000; // 每 2 秒轮询一次
-  const doClassify: boolean = args.classify ?? true;      // 默认开启输出分类
+  const doClassify: boolean = args.classify ?? true; // 默认开启输出分类
 
   logger.info(
     `[ssh_build] session_id=${args.session_id} cwd=${args.cwd ?? "(none)"} command=${args.command} maxWait=${maxWait} pollInterval=${pollInterval} classify=${doClassify}`
@@ -361,17 +361,23 @@ export async function sshBuildHandler(args: {
   let echoRetries = 10;
   while (echoRetries > 0) {
     echoRetries--;
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 200));
     echoBuffer += shell.drain();
     const nlIdx = echoBuffer.indexOf("\n");
     if (nlIdx !== -1) {
       allOutput = echoBuffer.substring(nlIdx + 1);
-      logger.info({ retries: 10 - echoRetries, echoLine: echoBuffer.substring(0, nlIdx) }, "PTY echo stripped successfully");
+      logger.info(
+        { retries: 10 - echoRetries, echoLine: echoBuffer.substring(0, nlIdx) },
+        "PTY echo stripped successfully"
+      );
       break;
     }
   }
   if (echoRetries === 0) {
-    logger.warn({ echoBuffer }, "Failed to strip PTY echo: no newline found within retry limit");
+    logger.warn(
+      { echoBuffer },
+      "Failed to strip PTY echo: no newline found within retry limit"
+    );
   }
 
   // ── 步骤 5：回显剥离完成后，轮询缓冲区检测完成标记 ──
@@ -386,7 +392,9 @@ export async function sshBuildHandler(args: {
     const match = allOutput.match(markerRegex);
     if (match) {
       exitCode = parseInt(match[1], 10);
-      allOutput = allOutput.substring(0, allOutput.search(markerRegex)).trimEnd();
+      allOutput = allOutput
+        .substring(0, allOutput.search(markerRegex))
+        .trimEnd();
       break;
     }
   }
@@ -406,9 +414,13 @@ export async function sshBuildHandler(args: {
     : `${resolvedExitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED"} (exit code: ${resolvedExitCode})`;
 
   if (timedOut) {
-    logger.warn(`[ssh_build:${args.session_id}] timed out after ${maxWait}ms, outputLength=${allOutput.length}`);
+    logger.warn(
+      `[ssh_build:${args.session_id}] timed out after ${maxWait}ms, outputLength=${allOutput.length}`
+    );
   } else {
-    logger.info(`[ssh_build:${args.session_id}] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`);
+    logger.info(
+      `[ssh_build:${args.session_id}] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`
+    );
   }
 
   if (doClassify) {
@@ -421,8 +433,17 @@ export async function sshBuildHandler(args: {
     }
 
     // 将分类摘要写入日志文件
-    const formatted = formatBuildResult(collector, resolvedExitCode, args.session_id);
-    logger.block("INFO", `ssh_build:${args.session_id}`, "build classified", formatted);
+    const formatted = formatBuildResult(
+      collector,
+      resolvedExitCode,
+      args.session_id
+    );
+    logger.block(
+      "INFO",
+      `ssh_build:${args.session_id}`,
+      "build classified",
+      formatted
+    );
 
     const prefix = timedOut
       ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
@@ -434,7 +455,9 @@ export async function sshBuildHandler(args: {
 
   return {
     content: [
-      text(`${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`),
+      text(
+        `${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`
+      ),
     ],
   };
 }

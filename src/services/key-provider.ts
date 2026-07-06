@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createInterface } from "node:readline";
-import { logger } from "../infra/logger.js";
+import { logger } from "../shared/logger.js";
 
 /**
  * @brief

@@ -1,20 +1,20 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
+import { logger } from "../../../shared/logger.js";
 import {
   SerialShell,
   type SerialShellConfig,
-} from "../../../transport/serial.js";
+} from "../../../transports/serial.js";
 import {
   getSerialConfig,
   getKeyProviderConfig,
-} from "../../../infra/config.js";
+} from "../../../shared/config.js";
 import {
   PshState,
   PshStateMachine,
   PSH_STATE_DESC,
-} from "../../../transport/psh.js";
-import { KeyProvider } from "../../../utils/key-provider.js";
+} from "../../../services/psh.js";
+import { KeyProvider } from "../../../services/key-provider.js";
 import { registry } from "../../sessions/registry.js";
 // ── 会话存储 ────────────────────────────────────────────────
 

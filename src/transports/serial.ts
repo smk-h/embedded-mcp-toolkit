@@ -2,18 +2,18 @@ import { SerialPort } from "serialport";
 
 import { interactiveLoop } from "./loop.js";
 import { OutputBuffer } from "./output-buffer.js";
-import { FileLogger } from "../infra/file-logger.js";
+import { FileLogger } from "../shared/file-logger.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
-import { PshState, PshStateMachine } from "./psh.js";
-import { KeyProvider } from "../utils/key-provider.js";
-import { getKeyProviderConfig } from "../infra/config.js";
+import { PshState, PshStateMachine } from "../services/psh.js";
+import { KeyProvider } from "../services/key-provider.js";
+import { getKeyProviderConfig } from "../shared/config.js";
 import {
   UserLoginStatus,
   UserLoginResult,
   UserLoginHandler,
   UserLoginStateMachine,
   UserLoginStepDelays,
-} from "./user-login.js";
+} from "../services/user-login.js";
 
 /**
  * @brief 串口 Shell 连接配置
@@ -128,12 +128,18 @@ export class SerialShell {
    * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
    * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(控制字符)
    */
-  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
+  write(
+    data: string,
+    clear: number = 1,
+    appendLineEnding: boolean = true
+  ): void {
     if (!this.#serialPort || !this.#serialPort.isOpen) {
       throw new Error("Serial not open. Call open() first.");
     }
     this.#output.prepareWrite(clear);
-    this.#serialPort.write(appendLineEnding ? `${data}${this.#config.lineEnding ?? "\n"}` : data);
+    this.#serialPort.write(
+      appendLineEnding ? `${data}${this.#config.lineEnding ?? "\n"}` : data
+    );
   }
 
   /**

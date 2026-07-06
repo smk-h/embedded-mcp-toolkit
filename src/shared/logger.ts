@@ -112,7 +112,13 @@ class Logger {
    * @param content     块内容
    * @param maxLines    最大保留行数，正数=截断省略中间行，-1=全部显示（默认 -1）
    */
-  block(level: string, context: string, description: string, content: string, maxLines = -1): void {
+  block(
+    level: string,
+    context: string,
+    description: string,
+    content: string,
+    maxLines = -1
+  ): void {
     this.ensureInit();
     if (!content) return;
 
@@ -145,8 +151,13 @@ class Logger {
       }
     }
 
-    const indented = display.split("\n").map((line) => `    ${line}`).join("\n");
-    process.stderr.write(`${description}:\n----------------------------\n${indented}\n----------------------------\n`);
+    const indented = display
+      .split("\n")
+      .map((line) => `    ${line}`)
+      .join("\n");
+    process.stderr.write(
+      `${description}:\n----------------------------\n${indented}\n----------------------------\n`
+    );
   }
 
   /** 是否启用了文件保存 */

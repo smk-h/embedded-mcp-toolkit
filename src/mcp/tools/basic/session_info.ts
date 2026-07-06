@@ -17,7 +17,7 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
+import { logger } from "../../../shared/logger.js";
 import { registry, type SessionMeta } from "../../sessions/registry.js";
 import { formatBeijingTime } from "../../../utils/timestamp.js";
 

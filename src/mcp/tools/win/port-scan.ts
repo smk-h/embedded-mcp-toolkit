@@ -10,8 +10,8 @@
  */
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
-import { execPowerShell } from "../../../transport/powershell.js";
+import { logger } from "../../../shared/logger.js";
+import { execPowerShell } from "../../../transports/powershell.js";
 
 // ── 声明 ──
 

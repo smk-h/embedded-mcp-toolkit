@@ -30,7 +30,7 @@
 import { execSync, spawn, type ChildProcess } from "child_process";
 
 import { OutputBuffer } from "./output-buffer.js";
-import { logger } from "../infra/logger.js";
+import { logger } from "../shared/logger.js";
 
 // ── 配置 ────────────────────────────────────────────────────
 
@@ -196,7 +196,7 @@ export class AdbShell {
     await new Promise((r) => setTimeout(r, 800));
     return this.#output.read(1);
   }
-  
+
   /**
    * @brief 向 ADB shell 进程发送数据
    *
@@ -205,7 +205,11 @@ export class AdbShell {
    * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
    * @throws 当 shell 未打开时抛出错误
    */
-  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
+  write(
+    data: string,
+    clear: number = 1,
+    appendLineEnding: boolean = true
+  ): void {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("ADB shell not open. Call open() first.");
     }

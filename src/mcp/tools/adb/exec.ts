@@ -18,8 +18,8 @@ import { execSync } from "child_process";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
-import { resolveAdbSerial, resolveDeviceName } from "../../../infra/config.js";
+import { logger } from "../../../shared/logger.js";
+import { resolveAdbSerial, resolveDeviceName } from "../../../shared/config.js";
 
 // ── 通用 ADB 执行函数 ──────────────────────────────────────
 

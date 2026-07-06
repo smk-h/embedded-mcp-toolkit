@@ -12,7 +12,7 @@
  * ======================================================
  */
 
-import { logger } from "../infra/logger.js";
+import { logger } from "../shared/logger.js";
 
 /** 用户登录状态枚举 */
 export enum UserLoginStatus {

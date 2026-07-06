@@ -1,7 +1,7 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { getAllConfig, listDevices } from "../../../infra/config.js";
+import { getAllConfig, listDevices } from "../../../shared/config.js";
 import { text } from "../../tool-registry.js";
-import { logger } from "../../../infra/logger.js";
+import { logger } from "../../../shared/logger.js";
 
 // ── 声明 ──
 

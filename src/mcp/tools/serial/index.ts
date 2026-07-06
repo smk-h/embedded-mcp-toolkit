@@ -11,7 +11,6 @@ import {
   serialWriteHandler,
   serialReadConfig,
   serialReadHandler,
-
   serialExecConfig,
   serialExecHandler,
   serialShellLoginConfig,

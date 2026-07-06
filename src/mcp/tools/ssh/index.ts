@@ -11,7 +11,6 @@ import {
   sshShellWriteHandler,
   sshShellReadConfig,
   sshShellReadHandler,
-
   sshShellExecConfig,
   sshShellExecHandler,
   sshConnectionsConfig,

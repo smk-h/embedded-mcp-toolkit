@@ -3,7 +3,7 @@
   "version": "0.1.3",
   "description": "MCP Server for remote management of embedded Linux boards via SSH",
   "type": "module",
-  "main": "out/index.js",
+  "main": "out/cli/index.js",
   "bin": {
     "embedded-mcp-toolkit": "./bin/embedded-mcp-toolkit-cli.js"
   },

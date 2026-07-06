@@ -1,14 +1,18 @@
 import { Command } from "commander";
-import { interactiveShell, pshDemoSsh } from "./transport/ssh.js";
+import { interactiveShell, pshDemoSsh } from "../transports/ssh.js";
 import {
   interactiveSerialShell,
   pshDemoSerial,
   userLoginDemoSerial,
-} from "./transport/serial.js";
-import { getSSHConfig, getSerialConfig, getAllConfig } from "./infra/config.js";
-import { startMcpServer } from "./mcp/server.js";
-import { runInit, runUninstall } from "./cli/commands/init.js";
-import pkg from "../package.json" with { type: "json" };
+} from "../transports/serial.js";
+import {
+  getSSHConfig,
+  getSerialConfig,
+  getAllConfig,
+} from "../shared/config.js";
+import { startMcpServer } from "../mcp/server.js";
+import { runInit, runUninstall } from "./commands/init.js";
+import pkg from "../../package.json" with { type: "json" };
 
 /**
  * 命令层级结构：

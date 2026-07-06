@@ -88,18 +88,18 @@ export function sanitize(raw: string): string {
  *
  * 保留制表符 \t 和换行符 \n。
  * 供 FileLogger 和 Logger 共用。
- * 
+ *
  * CSI(Control Sequence Introducer): ESC[参数+字母, 如颜色/光标控制
- * OSC(Operating System Command): ESC]内容BEL, 如窗口标题 
- * 
+ * OSC(Operating System Command): ESC]内容BEL, 如窗口标题
+ *
  * @param line 原始日志行（可能含控制字符和 ANSI 序列）
  * @returns    纯文本的日志行，ANSI 序列已剥离，控制字符已转为可见标记
  */
 export function sanitizeLine(line: string): string {
   // 例：输入 "\x1b[0;32m[SUCCESS]\x1b[0m 编译完成！\x1b]0;title\x07\r\n"
   const stripped = line
-    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "[CSI]")     // "\x1b[0;32m"→"[CSI]"
-    .replace(/\x1b\][^\x07]*\x07/g, "[OSC]")        // "\x1b]0;title\x07"→"[OSC]"
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "[CSI]") // "\x1b[0;32m"→"[CSI]"
+    .replace(/\x1b\][^\x07]*\x07/g, "[OSC]") // "\x1b]0;title\x07"→"[OSC]"
     .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "[ANSI]"); // 其他 ESC 开头序列 → "[ANSI]"
 
   // 此时："[CSI][SUCCESS][CSI] 编译完成！[OSC]\r\n"

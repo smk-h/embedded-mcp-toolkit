@@ -14,7 +14,6 @@ import {
   powerShellWriteHandler,
   powerShellReadConfig,
   powerShellReadHandler,
-
   powerShellExecConfig,
   powerShellExecHandler,
 } from "./powershell.js";

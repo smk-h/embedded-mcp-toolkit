@@ -21,7 +21,6 @@ import {
   adbShellWriteHandler,
   adbShellReadConfig,
   adbShellReadHandler,
-
   adbShellExecConfig,
   adbShellExecHandler,
 } from "./shell.js";

@@ -5,7 +5,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 
-import { logger } from "../infra/logger.js";
+import { logger } from "../shared/logger.js";
 import { mcpBasicTools } from "./tools/basic/index.js";
 import { mcpSshTools } from "./tools/ssh/index.js";
 import { mcpSerialTools } from "./tools/serial/index.js";

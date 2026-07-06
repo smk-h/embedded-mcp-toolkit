@@ -17,7 +17,7 @@ import {
 } from "child_process";
 
 import { OutputBuffer } from "./output-buffer.js";
-import { logger } from "../infra/logger.js";
+import { logger } from "../shared/logger.js";
 
 // ── 一次性执行工具 ──────────────────────────────────────────
 
@@ -155,7 +155,11 @@ export class PowerShellShell {
    * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
    * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
    */
-  write(data: string, clear: number = 1, appendLineEnding: boolean = true): void {
+  write(
+    data: string,
+    clear: number = 1,
+    appendLineEnding: boolean = true
+  ): void {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("PowerShell shell not open. Call open() first.");
     }
