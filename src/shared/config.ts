@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, existsSync, readdirSync } from "fs";
+import { resolve, dirname } from "path";
 import { load } from "js-yaml";
 import { logger } from "./logger.js";
 import type { SSHShellConfig } from "../transports/ssh.js";
@@ -46,20 +46,94 @@ interface RootConfig {
   devices?: Record<string, DeviceConfig>; // 设备配置字典，key 为设备名
 }
 
+/** 配置加载布局类型（仅加载层内部使用，不对外导出） */
+type LoadedLayout = "single" | "split" | "none";
+
 let _cached: RootConfig | null = null;
+
+/**
+ * @brief 解析设备分文件目录的绝对路径
+ *
+ * 设备目录始终相对主配置文件（BOARD_CONFIG_PATH）所在目录，
+ * 即与主 config.yaml 同级的 devices/ 子目录。
+ *
+ * @param configPath 主配置文件路径
+ * @returns 设备目录绝对路径
+ */
+function resolveDevicesDir(configPath: string): string {
+  return resolve(dirname(resolve(configPath)), "devices");
+}
+
+/**
+ * @brief 扫描 devices/ 目录，加载分文件布局的设备配置
+ *
+ * 将目录下每个 .yaml/.yml 文件视为一台设备，文件名（去扩展名）作为设备名。
+ * 单个文件解析失败时跳过并告警，不中断整体加载。
+ *
+ * @param devicesDir 设备目录绝对路径
+ * @returns 设备配置字典；目录不存在或无 .yaml 文件时返回 null（视为回退单文件布局）
+ */
+function loadSplitDevices(
+  devicesDir: string
+): Record<string, DeviceConfig> | null {
+  if (!existsSync(devicesDir)) {
+    return null;
+  }
+  // 仅识别 .yaml/.yml 文件，忽略目录与其它类型文件
+  const yamlFiles = readdirSync(devicesDir).filter(
+    (entry) => entry.endsWith(".yaml") || entry.endsWith(".yml")
+  );
+  if (yamlFiles.length === 0) {
+    return null;
+  }
+
+  const devices: Record<string, DeviceConfig> = {};
+  for (const entry of yamlFiles) {
+    const filePath = resolve(devicesDir, entry);
+    try {
+      // 文件名（去扩展名）作为设备名
+      const deviceName = entry.replace(/\.(ya?ml)$/, "");
+      devices[deviceName] = load(
+        readFileSync(filePath, "utf8")
+      ) as DeviceConfig;
+    } catch (err) {
+      logger.warn(
+        `Device config skipped (invalid): ${filePath} — ${
+          err instanceof Error ? err.message : err
+        }`
+      );
+    }
+  }
+  return devices;
+}
 
 function loadConfig(): RootConfig {
   if (_cached) return _cached;
   const configPath = process.env.BOARD_CONFIG_PATH ?? "config.yaml";
   const absPath = resolve(configPath);
+  let root: RootConfig;
+  let layout: LoadedLayout;
   try {
-    _cached = load(readFileSync(absPath, "utf8")) as RootConfig;
+    root = load(readFileSync(absPath, "utf8")) as RootConfig;
     logger.info(`Config loaded: ${absPath}`);
   } catch {
+    // 主配置文件不存在或解析失败：沿用原有兜底，返回空配置
     _cached = {};
     logger.warn(`Config not found or invalid: ${absPath}`);
+    return _cached;
   }
-  return _cached!;
+
+  // 布局自动判定：devices/ 目录存在且含 .yaml 文件 → 分文件布局
+  const splitDevices = loadSplitDevices(resolveDevicesDir(configPath));
+  if (splitDevices !== null) {
+    root.devices = splitDevices;
+    layout = "split";
+  } else {
+    layout = "single";
+  }
+  logger.info(`Config layout: ${layout}`);
+  _cached = root;
+  return _cached;
 }
 
 /**

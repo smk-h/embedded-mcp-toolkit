@@ -351,6 +351,11 @@ export function runInit(opts: InitOptions): void {
           src: ".embedded/configs/config.example.yaml",
           dest: ".embedded/configs/config.yaml",
         },
+        {
+          type: "file",
+          src: ".embedded/configs/devices/board-example.yaml",
+          dest: ".embedded/configs/devices/board-example.yaml",
+        },
       ],
     },
   ];
@@ -427,6 +432,7 @@ export function runInit(opts: InitOptions): void {
     lines.push("  📄 .opencode/opencode.json");
   }
   lines.push("  📁 .embedded/configs/");
+  lines.push("  📁 .embedded/configs/devices/ (示例设备文件)");
   lines.push("  📁 .embedded/log/");
 
   console.log(`
@@ -435,9 +441,10 @@ export function runInit(opts: InitOptions): void {
 ${lines.join("\n")}
 
 下一步:
-  1. 编辑 .embedded/configs/config.yaml, 修改为你的实际设备信息
-  2. 在 Claude Code / OpenCode 中, MCP 服务器 "embedded-board" 将自动启用
-  3. 开始使用！例如：让 AI 帮你 "查看板卡系统状态"
+  1. 编辑 .embedded/configs/devices/board-example.yaml, 修改为你的实际设备信息
+  2. 如需新增设备, 在 .embedded/configs/devices/ 下复制并修改 yaml 文件
+  3. 在 Claude Code / OpenCode 中, MCP 服务器 "embedded-board" 将自动启用
+  4. 开始使用！例如：让 AI 帮你 "查看板卡系统状态"
 `);
 }
 

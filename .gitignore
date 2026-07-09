@@ -15,6 +15,9 @@ config.yaml
 *embedded-mcp-toolkit*.tgz
 *embedded-mcp-toolkit*.zip
 
+.embedded/configs/devices/*.yaml
+!.embedded/configs/devices/board-example.yaml
+
 *.zip
 *.tar.bz2
 my-psh/psh_demo2/libs/libqrencode-4.1.1

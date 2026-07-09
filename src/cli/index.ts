@@ -12,6 +12,7 @@ import {
 } from "../shared/config.js";
 import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
+import { runSplit } from "./commands/split.js";
 import pkg from "../../package.json" with { type: "json" };
 
 /**
@@ -20,6 +21,8 @@ import pkg from "../../package.json" with { type: "json" };
  * embedded-mcp-toolkit
  * ├── mcp (★默认)                ← MCP 服务器模式（.action() + isDefault）
  * ├── init                       ← 初始化配置文件（.action()）
+ * ├── uninstall                  ← 清理 init 生成的文件（.action()）
+ * ├── split                      ← 拆分 config.yaml 为 devices/*.yaml（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
  * │   ├── ssh                    ←   SSH 演示二级父命令
@@ -108,7 +111,7 @@ program
     "目标目录（默认：当前工作目录）",
     process.cwd()
   )
-  .option("-d, --device <name>", "默认设备名", "board-b")
+  .option("-d, --device <name>", "默认设备名", "board-example")
   .option("--claude-only", "仅生成 Claude Code 配置", false)
   .option("--opencode-only", "仅生成 OpenCode 配置", false)
   .option("-f, --force", "覆盖已存在的文件", false)
@@ -143,6 +146,36 @@ program
   .option("-f, --force", "跳过确认提示直接删除", false)
   .action(async (opts) => {
     await runUninstall(opts);
+  });
+
+// =============================================================================
+// split 命令 —— 将单文件 config.yaml 拆分为 devices/*.yaml
+// =============================================================================
+
+/**
+ * @brief 配置拆分命令
+ * @details 读取源 config.yaml 的 devices 段，为每个设备生成独立的
+ *          devices/<设备名>.yaml 文件，帮助用户从单文件布局迁移到分文件布局。
+ *          目标文件已存在时默认跳过，加 --force 后才覆盖。
+ *
+ * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit split
+ * embedded-mcp-toolkit split --config ./.embedded/configs/config.yaml
+ * embedded-mcp-toolkit split --force
+ */
+program
+  .command("split")
+  .description("将单文件 config.yaml 的 devices 段拆分为 devices/*.yaml")
+  .option(
+    "-c, --config <path>",
+    "源 config.yaml 路径",
+    "./.embedded/configs/config.yaml"
+  )
+  .option("-f, --force", "覆盖已存在的设备文件", false)
+  .action((opts) => {
+    runSplit(opts);
   });
 
 // =============================================================================

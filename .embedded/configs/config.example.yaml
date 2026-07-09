@@ -3,137 +3,90 @@
 # 复制并修改: cp config.example.yaml config.yaml
 # ============================================
 
-# 默认使用的设备（对应 devices 下的 key）
-default: board-b
+# 默认使用的设备（对应 devices/ 目录下的文件名，去掉 .yaml 扩展名）
+default: board-example
 
+# ============================================
+# 设备配置说明
+# ============================================
+# 每台设备的完整配置存放在同级 devices/ 目录下的独立文件中，
+# 一个 .yaml 文件对应一台设备，文件名即设备名。
+#
+# 目录结构示例：
+#   .embedded/configs/
+#   ├── config.yaml              ← 本文件：放 default 等全局设置（下方也内联了 1 个示例设备）
+#   └── devices/
+#       ├── board-a.yaml         ← 设备 a 的完整配置（ssh/serial/adb/keyProvider）
+#       └── board-b.yaml         ← 设备 b 的完整配置
+#
+# 单个设备文件的内容形如：
+#   ssh:
+#     host: "192.168.16.103"
+#     port: 22
+#     keyProvider: { ... }
+#   serial:
+#     port: "COM4"
+#     baudRate: 115200
+#   adb:
+#     serialNo: "sn_none"
+#
+# 加载优先级（重要）：
+#   当 devices/ 目录存在且非空时：
+#     - 设备配置「只看 devices/*.yaml」，本文件下方的 devices 段被完全忽略（不报错、不合并）。
+#     - 修改设备请改 devices/<设备名>.yaml，改本文件 devices 段无效。
+#   当 devices/ 目录不存在或为空时：
+#     - 回退读取本文件下方的 devices 段。
+#   无论哪种情况，default 等全局字段始终从本文件读取。
+#
+# 两种布局取舍：
+#   - 设备少（1~2 台）：可直接用本文件下方的 devices 段，无需 devices/ 目录。
+#   - 设备多：用 devices/ 目录拆分，每台一个文件，本文件 devices 段可清空。
+#   - 两者并存时以 devices/ 为准（见上方加载优先级）。
+#
+# 如需从旧的单文件布局迁移，运行：
+#   embedded-mcp-toolkit split
+
+# ============================================
+# 通道启用/禁用约定
+# ============================================
+#   ssh 段    host 设为 "none" → 该设备不启用 SSH（调用 ssh 工具会返回 "does not support SSH"）
+#   serial 段 port 设为 "none" → 该设备不启用串口（调用 serial 工具会返回 "does not support serial"）
+#   adb 段    serialNo 设为 "sn_none" 或留空 → 不绑定具体 ADB 设备，由 adb 自动发现
+# 不需要的通道可直接整段删除，或保留段并把关键字段置 "none"/"sn_none"。
+
+# ============================================
+# 示例设备（内联于本文件，无需 devices/ 目录即可使用）
+# ============================================
+# 注意：本段仅在 devices/ 目录「不存在或为空」时生效。
+#       一旦 devices/ 目录存在且非空，本段被完全忽略，改这里无效。
+#       设备多时建议改用 devices/ 目录，并删除本段。
 devices:
-  # ---- 设备 A ----
-  board-a:
+  board-example:
     adb:
       serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:
-      host: "192.168.16.103"
-      port: 22
-      username: "root"
-      password: "root"
+      host: "192.168.16.105" # SSH 主机地址；设为 "none" 表示该设备不启用 SSH
+      port: 22 # SSH 端口，默认 22
+      username: "root" # SSH 登录用户名
+      password: "root" # 密码认证（与 privateKey 二选一）
       keyProvider:
         mode: "file" # file: 通过文件 IPC 获取密钥; terminal: 终端交互输入
-        challengeFilePath: "./.embedded/configs/challenge.txt" # 挑战信息写入文件路径
-        keyFilePath: "./.embedded/configs/password_input.txt" # 轮询密钥的文件路径
+        # ↓↓↓ 路径基准说明 ↓↓↓
+        # challengeFilePath / keyFilePath 是「相对于运行 MCP server 时的工作目录（cwd）」的路径，
+        # 而非相对于本设备文件或 config.yaml 的位置。
+        # 通常 MCP server 在项目根目录启动，故写 ./ 开头的项目相对路径即可。
+        challengeFilePath: "./.embedded/configs/challenge.txt" # 挑战信息写入文件路径（相对 cwd）
+        keyFilePath: "./.embedded/configs/password_input.txt" # 轮询密钥的文件路径（相对 cwd）
         pollInterval: 500 # 轮询间隔（毫秒）
         timeout: 120000 # 超时（毫秒），默认 2 分钟
     serial:
-      port: "COM4"
-      baudRate: 115200
-      loginUsername: "root"
-      loginPassword: "root"
+      port: "COM3" # 串口设备路径（如 COM3、/dev/ttyUSB0）；设为 "none" 表示该设备不启用串口
+      baudRate: 115200 # 波特率，默认 115200
+      loginUsername: "root" # 串口登录用户名
+      loginPassword: "root" # 串口登录密码
       keyProvider:
         mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-
-  # ---- 设备 B ----
-  board-b:
-    adb:
-      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
-    ssh:
-      host: "192.168.16.105"
-      port: 22
-      username: "root"
-      password: "root"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-    serial:
-      port: "COM3"
-      baudRate: 115200
-      loginUsername: "root"
-      loginPassword: "root"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-  # ---- 设备 nossh ----
-  board-nossh:
-    adb:
-      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
-    ssh:
-      host: "none"
-      port: 22
-      username: "sumu"
-      password: "sumu"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-    serial:
-      port: "COM3"
-      baudRate: 115200
-      loginUsername: "sumu"
-      loginPassword: "sumu"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-  # ---- 设备 noserial ----
-  board-noserial:
-    adb:
-      serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
-    ssh:
-      host: "1.1.1.1"
-      port: 22
-      username: "sumu"
-      password: "sumu"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-    serial:
-      port: "none"
-      baudRate: 115200
-      loginUsername: "sumu"
-      loginPassword: "sumu"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-  board-lubancat:
-    adb:
-      serialNo: "sn_none"
-    ssh:
-      host: "192.168.16.107"
-      port: 22
-      username: "root"
-      password: "root"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
-        pollInterval: 500
-        timeout: 120000
-    serial:
-      port: "COM5"
-      baudRate: 1500000
-      loginUsername: "root"
-      loginPassword: "root"
-      keyProvider:
-        mode: "file"
-        challengeFilePath: "./.embedded/configs/challenge.txt"
-        keyFilePath: "./.embedded/configs/password_input.txt"
+        challengeFilePath: "./.embedded/configs/challenge.txt" # 相对 cwd
+        keyFilePath: "./.embedded/configs/password_input.txt" # 相对 cwd
         pollInterval: 500
         timeout: 120000

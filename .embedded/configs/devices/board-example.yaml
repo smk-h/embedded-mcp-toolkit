@@ -1,0 +1,41 @@
+# ============================================
+# 设备配置示例（模板）
+# 文件名（board-example）即设备名，内容为该设备的完整、自包含配置
+# ============================================
+#
+# 通道启用/禁用约定：
+#   ssh 段    host 设为 "none" → 该设备不启用 SSH（调用 ssh 工具会返回 "does not support SSH"）
+#   serial 段 port 设为 "none" → 该设备不启用串口（调用 serial 工具会返回 "does not support serial"）
+#   adb 段    serialNo 设为 "sn_none" 或留空 → 不绑定具体 ADB 设备，由 adb 自动发现
+# 不需要的通道可直接整段删除，或保留段并把关键字段置 "none"/"sn_none"。
+
+adb:
+  serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
+
+ssh:
+  host: "192.168.16.105" # SSH 主机地址；设为 "none" 表示该设备不启用 SSH
+  port: 22 # SSH 端口，默认 22
+  username: "root" # SSH 登录用户名
+  password: "root" # 密码认证（与 privateKey 二选一）
+  keyProvider:
+    mode: "file" # file: 通过文件 IPC 获取密钥; terminal: 终端交互输入
+    # ↓↓↓ 路径基准说明 ↓↓↓
+    # challengeFilePath / keyFilePath 是「相对于运行 MCP server 时的工作目录（cwd）」的路径，
+    # 而非相对于本设备文件或 config.yaml 的位置。
+    # 通常 MCP server 在项目根目录启动，故写 ./ 开头的项目相对路径即可。
+    challengeFilePath: "./.embedded/configs/challenge.txt" # 挑战信息写入文件路径（相对 cwd）
+    keyFilePath: "./.embedded/configs/password_input.txt" # 轮询密钥的文件路径（相对 cwd）
+    pollInterval: 500 # 轮询间隔（毫秒）
+    timeout: 120000 # 超时（毫秒），默认 2 分钟
+
+serial:
+  port: "COM3" # 串口设备路径（如 COM3、/dev/ttyUSB0）；设为 "none" 表示该设备不启用串口
+  baudRate: 115200 # 波特率，默认 115200
+  loginUsername: "root" # 串口登录用户名
+  loginPassword: "root" # 串口登录密码
+  keyProvider:
+    mode: "file"
+    challengeFilePath: "./.embedded/configs/challenge.txt" # 相对 cwd
+    keyFilePath: "./.embedded/configs/password_input.txt" # 相对 cwd
+    pollInterval: 500
+    timeout: 120000
