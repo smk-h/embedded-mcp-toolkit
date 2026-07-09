@@ -44,6 +44,7 @@ const EXCLUDES = new Set([
   'my-psh',
   'test',
   'docs',
+  'plan',
   'client',
   'out',
   'scripts',
