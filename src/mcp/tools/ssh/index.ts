@@ -19,6 +19,12 @@ import {
   sshShellLoginHandler,
 } from "./shell.js";
 import { sshBuildConfig, sshBuildHandler } from "./build.js";
+import {
+  sshSftpUploadConfig,
+  sshSftpUploadHandler,
+  sshSftpDownloadConfig,
+  sshSftpDownloadHandler,
+} from "./sftp.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
@@ -39,4 +45,14 @@ export const mcpSshTools: ToolEntry[] = [
   ),
   mcpDefineTool("ssh_shell_login", sshShellLoginConfig, sshShellLoginHandler),
   mcpDefineTool("ssh_build", sshBuildConfig, sshBuildHandler),
+  mcpDefineTool(
+    "ssh_sftp_upload",
+    sshSftpUploadConfig,
+    sshSftpUploadHandler
+  ),
+  mcpDefineTool(
+    "ssh_sftp_download",
+    sshSftpDownloadConfig,
+    sshSftpDownloadHandler
+  ),
 ];

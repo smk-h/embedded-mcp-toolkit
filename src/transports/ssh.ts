@@ -1,4 +1,12 @@
-import { Client, type ClientChannel, type ConnectConfig } from "ssh2";
+import { stat, unlink } from "node:fs/promises";
+
+import {
+  Client,
+  type ClientChannel,
+  type ConnectConfig,
+  type SFTPWrapper,
+  type Stats,
+} from "ssh2";
 
 import { interactiveLoop } from "./loop.js";
 import { OutputBuffer } from "./output-buffer.js";
@@ -30,6 +38,22 @@ export interface SSHShellConfig {
 }
 
 /**
+ * @brief 文件传输结果摘要
+ *
+ * 由 SSHShell 的 uploadFile / downloadFile 返回，
+ * 工具层据此格式化为 MCP 文本响应。
+ */
+export interface TransferResult {
+  direction: "upload" | "download"; // 传输方向：upload 本地→远端，download 远端→本地
+  localPath: string; // 本地文件路径
+  remotePath: string; // 远端文件路径
+  bytes: number; // 传输字节数（源文件大小）
+  durationMs: number; // 耗时（毫秒）
+  success: boolean; // 是否成功
+  error?: string; // 失败时的错误信息（成功时为 undefined）
+}
+
+/**
  * @brief SSH 交互式 Shell 管理器
  *
  * 提供 open / write / read / close 四个核心方法，
@@ -39,6 +63,7 @@ export interface SSHShellConfig {
 export class SSHShell {
   #client: Client | null = null;
   #stream: ClientChannel | null = null;
+  #sftp: SFTPWrapper | null = null; // 懒加载的 SFTP 子系统，首次文件传输时才建立
   #output = new OutputBuffer();
   #config: SSHShellConfig;
 
@@ -179,12 +204,177 @@ export class SSHShell {
   }
 
   /**
+   * @brief 懒加载 SFTP 子系统会话
+   *
+   * 若 SFTP 会话已建立则直接复用；否则在当前 SSH 连接上发起 SFTP 子系统。
+   * ssh2 协议允许同一 Client 连接同时承载 shell 通道与 sftp 子系统，
+   * 二者互不干扰，因此 SFTP 与 shell 操作可在同一会话上交替进行。
+   *
+   * @return SFTPWrapper 实例
+   * @throws 连接未打开或远端不支持 SFTP 时抛出
+   */
+  async #ensureSftp(): Promise<SFTPWrapper> {
+    if (this.#sftp) {
+      return this.#sftp;
+    }
+    if (!this.#client) {
+      throw new Error("SSH connection not open.");
+    }
+    this.#sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
+      this.#client!.sftp((err, sftp) => {
+        if (err) {
+          return reject(err);
+        }
+        resolve(sftp);
+      });
+    });
+    return this.#sftp;
+  }
+
+  /**
+   * @brief 上传本地文件到远端（SFTP）
+   *
+   * 通过 ssh2 的 fastPut 流式并行上传，不在内存中缓冲整个文件，
+   * 适用于大文件（上百 MB）。传输字节数取自本地源文件 stat 大小。
+   * 异常被捕获并封装为 success:false 的结果返回，不向调用方抛出。
+   *
+   * @param localPath  本地源文件路径
+   * @param remotePath 远端目标文件路径
+   * @return 传输结果摘要
+   */
+  async uploadFile(
+    localPath: string,
+    remotePath: string
+  ): Promise<TransferResult> {
+    const start = Date.now();
+
+    // 先取本地源文件大小（用于摘要），失败则直接返回失败结果
+    let bytes: number;
+    try {
+      const st = await stat(localPath);
+      bytes = st.size;
+    } catch (err) {
+      return {
+        direction: "upload",
+        localPath,
+        remotePath,
+        bytes: 0,
+        durationMs: Date.now() - start,
+        success: false,
+        error: `Cannot stat local file: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+
+    try {
+      const sftp = await this.#ensureSftp();
+      await new Promise<void>((resolve, reject) => {
+        sftp.fastPut(localPath, remotePath, (err) => {
+          if (err) {
+            return reject(err);
+          }
+          resolve();
+        });
+      });
+      return {
+        direction: "upload",
+        localPath,
+        remotePath,
+        bytes,
+        durationMs: Date.now() - start,
+        success: true,
+      };
+    } catch (err) {
+      return {
+        direction: "upload",
+        localPath,
+        remotePath,
+        bytes: 0,
+        durationMs: Date.now() - start,
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /**
+   * @brief 下载远端文件到本地（SFTP）
+   *
+   * 通过 ssh2 的 fastGet 流式并行下载，不在内存中缓冲整个文件，
+   * 适用于大文件（上百 MB）。传输字节数取自远端源文件 sftp.stat 大小。
+   * 异常被捕获并封装为 success:false 的结果返回，不向调用方抛出；
+   * 失败时清理可能产生的半成品本地文件。
+   *
+   * @param remotePath 远端源文件路径
+   * @param localPath  本地目标文件路径
+   * @return 传输结果摘要
+   */
+  async downloadFile(
+    remotePath: string,
+    localPath: string
+  ): Promise<TransferResult> {
+    const start = Date.now();
+
+    try {
+      const sftp = await this.#ensureSftp();
+
+      // 先取远端源文件大小（用于摘要 + 源不存在时提前失败）
+      const st = await new Promise<Stats>((resolve, reject) => {
+        sftp.stat(remotePath, (err, stats) => {
+          if (err) {
+            return reject(err);
+          }
+          resolve(stats);
+        });
+      });
+      const bytes = st.size;
+
+      await new Promise<void>((resolve, reject) => {
+        sftp.fastGet(remotePath, localPath, (err) => {
+          if (err) {
+            return reject(err);
+          }
+          resolve();
+        });
+      });
+      return {
+        direction: "download",
+        localPath,
+        remotePath,
+        bytes,
+        durationMs: Date.now() - start,
+        success: true,
+      };
+    } catch (err) {
+      // 失败时清理半成品本地文件（忽略清理本身的错误）
+      try {
+        await unlink(localPath);
+      } catch {
+        // 目标文件可能未创建，忽略
+      }
+      return {
+        direction: "download",
+        localPath,
+        remotePath,
+        bytes: 0,
+        durationMs: Date.now() - start,
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  /**
    * @brief 关闭 shell 会话和 SSH 连接
    *
-   * 释放所有资源，清空缓冲区。
+   * 释放所有资源，清空缓冲区。释放顺序：SFTP 子系统 → shell 通道 → SSH 连接 → 缓冲区。
    */
   async close(): Promise<void> {
     this.fileLogger.disable();
+    // 先释放 SFTP 子系统（若已建立）
+    if (this.#sftp) {
+      this.#sftp.end();
+      this.#sftp = null;
+    }
     if (this.#stream) {
       this.#stream.close();
       this.#stream = null;
