@@ -15,7 +15,8 @@
     ]
   },
   "enabledMcpjsonServers": [
-    "embedded-board"
+    "embedded-board",
+    "file_utils_remote"
   ],
   "statusLine": {
     "type": "command",

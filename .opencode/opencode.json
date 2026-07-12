@@ -14,6 +14,18 @@
         "LOG_DIR": "./.embedded/log",
         "SAVE2FILE_PATH": "./.embedded/log"
       }
+    },
+    "file_utils_remote": {
+      "type": "local",
+      "command": [
+        "ssh",
+        "-i", "~/.ssh/id_file_utils_remote",
+        "-o", "ServerAliveInterval=60",
+        "sumu@192.168.164.128",
+        "PATH=$HOME/.npm-global/bin:$PATH file-utils-mcp-toolkit"
+      ],
+      "enabled": true,
+      "timeout": 600000
     }
   }
 }
