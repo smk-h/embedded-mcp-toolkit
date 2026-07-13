@@ -105,6 +105,7 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
     createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[power_shell_open] session opened: ${sessionId}`);
+  shell.fileLogger.enableFromEnv(sessionId);
 
   return {
     content: [

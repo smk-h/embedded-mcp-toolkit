@@ -29,7 +29,7 @@
  */
 import { execSync, spawn, type ChildProcess } from "child_process";
 
-import { OutputBuffer } from "./output-buffer.js";
+import { BaseShell } from "./base-shell.js";
 import { logger } from "../shared/logger.js";
 
 // ── 配置 ────────────────────────────────────────────────────
@@ -53,16 +53,19 @@ export interface AdbShellConfig {
  * 通过 child_process.spawn 启动持久化的 adb shell 进程，
  * 内部维护输出缓冲区，支持命令发送与输出读取。
  */
-export class AdbShell {
+export class AdbShell extends BaseShell {
   #process: ChildProcess | null = null;
-  #output = new OutputBuffer();
   #config: AdbShellConfig;
+
+  /** @brief ADB/PowerShell 通道的 banner 采集等待时长 */
+  protected bannerWaitMs = 800;
 
   /**
    * @brief 构造函数
    * @param config ADB Shell 配置
    */
   constructor(config: AdbShellConfig = {}) {
+    super();
     this.#config = config;
   }
 
@@ -135,13 +138,13 @@ export class AdbShell {
   /**
    * @brief 启动持久化 adb shell 进程
    *
-   * 通过 spawn 启动 adb -s <serialNo> shell 进程，
-   * 注册 stdout/stderr 数据监听，返回初始 banner 输出。
+   * 模板方法 acquire：确定设备序列号，spawn 启动 adb shell 子进程，
+   * 注册 stdout/stderr/close/error 监听。
+   * 不负责 banner 采集（由基类 open 统一处理）。
    *
-   * @returns shell 启动时的初始输出（banner / prompt）
    * @throws 当 adb 不可用或设备不存在时启动失败
    */
-  async open(): Promise<string> {
+  protected async acquire(): Promise<void> {
     // 阶段1: 确定目标设备序列号
     let serialNo = this.#config.serialNo;
     if (!serialNo) {
@@ -172,12 +175,12 @@ export class AdbShell {
 
     this.#process = proc;
 
-    // 阶段3: 注册 stdout/stderr 数据监听，写入内部缓冲区
+    // 阶段3: 注册 stdout/stderr 数据监听，写入内部缓冲区并写入文件日志
     proc.stdout?.on("data", (data: Buffer) => {
-      this.#output.append(data.toString());
+      this.appendData(data.toString());
     });
     proc.stderr?.on("data", (data: Buffer) => {
-      this.#output.append(data.toString());
+      this.appendData(data.toString());
     });
     // 子进程退出时清理引用，避免对已死进程写 stdin
     proc.on("close", () => {
@@ -190,63 +193,30 @@ export class AdbShell {
     proc.on("error", () => {
       this.#process = null;
     });
-
-    // 阶段4: 等待 shell 启动完成，收集 banner 后停止收集，清空缓冲区
-    this.#output.startCollecting();
-    await new Promise((r) => setTimeout(r, 800));
-    return this.#output.read(1);
   }
 
   /**
-   * @brief 向 ADB shell 进程发送数据
+   * @brief 向 ADB shell 进程发送原始字节
    *
-   * @param data              要发送的数据
-   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
-   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
-   * @throws 当 shell 未打开时抛出错误
+   * payload 已含换行处理，此处只校验进程是否存活并发送。
+   *
+   * @param payload 已拼接换行的完整发送内容
+   * @throws 进程未启动或已退出时抛出 "ADB shell not open. Call open() first."
    */
-  write(
-    data: string,
-    clear: number = 1,
-    appendLineEnding: boolean = true
-  ): void {
+  protected rawWrite(payload: string): void {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("ADB shell not open. Call open() first.");
     }
-    this.#output.prepareWrite(clear);
-    this.#process.stdin!.write(appendLineEnding ? `${data}\n` : data);
-  }
-
-  /**
-   * @brief 排空缓冲区但不停止数据收集
-   *
-   * 返回当前缓冲区内容并清空，保持收集状态不变。
-   * 用于长时间命令（如 logcat）持续接收输出时轮询取走新数据。
-   *
-   * @returns 缓冲区中的文本内容
-   */
-  drain(): string {
-    return this.#output.drain();
-  }
-
-  /**
-   * @brief 读取缓冲区中的输出数据
-   *
-   * @param clear 清空标志：
-   *              1（默认）= 读取后清空缓冲区
-   *              0 = 读取后保留缓冲区内容
-   * @returns 缓冲区中的文本内容
-   */
-  read(clear: number = 1): string {
-    return this.#output.read(clear);
+    this.#process.stdin!.write(payload);
   }
 
   /**
    * @brief 关闭 ADB shell 进程
    *
-   * 发送 exit 命令并终止进程，释放所有资源。
+   * 发送 exit 命令并终止进程。
+   * fileLogger.disable 与 output.reset 由基类 close 统一处理。
    */
-  async close(): Promise<void> {
+  protected async release(): Promise<void> {
     if (this.#process) {
       const proc = this.#process;
       this.#process = null;
@@ -274,6 +244,5 @@ export class AdbShell {
         }
       }
     }
-    this.#output.reset();
   }
 }

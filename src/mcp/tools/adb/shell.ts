@@ -139,6 +139,7 @@ export async function adbShellOpenHandler(args: { device?: string }) {
     createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
+  shell.fileLogger.enableFromEnv(sessionId);
 
   return {
     content: [

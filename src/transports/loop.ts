@@ -1,14 +1,4 @@
-/**
- * @brief 交互式 Shell 的读写接口
- *
- * 抽象出 write / read / close 方法，
- * 供 interactiveLoop 统一调用。
- */
-export interface InteractiveShell {
-  write(cmd: string, clear?: number): void;
-  read(clear?: number): string;
-  close(): Promise<void>;
-}
+import type { InteractiveShell } from "./interactive-shell.js";
 
 /**
  * @brief 交互式终端循环

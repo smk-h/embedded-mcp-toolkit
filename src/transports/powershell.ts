@@ -16,7 +16,7 @@ import {
   type ExecSyncOptionsWithStringEncoding,
 } from "child_process";
 
-import { OutputBuffer } from "./output-buffer.js";
+import { BaseShell } from "./base-shell.js";
 import { logger } from "../shared/logger.js";
 
 // ── 一次性执行工具 ──────────────────────────────────────────
@@ -88,16 +88,19 @@ export interface PowerShellShellConfig {
  * 与 SerialShell / SSHShell 保持相同的接口模式，
  * 实现 transport/loop.ts 中的 InteractiveShell 接口。
  */
-export class PowerShellShell {
+export class PowerShellShell extends BaseShell {
   #process: ChildProcess | null = null;
-  #output = new OutputBuffer();
   #config: PowerShellShellConfig;
+
+  /** @brief ADB/PowerShell 通道的 banner 采集等待时长 */
+  protected bannerWaitMs = 800;
 
   /**
    * @brief 构造函数
    * @param config PowerShell Shell 配置
    */
   constructor(config: PowerShellShellConfig = {}) {
+    super();
     this.#config = config;
   }
 
@@ -107,15 +110,13 @@ export class PowerShellShell {
   }
 
   /**
-   * @brief 启动交互式 PowerShell 进程
+   * @brief 启动交互式 PowerShell 进程，注册数据监听
    *
-   * 通过 spawn 启动持久化的 PowerShell 进程，
-   * 注册 stdout/stderr 数据监听。
-   * 此时不收集输出数据，需调用 write() 后才开始收集。
-   *
-   * @return shell 启动时的初始输出（banner / prompt）
+   * 模板方法 acquire：spawn 启动持久化 PowerShell 进程，
+   * 注册 stdout/stderr/close/error 监听。
+   * 不负责 banner 采集（由基类 open 统一处理）。
    */
-  async open(): Promise<string> {
+  protected async acquire(): Promise<void> {
     const args: string[] = [];
     if (this.#config.noProfile !== false) {
       args.push("-NoProfile");
@@ -130,10 +131,10 @@ export class PowerShellShell {
     this.#process = proc;
 
     proc.stdout?.on("data", (data: Buffer) => {
-      this.#output.append(data.toString());
+      this.appendData(data.toString());
     });
     proc.stderr?.on("data", (data: Buffer) => {
-      this.#output.append(data.toString());
+      this.appendData(data.toString());
     });
     proc.on("close", () => {
       this.#process = null;
@@ -141,52 +142,30 @@ export class PowerShellShell {
     proc.on("error", () => {
       this.#process = null;
     });
-
-    // 收集 banner 后停止
-    this.#output.startCollecting();
-    await new Promise((r) => setTimeout(r, 800));
-    return this.#output.read(1);
   }
 
   /**
-   * @brief 向 PowerShell 进程发送数据
+   * @brief 向 PowerShell 进程发送原始字节
    *
-   * @param data              要发送的数据
-   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
-   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
+   * payload 已含换行处理，此处只校验进程是否存活并发送。
+   *
+   * @param payload 已拼接换行的完整发送内容
+   * @throws 进程未启动或已退出时抛出 "PowerShell shell not open. Call open() first."
    */
-  write(
-    data: string,
-    clear: number = 1,
-    appendLineEnding: boolean = true
-  ): void {
+  protected rawWrite(payload: string): void {
     if (!this.#process || this.#process.exitCode !== null) {
       throw new Error("PowerShell shell not open. Call open() first.");
     }
-    this.#output.prepareWrite(clear);
-    this.#process.stdin!.write(appendLineEnding ? `${data}\n` : data);
-  }
-
-  /**
-   * @brief 读取缓冲区中的输出数据
-   *
-   * 返回缓冲区内容，并根据 clear 参数决定是否清空缓冲区。
-   *
-   * @param clear 清空标志，控制读取后缓冲区状态：
-   *              - 1（默认）：读取后清空缓冲区，下次 read() 返回新数据
-   *              - 0：读取后保留缓冲区内容，下次 read() 仍可获取相同数据
-   * @return 缓冲区中的文本内容
-   */
-  read(clear: number = 1): string {
-    return this.#output.read(clear);
+    this.#process.stdin!.write(payload);
   }
 
   /**
    * @brief 关闭 PowerShell 进程
    *
-   * 发送 exit 命令并终止进程，释放所有资源。
+   * 发送 exit 命令并终止进程。
+   * fileLogger.disable 与 output.reset 由基类 close 统一处理。
    */
-  async close(): Promise<void> {
+  protected async release(): Promise<void> {
     if (this.#process) {
       const proc = this.#process;
       this.#process = null;
@@ -214,6 +193,5 @@ export class PowerShellShell {
         }
       }
     }
-    this.#output.reset();
   }
 }

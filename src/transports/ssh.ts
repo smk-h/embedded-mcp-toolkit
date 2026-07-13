@@ -9,12 +9,11 @@ import {
 } from "ssh2";
 
 import { interactiveLoop } from "./loop.js";
-import { OutputBuffer } from "./output-buffer.js";
+import { BaseShell } from "./base-shell.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "../services/psh.js";
 import { KeyProvider } from "../services/key-provider.js";
 import { getKeyProviderConfig } from "../shared/config.js";
-import { FileLogger } from "../shared/file-logger.js";
 
 /**
  * @brief SSH Shell 连接配置
@@ -60,21 +59,21 @@ export interface TransferResult {
  * 通过 SSH 协议与远端建立交互式 shell 会话，
  * 内部维护输出缓冲区，支持命令发送与输出读取。
  */
-export class SSHShell {
+export class SSHShell extends BaseShell {
   #client: Client | null = null;
   #stream: ClientChannel | null = null;
   #sftp: SFTPWrapper | null = null; // 懒加载的 SFTP 子系统，首次文件传输时才建立
-  #output = new OutputBuffer();
   #config: SSHShellConfig;
 
-  /** @brief 文件日志记录器，用于将 shell 输出写入本地文件 */
-  readonly fileLogger = new FileLogger();
+  /** @brief SSH/Serial 通道的 banner 采集等待时长 */
+  protected bannerWaitMs = 500;
 
   /**
    * @brief 构造函数
    * @param config SSH 连接配置
    */
   constructor(config: SSHShellConfig) {
+    super();
     this.#config = config;
   }
 
@@ -99,14 +98,13 @@ export class SSHShell {
   }
 
   /**
-   * @brief 打开 SSH 连接并启动交互式 shell
+   * @brief 建立 SSH 连接、分配 PTY、注册数据监听
    *
-   * 建立 SSH 连接，分配 PTY 伪终端，启动远端登录 shell。
-   * 此时不收集输出数据，需调用 write() 后才开始收集。
-   *
-   * @return shell 启动时的初始输出（banner / prompt）
+   * 模板方法 acquire：建立 ssh2 Client 连接，分配 PTY 伪终端启动远端 shell，
+   * 注册 stream 的 data/stderr/close 监听（data 内调 appendData）。
+   * 不负责 banner 采集（由基类 open 统一处理）。
    */
-  async open(): Promise<string> {
+  protected async acquire(): Promise<void> {
     const client = new Client(); // 创建 ssh2 Client
 
     await new Promise<void>((resolve, reject) => {
@@ -132,75 +130,32 @@ export class SSHShell {
         resolve(stream);
       });
     });
-    // 监听 stream 的 data/stderr 事件，收集输出到内部缓冲区
+    // 监听 stream 的 data/stderr 事件，收集输出到内部缓冲区并写入文件日志
     stream.on("data", (data: Buffer) => {
-      const text = data.toString();
-      this.#output.append(text);
-      this.fileLogger.write(text);
+      this.appendData(data.toString());
     });
     stream.stderr.on("data", (data: Buffer) => {
-      const text = data.toString();
-      this.#output.append(text);
-      this.fileLogger.write(text);
+      this.appendData(data.toString());
     });
     stream.on("close", () => {
       this.#stream = null;
     });
 
     this.#stream = stream;
-
-    // 收集 banner 后停止
-    this.#output.startCollecting();
-    await new Promise((r) => setTimeout(r, 500)); // 等待 500ms 收集 banner（登录提示、motd 等），然后停止收集
-    return this.#output.read(1);
   }
 
   /**
-   * @brief 向 SSH shell 发送数据
+   * @brief 向 SSH shell 发送原始字节
    *
-   * 发送数据到远端 shell 执行。SSH 已分配 PTY 伪终端，\x03 会被远端
-   * 终端驱动自动转换为 SIGINT，因此通过本方法直接写入即可中断命令。
+   * payload 已含换行处理，此处只校验连接是否已建立并发送。
+   * SSH 已分配 PTY 伪终端，\x03 会被远端终端驱动自动转换为 SIGINT。
    *
-   * @param data              要发送的数据
-   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
-   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(如 \x03 即 Ctrl+C)
+   * @param payload 已拼接换行的完整发送内容
+   * @throws 连接未打开时抛出 "Shell not open. Call open() first."
    */
-  write(
-    data: string,
-    clear: number = 1,
-    appendLineEnding: boolean = true
-  ): void {
+  protected rawWrite(payload: string): void {
     if (!this.#stream) throw new Error("Shell not open. Call open() first.");
-    this.#output.prepareWrite(clear);
-    this.#stream.write(appendLineEnding ? `${data}\n` : data);
-  }
-
-  /**
-   * @brief 读取缓冲区中的输出数据
-   *
-   * 返回缓冲区内容，并根据 clear 参数决定是否清空缓冲区。
-   *
-   * @param clear 清空标志，控制读取后缓冲区状态：
-   *              - 1（默认）：读取后清空缓冲区，下次 read() 返回新数据
-   *              - 0：读取后保留缓冲区内容，下次 read() 仍可获取相同数据
-   * @return 缓冲区中的文本内容
-   */
-  read(clear: number = 1): string {
-    return this.#output.read(clear);
-  }
-
-  /**
-   * @brief 排空缓冲区但不停止数据收集
-   *
-   * 返回当前缓冲区内容并清空，保持输出收集状态。
-   * 用于长时间命令执行期间持续接收输出数据。
-   * 与 read(1) 不同的是，read(1) 在读取后会停止数据收集，
-   * 而 drain() 不清除收集状态。
-   *
-   * @return 缓冲区中的文本内容
-   */
-  drain(): string {
-    return this.#output.drain();
+    this.#stream.write(payload);
   }
 
   /**
@@ -364,12 +319,12 @@ export class SSHShell {
   }
 
   /**
-   * @brief 关闭 shell 会话和 SSH 连接
+   * @brief 关闭 SSH 连接，释放通道资源
    *
-   * 释放所有资源，清空缓冲区。释放顺序：SFTP 子系统 → shell 通道 → SSH 连接 → 缓冲区。
+   * 释放顺序：SFTP 子系统 → shell 通道 → SSH 连接。
+   * fileLogger.disable 与 output.reset 由基类 close 统一处理。
    */
-  async close(): Promise<void> {
-    this.fileLogger.disable();
+  protected async release(): Promise<void> {
     // 先释放 SFTP 子系统（若已建立）
     if (this.#sftp) {
       this.#sftp.end();
@@ -383,7 +338,6 @@ export class SSHShell {
       this.#client.end();
       this.#client = null;
     }
-    this.#output.reset();
   }
 }
 

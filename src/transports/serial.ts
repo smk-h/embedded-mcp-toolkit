@@ -1,8 +1,7 @@
 import { SerialPort } from "serialport";
 
 import { interactiveLoop } from "./loop.js";
-import { OutputBuffer } from "./output-buffer.js";
-import { FileLogger } from "../shared/file-logger.js";
+import { BaseShell } from "./base-shell.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "../services/psh.js";
 import { KeyProvider } from "../services/key-provider.js";
@@ -48,18 +47,28 @@ export interface SerialShellConfig {
  * 内部维护输出缓冲区，支持命令发送与输出读取。
  */
 
-export class SerialShell {
+export class SerialShell extends BaseShell {
   #serialPort: SerialPort | null = null;
-  #output = new OutputBuffer();
   #config: SerialShellConfig;
-  /** 原始数据文件日志记录器 */
-  readonly fileLogger = new FileLogger();
+
+  /** @brief SSH/Serial 通道的 banner 采集等待时长 */
+  protected bannerWaitMs = 500;
+
+  /**
+   * @brief 写入时的换行符
+   *
+   * 覆盖基类默认值 "\n"，使用 config.lineEnding（默认仍为 "\n"）。
+   */
+  protected get lineEnding(): string {
+    return this.#config.lineEnding ?? "\n";
+  }
 
   /**
    * @brief 构造函数
    * @param config 串口连接配置
    */
   constructor(config: SerialShellConfig) {
+    super();
     this.#config = config;
   }
 
@@ -74,14 +83,13 @@ export class SerialShell {
   }
 
   /**
-   * @brief 打开串口连接并启动交互式 shell
+   * @brief 打开串口连接，注册数据监听
    *
-   * 打开串口设备，注册数据监听。
-   * 此时不收集输出数据，需调用 write() 后才开始收集。
+   * 模板方法 acquire：打开串口设备，注册 data/close/error 监听。
+   * 不负责 banner 采集（由基类 open 统一处理）。
    * https://serialport.io/docs/guide-usage
-   * @return 串口启动时的初始输出（banner / prompt）
    */
-  async open(): Promise<string> {
+  protected async acquire(): Promise<void> {
     const serialPort = new SerialPort({
       path: this.#config.port,
       baudRate: this.#config.baudRate ?? 115200,
@@ -99,12 +107,9 @@ export class SerialShell {
     });
 
     this.#serialPort = serialPort;
-    // 监听串口数据接收事件：将收到的二进制数据转为字符串后追加到内部缓冲区
+    // 监听串口数据接收事件：将收到的二进制数据转为字符串后追加到内部缓冲区并写入文件日志
     serialPort.on("data", (data: Buffer) => {
-      const text = data.toString();
-      this.#output.append(text);
-      // 若启用了文件日志，按行写入（缓冲不完整行，遇换行符时输出带时间戳的完整行）
-      this.fileLogger.write(text);
+      this.appendData(data.toString());
     });
     // 关闭事件：串口被物理断开或系统关闭时触发，清空句柄防止野指针
     serialPort.on("close", () => {
@@ -114,38 +119,27 @@ export class SerialShell {
     serialPort.on("error", () => {
       this.#serialPort = null;
     });
-
-    // 打开后短暂收集 banner 输出（如登录提示、shell 提示符），然后停止收集
-    this.#output.startCollecting();
-    await new Promise((r) => setTimeout(r, 500));
-    return this.#output.read(1);
   }
 
   /**
-   * @brief 向串口 shell 发送数据
+   * @brief 向串口发送原始字节
    *
-   * @param data              要发送的数据
-   * @param clear             清空标志(默认1)：1=清空后收集，0=追加收集
-   * @param appendLineEnding  是否追加换行符(默认true)：false 时发送原始数据(控制字符)
+   * payload 已含换行处理，此处只校验串口是否已打开并发送。
+   *
+   * @param payload 已拼接换行的完整发送内容
+   * @throws 串口未打开时抛出 "Serial not open. Call open() first."
    */
-  write(
-    data: string,
-    clear: number = 1,
-    appendLineEnding: boolean = true
-  ): void {
+  protected rawWrite(payload: string): void {
     if (!this.#serialPort || !this.#serialPort.isOpen) {
       throw new Error("Serial not open. Call open() first.");
     }
-    this.#output.prepareWrite(clear);
-    this.#serialPort.write(
-      appendLineEnding ? `${data}${this.#config.lineEnding ?? "\n"}` : data
-    );
+    this.#serialPort.write(payload);
   }
 
   /**
    * @brief 发送原始数据到串口（不追加换行符）
    *
-   * write() 的便捷别名，等价于 write(data, clear, false)。
+   * 调用继承的 write(data, clear, false)，等价于不追加换行。
    * 用于发送控制字符等场景，如 "\x15"（Ctrl+u）、"\x03"（Ctrl+C）等。
    *
    * @param data  要发送的原始字符串
@@ -156,26 +150,12 @@ export class SerialShell {
   }
 
   /**
-   * @brief 读取缓冲区中的输出数据
-   *
-   * 返回缓冲区内容，并根据 clear 参数决定是否清空缓冲区。
-   *
-   * @param clear 清空标志，控制读取后缓冲区状态：
-   *              - 1（默认）：读取后清空缓冲区，下次 read() 返回新数据
-   *              - 0：读取后保留缓冲区内容，下次 read() 仍可获取相同数据
-   * @return 缓冲区中的文本内容
-   */
-  read(clear: number = 1): string {
-    return this.#output.read(clear);
-  }
-
-  /**
    * @brief 关闭串口连接
    *
-   * 释放所有资源，清空缓冲区，关闭日志文件流。
+   * 含 2s 超时 + destroy 兜底，防止串口关闭卡住。
+   * fileLogger.disable 与 output.reset 由基类 close 统一处理。
    */
-  async close(): Promise<void> {
-    this.fileLogger.disable();
+  protected async release(): Promise<void> {
     if (this.#serialPort) {
       const port = this.#serialPort;
       this.#serialPort = null;
@@ -199,7 +179,6 @@ export class SerialShell {
         });
       });
     }
-    this.#output.reset();
   }
 }
 
