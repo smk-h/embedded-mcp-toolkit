@@ -15,22 +15,7 @@ import {
   PSH_STATE_DESC,
 } from "../../../services/psh.js";
 import { KeyProvider } from "../../../services/key-provider.js";
-import { registry } from "../../sessions/registry.js";
-// ── 会话存储 ────────────────────────────────────────────────
-
-/**
- * @brief 串口 Shell 会话存储表
- *
- * 以 session_id 为键，SerialShell 实例为值，
- * 所有串口 MCP 工具通过此表查找和共享会话。
- */
-const sessions = new Map<string, SerialShell>();
-
-/** @brief COM 口到 session_id 的映射，用于防止同一串口被重复打开 */
-const portToSession = new Map<string, string>();
-
-/** @brief 会话自增计数器，用于生成唯一 session_id */
-let sessionCounter = 0;
+import { serialStore, portToSession } from "./sessions.js";
 
 // ── serial_open ─────────────────────────────────────────────
 
@@ -141,7 +126,7 @@ export async function serialOpenHandler(args: {
 
   // 检查该 COM 口是否已有活跃会话
   const existingId = portToSession.get(config.port);
-  if (existingId && sessions.has(existingId)) {
+  if (existingId && serialStore.get(existingId)) {
     return {
       content: [
         text(
@@ -166,16 +151,12 @@ export async function serialOpenHandler(args: {
     };
   }
 
-  const sessionId = `serial_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  portToSession.set(config.port, sessionId);
-  registry.register({
-    id: sessionId,
+  const sessionId = serialStore.create(shell, {
     type: "serial",
     deviceName,
     connectionInfo: `${config.port} @ ${config.baudRate ?? 115200}`,
-    createdAt: new Date().toISOString(), // UTC
   });
+  portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
   shell.fileLogger.enableFromEnv(sessionId);
 
@@ -224,15 +205,14 @@ export const serialCloseConfig = {
  */
 export async function serialCloseHandler(args: { session_id: string }) {
   logger.info(`[serial_close] session_id=${args.session_id}`);
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  const port = shell.getPort();
-  await shell.close();
-  sessions.delete(args.session_id);
-  registry.unregister(args.session_id);
+  const port = result.shell.getPort();
+  await result.shell.close();
+  serialStore.remove(args.session_id);
   if (port) {
     portToSession.delete(port);
   }
@@ -295,12 +275,12 @@ export function serialWriteHandler(args: {
   logger.info(
     `[serial_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  shell.write(args.command, args.clear ?? 1);
+  result.shell.write(args.command, args.clear ?? 1);
 
   return { content: [text(`Command sent: ${args.command}`)] };
 }
@@ -351,12 +331,12 @@ export function serialReadHandler(args: {
   logger.info(
     `[serial_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  const output = shell.read(args.clear ?? 1);
+  const output = result.shell.read(args.clear ?? 1);
 
   return { content: [text(output || "(no output)")] };
 }
@@ -425,10 +405,12 @@ export async function serialExecHandler(args: {
   logger.info(
     `[serial_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+
+  const shell = result.shell;
 
   shell.write(args.command, args.clear ?? 1);
 
@@ -529,14 +511,13 @@ export async function serialShellLoginHandler(args: {
   const cleanupNewSession = async (): Promise<void> => {
     if (newSessionId) {
       await shell.close();
-      sessions.delete(newSessionId);
+      serialStore.remove(newSessionId);
       portToSession.delete(baseConfig.port);
-      registry.unregister(newSessionId);
     }
   };
 
-  if (existingId && sessions.has(existingId)) {
-    shell = sessions.get(existingId)!;
+  if (existingId && serialStore.get(existingId)) {
+    shell = serialStore.get(existingId)!;
     banner = shell.read(0);
   } else {
     shell = new SerialShell({
@@ -560,17 +541,13 @@ export async function serialShellLoginHandler(args: {
       };
     }
     // open 成功后立即注册会话并启用日志，确保解锁/探测过程的串口数据被保存
-    const newId = `serial_${++sessionCounter}`;
-    newSessionId = newId;
-    sessions.set(newId, shell);
-    portToSession.set(baseConfig.port, newId);
-    registry.register({
-      id: newId,
+    const newId = serialStore.create(shell, {
       type: "serial",
       deviceName,
       connectionInfo: `${baseConfig.port} @ ${baseConfig.baudRate ?? 115200}`,
-      createdAt: new Date().toISOString(), // UTC
     });
+    newSessionId = newId;
+    portToSession.set(baseConfig.port, newId);
     shell.fileLogger.enableFromEnv(newId);
   }
 
@@ -599,7 +576,7 @@ export async function serialShellLoginHandler(args: {
     const detail = handler
       ? `(PSH already unlocked)\nProfile: ${handler.profile.name}`
       : "(no PSH detected, shell is ready)";
-    return registerSession(shell, baseConfig.port, existingId, detail);
+    return registerSession(shell, baseConfig.port, existingId, deviceName, detail);
   }
 
   // --- 解锁中：悬挂的密码提示，需 key 完成输入 ---
@@ -630,6 +607,7 @@ export async function serialShellLoginHandler(args: {
         shell,
         baseConfig.port,
         existingId,
+        deviceName,
         `(PSH unlock completed from UNLOCKING state)\nProfile: ${handler!.profile.name}`
       );
     }
@@ -695,6 +673,7 @@ export async function serialShellLoginHandler(args: {
         shell,
         baseConfig.port,
         existingId,
+        deviceName,
         `(PSH unlock succeeded)\nProfile: ${handler.profile.name}\nChallenge: ${result.challengeCode ?? "(none)"}`
       );
     }
@@ -717,7 +696,7 @@ export async function serialShellLoginHandler(args: {
   const detail = handler
     ? `(PSH state unknown)\nProfile: ${handler.profile.name}`
     : "(PSH state unknown)";
-  return registerSession(shell, baseConfig.port, existingId, detail);
+  return registerSession(shell, baseConfig.port, existingId, deviceName, detail);
 }
 
 // ── serial_enter_uboot ────────────────────────────────────────
@@ -780,10 +759,12 @@ export async function serialEnterUbootHandler(args: {
     `[serial_enter_uboot] session_id=${args.session_id} timeout=${timeoutSec}s`
   );
 
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+
+  const shell = result.shell;
 
   // Autoboot 提示模式
   const AUTOBOOT_ANY_KEY_RE = /Hit\s+any\s+key\s+to\s+stop\s+autoboot/i;
@@ -861,11 +842,12 @@ function registerSession(
   shell: SerialShell,
   port: string,
   existingId: string | undefined,
+  deviceName: string,
   detail: string
 ) {
   // 若已通过 portToSession 注册（如提前在 shell.login 中注册），直接复用
   const registeredId = existingId ?? portToSession.get(port);
-  if (registeredId && sessions.has(registeredId)) {
+  if (registeredId && serialStore.get(registeredId)) {
     logger.info(
       `[serial_shell_login] session reused: ${registeredId} port=${port}`
     );
@@ -875,35 +857,15 @@ function registerSession(
       ],
     };
   }
-  const sessionId = `serial_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
+  const sessionId = serialStore.create(shell, {
+    type: "serial",
+    deviceName,
+    connectionInfo: `${port} @ ${shell.getPort()}`,
+  });
   portToSession.set(port, sessionId);
   logger.info(`[serial_shell_login] session opened: ${sessionId} port=${port}`);
   shell.fileLogger.enableFromEnv(sessionId);
   return {
     content: [text(`Session ${sessionId} opened on ${port} ${detail}`)],
   };
-}
-
-// ── 进程退出自动清理 ────────────────────────────────────────
-
-/**
- * @brief 关闭所有活跃的串口会话
- *
- * 在 MCP Server 进程退出时调用，确保所有串口连接被正确关闭，
- * 释放端口资源，避免串口残留占用。
- */
-export async function disposeAllSerialSessions(): Promise<void> {
-  const entries = [...sessions.entries()];
-  for (const [id, shell] of entries) {
-    try {
-      await shell.close();
-      logger.info(`[serial_dispose] session ${id} closed`);
-    } catch (err) {
-      logger.error(`[serial_dispose] session ${id} close failed:`, err);
-    }
-    registry.unregister(id);
-  }
-  sessions.clear();
-  portToSession.clear();
 }

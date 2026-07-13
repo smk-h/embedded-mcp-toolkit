@@ -10,7 +10,7 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
-import { sessions } from "./shell.js";
+import { sshStore } from "./sessions.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
 const BUILD_MARKER = "___MCP_BUILD_DONE___";
@@ -327,10 +327,11 @@ export async function sshBuildHandler(args: {
   );
 
   // ── 步骤 1：查找 SSH 会话 ──
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = sshStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+  const shell = result.shell;
 
   // ── 步骤 2：构造远端命令 ──
   // fullCommand 形如：

@@ -9,20 +9,7 @@ import {
   PSH_STATE_DESC,
 } from "../../../services/psh.js";
 import { KeyProvider } from "../../../services/key-provider.js";
-import { registry } from "../../sessions/registry.js";
-
-// ── 会话存储 ────────────────────────────────────────────────
-
-/**
- * @brief SSH Shell 会话存储表
- *
- * 以 session_id 为键，SSHShell 实例为值，
- * 所有 SSH MCP 工具通过此表查找和共享会话。
- */
-export const sessions = new Map<string, SSHShell>();
-
-/** @brief 会话自增计数器，用于生成唯一 session_id */
-let sessionCounter = 0;
+import { sshStore } from "./sessions.js";
 
 // ── ssh_shell_open ─────────────────────────────────────────
 
@@ -96,14 +83,10 @@ export async function sshShellOpenHandler(args: {
     };
   }
 
-  const sessionId = `ssh_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  registry.register({
-    id: sessionId,
+  const sessionId = sshStore.create(shell, {
     type: "ssh",
     deviceName,
     connectionInfo: `${config.host}:${config.port ?? 22}`,
-    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
@@ -149,14 +132,13 @@ export const sshShellCloseConfig = {
  */
 export async function sshShellCloseHandler(args: { session_id: string }) {
   logger.info(`[ssh_shell_close] session_id=${args.session_id}`);
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = sshStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  await shell.close();
-  sessions.delete(args.session_id);
-  registry.unregister(args.session_id);
+  await result.shell.close();
+  sshStore.remove(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -216,12 +198,12 @@ export function sshShellWriteHandler(args: {
   logger.info(
     `[ssh_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = sshStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  shell.write(args.command, args.clear ?? 1);
+  result.shell.write(args.command, args.clear ?? 1);
 
   return { content: [text(`Command sent: ${args.command}`)] };
 }
@@ -272,12 +254,12 @@ export function sshShellReadHandler(args: {
   logger.info(
     `[ssh_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = sshStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  const output = shell.read(args.clear ?? 1);
+  const output = result.shell.read(args.clear ?? 1);
 
   return { content: [text(output || "(no output)")] };
 }
@@ -346,10 +328,12 @@ export async function sshShellExecHandler(args: {
   logger.info(
     `[ssh_shell_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = sshStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+
+  const shell = result.shell;
 
   shell.write(args.command, args.clear ?? 1);
 
@@ -395,10 +379,12 @@ export const sshConnectionsConfig = {
  */
 export async function sshConnectionsHandler(args: { session_id: string }) {
   logger.info(`[ssh_shell_connection] session_id=${args.session_id}`);
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = sshStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+
+  const shell = result.shell;
 
   const commands = [
     "netstat -tn 2>/dev/null | grep :22",
@@ -516,14 +502,10 @@ export async function sshShellLoginHandler(args: {
   }
 
   // open 成功后立即注册会话，确保后续解锁/探测过程可被其他工具访问
-  const sessionId = `ssh_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  registry.register({
-    id: sessionId,
+  const sessionId = sshStore.create(shell, {
     type: "ssh",
     deviceName,
     connectionInfo: `${config.host}:${config.port ?? 22}`,
-    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[ssh_shell_login] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
@@ -550,8 +532,7 @@ export async function sshShellLoginHandler(args: {
       if (!handler) {
         logger.warn(`[ssh_shell_login] PSH 已锁定但无匹配 handler, 关闭连接`);
         await shell.close();
-        sessions.delete(sessionId);
-        registry.unregister(sessionId);
+        sshStore.remove(sessionId);
         return {
           content: [text("PSH detected as LOCKED but no handler available.")],
         };
@@ -595,8 +576,7 @@ export async function sshShellLoginHandler(args: {
         `[ssh_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`
       );
       await shell.close();
-      sessions.delete(sessionId);
-      registry.unregister(sessionId);
+      sshStore.remove(sessionId);
       return {
         content: [
           text(
@@ -625,8 +605,7 @@ export async function sshShellLoginHandler(args: {
           `[ssh_shell_login] PSH处于UNLOCKING状态但未提供密钥, 关闭连接`
         );
         await shell.close();
-        sessions.delete(sessionId);
-        registry.unregister(sessionId);
+        sshStore.remove(sessionId);
         return {
           content: [
             text(
@@ -660,8 +639,7 @@ export async function sshShellLoginHandler(args: {
         `[ssh_shell_login] UNLOCKING状态解锁失败, finalState=${finalState}`
       );
       await shell.close();
-      sessions.delete(sessionId);
-      registry.unregister(sessionId);
+      sshStore.remove(sessionId);
       return {
         content: [
           text(
@@ -674,8 +652,7 @@ export async function sshShellLoginHandler(args: {
     case PshState.ERROR: {
       logger.error(`[ssh_shell_login] PSH处于ERROR状态, 关闭连接`);
       await shell.close();
-      sessions.delete(sessionId);
-      registry.unregister(sessionId);
+      sshStore.remove(sessionId);
       return {
         content: [
           text(
@@ -699,26 +676,4 @@ export async function sshShellLoginHandler(args: {
       };
     }
   }
-}
-
-// ── 进程退出自动清理 ────────────────────────────────────────
-
-/**
- * @brief 关闭所有活跃的 SSH 会话
- *
- * 在 MCP Server 进程退出时调用，确保所有 SSH 连接被正确关闭，
- * 释放网络资源。
- */
-export async function disposeAllSshSessions(): Promise<void> {
-  const entries = [...sessions.entries()];
-  for (const [id, shell] of entries) {
-    try {
-      await shell.close();
-      logger.info(`[ssh_dispose] session ${id} closed`);
-    } catch (err) {
-      logger.error(`[ssh_dispose] session ${id} close failed:`, err);
-    }
-    registry.unregister(id);
-  }
-  sessions.clear();
 }

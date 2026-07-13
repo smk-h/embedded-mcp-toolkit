@@ -10,7 +10,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
-import { sessions } from "./shell.js";
+import { sshStore } from "./sessions.js";
 import { type TransferResult } from "../../../transports/ssh.js";
 
 // ── 摘要格式化辅助 ──────────────────────────────────────────
@@ -144,10 +144,11 @@ export async function sshSftpUploadHandler(args: {
   logger.info(
     `[ssh_sftp_upload] session_id=${args.session_id} local=${args.local_path} remote=${args.remote_path}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const lookup = sshStore.getOrNotFound(args.session_id);
+  if (!lookup.ok) {
+    return lookup.response;
   }
+  const shell = lookup.shell;
 
   const result = await shell.uploadFile(args.local_path, args.remote_path);
   logger.info(
@@ -213,10 +214,11 @@ export async function sshSftpDownloadHandler(args: {
   logger.info(
     `[ssh_sftp_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const lookup = sshStore.getOrNotFound(args.session_id);
+  if (!lookup.ok) {
+    return lookup.response;
   }
+  const shell = lookup.shell;
 
   const result = await shell.downloadFile(args.remote_path, args.local_path);
   logger.info(

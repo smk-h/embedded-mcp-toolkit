@@ -20,20 +20,7 @@ import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
 import { resolveAdbSerial, resolveDeviceName } from "../../../shared/config.js";
 import { AdbShell, type AdbShellConfig } from "../../../transports/adb.js";
-import { registry } from "../../sessions/registry.js";
-
-// ── 会话存储 ────────────────────────────────────────────────
-
-/**
- * @brief ADB Shell 会话存储表
- *
- * 以 session_id 为键，AdbShell 实例为值，
- * 所有 ADB MCP 工具通过此表查找和共享会话。
- */
-const sessions = new Map<string, AdbShell>();
-
-/** @brief 会话自增计数器，用于生成唯一 session_id */
-let sessionCounter = 0;
+import { adbStore } from "./sessions.js";
 
 // ── adb_shell_open ──────────────────────────────────────────
 
@@ -129,14 +116,10 @@ export async function adbShellOpenHandler(args: { device?: string }) {
   }
 
   // open() 成功后才将 shell 存入会话表，后续操作通过 session_id 复用该进程
-  const sessionId = `adb_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  registry.register({
-    id: sessionId,
+  const sessionId = adbStore.create(shell, {
     type: "adb",
     deviceName,
     connectionInfo: shell.getSerialNo(),
-    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
@@ -186,14 +169,13 @@ export const adbShellCloseConfig = {
  */
 export async function adbShellCloseHandler(args: { session_id: string }) {
   logger.info(`[adb_shell_close] session_id=${args.session_id}`);
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = adbStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  await shell.close();
-  sessions.delete(args.session_id);
-  registry.unregister(args.session_id);
+  await result.shell.close();
+  adbStore.remove(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -254,12 +236,12 @@ export function adbShellWriteHandler(args: {
   logger.info(
     `[adb_shell_write] session_id=${args.session_id} command=${args.command} clear=${clearVal}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = adbStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  shell.write(args.command, clearVal);
+  result.shell.write(args.command, clearVal);
 
   return { content: [text(`Command sent: ${args.command}`)] };
 }
@@ -311,12 +293,12 @@ export function adbShellReadHandler(args: {
   logger.info(
     `[adb_shell_read] session_id=${args.session_id} clear=${clearVal}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = adbStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  const output = shell.read(clearVal);
+  const output = result.shell.read(clearVal);
 
   return { content: [text(output || "(no output)")] };
 }
@@ -387,10 +369,12 @@ export async function adbShellExecHandler(args: {
   logger.info(
     `[adb_shell_exec] session_id=${args.session_id} command=${args.command} delay=${delayVal} clear=${clearVal}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = adbStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+
+  const shell = result.shell;
 
   shell.write(args.command, clearVal);
 
@@ -399,26 +383,4 @@ export async function adbShellExecHandler(args: {
   const output = shell.read(1);
 
   return { content: [text(output || "(no output)")] };
-}
-
-// ── 进程退出自动清理 ────────────────────────────────────────
-
-/**
- * @brief 关闭所有活跃的 ADB Shell 会话
- *
- * 在 MCP Server 进程退出时调用，确保所有 adb shell 子进程被终止，
- * 避免僵尸进程残留。
- */
-export async function disposeAllAdbShellSessions(): Promise<void> {
-  const entries = [...sessions.entries()];
-  for (const [id, shell] of entries) {
-    try {
-      await shell.close();
-      logger.info(`[adb_dispose] session ${id} closed`);
-    } catch (err) {
-      logger.error(`[adb_dispose] session ${id} close failed:`, err);
-    }
-    registry.unregister(id);
-  }
-  sessions.clear();
 }

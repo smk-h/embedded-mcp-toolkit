@@ -15,20 +15,7 @@ import {
   PowerShellShell,
   type PowerShellShellConfig,
 } from "../../../transports/powershell.js";
-import { registry } from "../../sessions/registry.js";
-
-// ── 会话存储 ────────────────────────────────────────────────
-
-/**
- * @brief PowerShell Shell 会话存储表
- *
- * 以 session_id 为键，PowerShellShell 实例为值，
- * 所有 PowerShell MCP 工具通过此表查找和共享会话。
- */
-const sessions = new Map<string, PowerShellShell>();
-
-/** @brief 会话自增计数器，用于生成唯一 session_id */
-let sessionCounter = 0;
+import { powerStore } from "./sessions.js";
 
 // ── power_shell_open ────────────────────────────────────────
 
@@ -95,14 +82,10 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
     };
   }
 
-  const sessionId = `power_${++sessionCounter}`;
-  sessions.set(sessionId, shell);
-  registry.register({
-    id: sessionId,
+  const sessionId = powerStore.create(shell, {
     type: "powershell",
     deviceName: "local",
     connectionInfo: shell.getWorkingDir(),
-    createdAt: new Date().toISOString(), // UTC
   });
   logger.info(`[power_shell_open] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId);
@@ -152,14 +135,13 @@ export const powerShellCloseConfig = {
  */
 export async function powerShellCloseHandler(args: { session_id: string }) {
   logger.info(`[power_shell_close] session_id=${args.session_id}`);
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = powerStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  await shell.close();
-  sessions.delete(args.session_id);
-  registry.unregister(args.session_id);
+  await result.shell.close();
+  powerStore.remove(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -219,12 +201,12 @@ export function powerShellWriteHandler(args: {
   logger.info(
     `[power_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = powerStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  shell.write(args.command, args.clear ?? 1);
+  result.shell.write(args.command, args.clear ?? 1);
 
   return { content: [text(`Command sent: ${args.command}`)] };
 }
@@ -275,12 +257,12 @@ export function powerShellReadHandler(args: {
   logger.info(
     `[power_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = powerStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
 
-  const output = shell.read(args.clear ?? 1);
+  const output = result.shell.read(args.clear ?? 1);
 
   return { content: [text(output || "(no output)")] };
 }
@@ -349,10 +331,12 @@ export async function powerShellExecHandler(args: {
   logger.info(
     `[power_shell_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
   );
-  const shell = sessions.get(args.session_id);
-  if (!shell) {
-    return { content: [text(`Session ${args.session_id} not found.`)] };
+  const result = powerStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
   }
+
+  const shell = result.shell;
 
   shell.write(args.command, args.clear ?? 1);
 
@@ -362,26 +346,4 @@ export async function powerShellExecHandler(args: {
   const output = shell.read(1);
 
   return { content: [text(output || "(no output)")] };
-}
-
-// ── 进程退出自动清理 ────────────────────────────────────────
-
-/**
- * @brief 关闭所有活跃的 PowerShell 会话
- *
- * 在 MCP Server 进程退出时调用，确保所有 powershell.exe 子进程被终止，
- * 避免僵尸进程残留。
- */
-export async function disposeAllPowerShellSessions(): Promise<void> {
-  const entries = [...sessions.entries()];
-  for (const [id, shell] of entries) {
-    try {
-      await shell.close();
-      logger.info(`[power_dispose] session ${id} closed`);
-    } catch (err) {
-      logger.error(`[power_dispose] session ${id} close failed:`, err);
-    }
-    registry.unregister(id);
-  }
-  sessions.clear();
 }
