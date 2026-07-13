@@ -20,6 +20,7 @@ config.yaml
 
 *.zip
 *.tar.bz2
+*.tar.gz
 my-psh/psh_demo2/libs/libqrencode-4.1.1
 my-psh/psh_demo2/libs/mbedtls-4.0.0
 *.o
