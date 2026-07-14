@@ -13,6 +13,7 @@ import {
 import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
+import { runSshdConfig } from "./commands/sshd-config.js";
 import pkg from "../../package.json" with { type: "json" };
 
 /**
@@ -176,6 +177,31 @@ program
   .option("-f, --force", "覆盖已存在的设备文件", false)
   .action((opts) => {
     runSplit(opts);
+  });
+
+// =============================================================================
+// sshd-config 命令 —— 交互式配置 Windows OpenSSH 免密登录环境
+// =============================================================================
+
+/**
+ * @brief Windows SSH 免密登录配置命令
+ * @details 交互式菜单引导完成"Linux 编译服务器 → Windows 免密登录"环境搭建。
+ *          执行后先做管理员权限检查与平台校验，通过后展示菜单：
+ *          [1] 安装 Windows SSH 服务（在线/MSI 双途径）
+ *          [2] 登录 Linux 编译服务器生成密钥对并拉取公钥
+ *          [3] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
+ *          三项可独立重复执行，适用于"远程 Agent + 本地 MCP"部署场景。
+ *
+ * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit sshd-config
+ */
+program
+  .command("sshd-config")
+  .description("配置 Windows OpenSSH 免密登录环境（交互式菜单）")
+  .action(() => {
+    runSshdConfig({});
   });
 
 // =============================================================================

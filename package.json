@@ -18,6 +18,7 @@
     "git-sync-force": "node scripts/sync-force.mjs",
     "psh-demo-ssh": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-ssh",
     "psh-demo-serial": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-serial",
+    "cmd:sshd-config": "node ./bin/embedded-mcp-toolkit-cli.js sshd-config",
     "format:check": "prettier ./src --check",
     "format:fix": "prettier ./src --write",
     "eslint:fix": "eslint --fix -c eslint.config.ts src",
