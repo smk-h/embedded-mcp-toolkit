@@ -1487,9 +1487,14 @@ async function step4CheckStatus(): Promise<void> {
  *          - capability → Remove-WindowsCapability（系统组件卸载）
  *          - unknown    → 直接打开 appwiz.cpl 让用户手动卸载
  *
- *          卸载后清理 sshd 服务残留。不自动清理 C:\ProgramData\ssh 与
- *          C:\Program Files\OpenSSH 目录：前者可能含用户自定义的 authorized_keys /
- *          sshd_config，避免误删用户数据。
+ *          卸载后做三步清理（对应 step1/step3 的逆操作）：
+ *          1. 删除 sshd 服务残留（sc.exe delete sshd）
+ *          2. 从 authorized_keys 移除 MCP 专用公钥（按 .embedded/ssh/id_mcp_server.pub
+ *             内容精确匹配删除对应行，保留其它公钥）
+ *          3. 从 .bak 备份恢复 sshd_config（step3 修改前的原始配置）
+ *
+ *          不自动删除 C:\ProgramData\ssh 与 C:\Program Files\OpenSSH 目录：
+ *          前者可能含用户自定义配置，避免误删；仅在末尾提示可手动删除。
  */
 async function step5UninstallSsh(): Promise<void> {
   console.log("\n[step] 卸载 Windows SSH 服务");
@@ -1546,7 +1551,7 @@ async function step5UninstallSsh(): Promise<void> {
     await openAppwizAndAwait();
   }
 
-  // 卸载后清理 sshd 服务残留（MSI / Capability 卸载有时不删服务）
+  // ===== 清理 1：删除 sshd 服务残留（MSI / Capability 卸载有时不删服务） =====
   if (await isSshdServiceRegistered()) {
     console.log("     [run] sshd 服务仍存在，正在删除服务...");
     const delResult = await runCmd("sc.exe", ["delete", "sshd"]);
@@ -1562,9 +1567,90 @@ async function step5UninstallSsh(): Promise<void> {
     console.log("     [info] sshd 服务已不存在");
   }
 
+  // ===== 清理 2：从 authorized_keys 移除 MCP 专用公钥（对应 step3 的写入） =====
+  await removeMcpPubKeyFromAuthorizedKeys();
+
+  // ===== 清理 3：从 .bak 备份恢复 sshd_config（对应 step3 的修改） =====
+  restoreSshdConfigFromBackup();
+
   console.log("     Windows SSH 服务卸载完成");
   console.log("     [info] 配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）");
   console.log("           如需彻底清除，请手动删除该目录");
+}
+
+/**
+ * @brief 从 authorized_keys 移除 MCP 专用公钥
+ * @details 读取 .embedded/ssh/id_mcp_server.pub 的公钥内容，在 ~/.ssh/authorized_keys
+ *          中按整行精确匹配删除对应行。保留其它公钥不受影响。公钥文件不存在或
+ *          authorized_keys 不存在时静默跳过（非错误，可能未执行过 step2/step3）。
+ */
+async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
+  const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
+  if (!existsSync(pubKeyPath)) {
+    console.log("     [info] 未找到本地公钥文件，跳过 authorized_keys 清理");
+    return;
+  }
+  const pubKey = readFileSync(pubKeyPath, "utf8").trim();
+  if (!pubKey) {
+    console.log("     [info] 本地公钥文件为空，跳过 authorized_keys 清理");
+    return;
+  }
+
+  const akPath = join(homedir(), ".ssh", "authorized_keys");
+  if (!existsSync(akPath)) {
+    console.log("     [info] authorized_keys 不存在，无需清理");
+    return;
+  }
+
+  const akContent = readFileSync(akPath, "utf8");
+  const lines = akContent.split(/\r?\n/);
+  // 精确匹配：整行 trim 后等于公钥的行视为需删除
+  const before = lines.length;
+  const filtered = lines.filter((l) => l.trim() !== pubKey);
+  const removed = before - filtered.length;
+
+  if (removed === 0) {
+    console.log("     [info] authorized_keys 中未找到 MCP 公钥，无需清理");
+    return;
+  }
+
+  // 重写文件（过滤掉空行尾部的多余换行）
+  const newContent = filtered.filter((l) => l.trim() !== "").join("\n");
+  if (newContent) {
+    writeFileSync(akPath, newContent + "\n", "utf8");
+  } else {
+    // 所有公钥都被移除，文件变空——保留空文件而非删除（避免权限丢失）
+    writeFileSync(akPath, "", "utf8");
+  }
+  console.log(`     已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
+}
+
+/**
+ * @brief 从 .bak 备份恢复 sshd_config
+ * @details step3 修改 sshd_config 前备份为 .bak（首次备份不覆盖）。卸载时若 .bak
+ *          存在，则用它覆盖回 sshd_config，恢复 step3 修改前的原始配置。恢复后
+ *          删除 .bak（已完成使命）。sshd_config 不存在或 .bak 不存在时静默跳过。
+ */
+function restoreSshdConfigFromBackup(): void {
+  if (!existsSync(SSHD_CONFIG_PATH)) {
+    console.log("     [info] sshd_config 不存在，跳过恢复");
+    return;
+  }
+  const bakPath = SSHD_CONFIG_PATH + ".bak";
+  if (!existsSync(bakPath)) {
+    console.log("     [info] 未找到 sshd_config.bak 备份，跳过恢复");
+    return;
+  }
+  try {
+    copyFileSync(bakPath, SSHD_CONFIG_PATH);
+    unlinkSync(bakPath);
+    console.log("     sshd_config 已从备份恢复（.bak 已删除）");
+  } catch (err) {
+    console.error(
+      `     [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
+    );
+    console.log("     [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
+  }
 }
 
 /**
