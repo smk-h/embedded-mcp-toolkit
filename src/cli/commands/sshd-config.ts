@@ -62,7 +62,7 @@ interface LinuxServerInfo {
  * @brief 外部命令执行结果
  * @details 统一封装 PowerShell / msiexec 等外部命令的退出码与输出。
  */
-interface PowerShellResult {
+interface CommandResult {
   success: boolean;
   exitCode: number;
   stdout: string;
@@ -149,7 +149,7 @@ function isWindows(): boolean {
  *          的 WindowsPrincipal.IsInRole 检测。两者皆失败返回 false。
  * @returns 具备管理员权限返回 true
  */
-function checkAdmin(): boolean {
+function isAdmin(): boolean {
   // 方式 1：net session 仅管理员可成功执行
   try {
     execFileSync("net", ["session"], { stdio: "ignore", timeout: 5000 });
@@ -412,7 +412,7 @@ async function execToResult(
   cmd: string,
   args: string[],
   timeoutMs = 300000
-): Promise<PowerShellResult> {
+): Promise<CommandResult> {
   try {
     const { stdout, stderr } = await execFileAsync(cmd, args, {
       encoding: "utf8",
@@ -454,7 +454,7 @@ async function execToResult(
 async function runPowerShell(
   script: string,
   timeoutMs = 300000
-): Promise<PowerShellResult> {
+): Promise<CommandResult> {
   return execToResult(
     "powershell",
     [
@@ -478,7 +478,7 @@ async function runCmd(
   cmd: string,
   args: string[],
   timeoutMs = 300000
-): Promise<PowerShellResult> {
+): Promise<CommandResult> {
   return execToResult(cmd, args, timeoutMs);
 }
 
@@ -953,7 +953,7 @@ function showMenu(): void {
  *          安装后启动 sshd 并设为开机自启。每步失败均打印中文提示并 return，
  *          不抛异常。
  */
-async function step1InstallSsh(): Promise<void> {
+async function doInstallSsh(): Promise<void> {
   console.log("\n[step] 安装 Windows SSH 服务");
 
   // 检测 sshd 服务是否已存在
@@ -1081,7 +1081,7 @@ async function step1InstallSsh(): Promise<void> {
  *          3. 通过 SFTP 把公钥拉取到本地 .embedded/ssh/id_mcp_server.pub
  *          SSH 操作基于 ssh2 在本文件内独立实现，不复用 SSHShell。
  */
-async function step2GenerateKey(): Promise<void> {
+async function doGenerateKey(): Promise<void> {
   console.log("\n[step] 编译服务器生成密钥对");
 
   // 交互式收集连接信息（不落盘）
@@ -1226,7 +1226,7 @@ async function step2GenerateKey(): Promise<void> {
  *          4. 重启 sshd 使配置生效（先检查服务是否注册；未注册则跳过重启不回滚，仅提示）
  *          5. 回显最终关键配置项供用户核对
  */
-async function step3ConfigSshd(): Promise<void> {
+async function doConfigSshd(): Promise<void> {
   console.log("\n[step] 配置 Windows sshd 服务");
 
   // 1. 读取本地公钥
@@ -1364,7 +1364,7 @@ async function step3ConfigSshd(): Promise<void> {
  *          (d) 本地公钥状态：.embedded/ssh/id_mcp_server.pub 是否存在
  *          末尾给出汇总结论，列出异常项与建议执行的菜单项。
  */
-async function step4CheckStatus(): Promise<void> {
+async function doCheckStatus(): Promise<void> {
   console.log("\n[step] 检查 sshd 配置状态（只读诊断）");
 
   const issues: string[] = [];
@@ -1484,6 +1484,117 @@ async function step4CheckStatus(): Promise<void> {
 }
 
 // ============================================================
+// step5 辅助：卸载流程专用工具函数
+// ============================================================
+
+/**
+ * @brief 打开"程序和功能"并等待用户手动卸载后按回车继续
+ * @details 封装 step5 中三处相同的"开 appwiz.cpl + 等待回车"逻辑。
+ *          手动卸载是异步过程，程序无法感知结束时机，故用 prompt 阻塞等待。
+ *
+ *          实现说明：.cpl 不能直接 spawn（报 EFTYPE），也不能用 control.exe
+ *          （它启动控制面板后固定返回退出码 1，execFile 会误判为失败）。
+ *          用 `cmd /c start "" "appwiz.cpl"` 是 Windows 打开文件/程序的标准方式：
+ *          start 自身立即返回退出码 0，控制面板窗口正常弹出。
+ * @returns 打开失败时返回 false（已打印错误提示）
+ */
+async function openAppwizAndAwait(): Promise<boolean> {
+  console.log('     [run] 正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
+  const openResult = await runCmd("cmd", [
+    "/c",
+    "start",
+    "",
+    "appwiz.cpl",
+  ]);
+  if (!openResult.success) {
+    console.error(
+      `     [err] 打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
+    );
+    console.log('     [info] 可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
+    return false;
+  }
+  console.log('     [info] 已打开"程序和功能"，请在窗口中卸载 OpenSSH');
+  console.log("           卸载完成后按回车继续...");
+  await prompt("  ");
+  return true;
+}
+
+/**
+ * @brief 从 authorized_keys 移除 MCP 专用公钥
+ * @details 读取 .embedded/ssh/id_mcp_server.pub 的公钥内容，在 ~/.ssh/authorized_keys
+ *          中按整行精确匹配删除对应行。保留其它公钥不受影响。公钥文件不存在或
+ *          authorized_keys 不存在时静默跳过（非错误，可能未执行过 step2/step3）。
+ */
+async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
+  const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
+  if (!existsSync(pubKeyPath)) {
+    console.log("     [info] 未找到本地公钥文件，跳过 authorized_keys 清理");
+    return;
+  }
+  const pubKey = readFileSync(pubKeyPath, "utf8").trim();
+  if (!pubKey) {
+    console.log("     [info] 本地公钥文件为空，跳过 authorized_keys 清理");
+    return;
+  }
+
+  const akPath = join(homedir(), ".ssh", "authorized_keys");
+  if (!existsSync(akPath)) {
+    console.log("     [info] authorized_keys 不存在，无需清理");
+    return;
+  }
+
+  const akContent = readFileSync(akPath, "utf8");
+  const lines = akContent.split(/\r?\n/);
+  // 精确匹配：整行 trim 后等于公钥的行视为需删除
+  const before = lines.length;
+  const filtered = lines.filter((l) => l.trim() !== pubKey);
+  const removed = before - filtered.length;
+
+  if (removed === 0) {
+    console.log("     [info] authorized_keys 中未找到 MCP 公钥，无需清理");
+    return;
+  }
+
+  // 重写文件（过滤掉空行尾部的多余换行）
+  const newContent = filtered.filter((l) => l.trim() !== "").join("\n");
+  if (newContent) {
+    writeFileSync(akPath, newContent + "\n", "utf8");
+  } else {
+    // 所有公钥都被移除，文件变空——保留空文件而非删除（避免权限丢失）
+    writeFileSync(akPath, "", "utf8");
+  }
+  console.log(`     已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
+}
+
+/**
+ * @brief 从 .bak 备份恢复 sshd_config
+ * @details step3 修改 sshd_config 前备份为 .bak（首次备份不覆盖）。卸载时若 .bak
+ *          存在，则用它覆盖回 sshd_config，恢复 step3 修改前的原始配置。恢复后
+ *          删除 .bak（已完成使命）。sshd_config 不存在或 .bak 不存在时静默跳过。
+ */
+function restoreSshdConfigFromBackup(): void {
+  if (!existsSync(SSHD_CONFIG_PATH)) {
+    console.log("     [info] sshd_config 不存在，跳过恢复");
+    return;
+  }
+  const bakPath = SSHD_CONFIG_PATH + ".bak";
+  if (!existsSync(bakPath)) {
+    console.log("     [info] 未找到 sshd_config.bak 备份，跳过恢复");
+    return;
+  }
+  try {
+    copyFileSync(bakPath, SSHD_CONFIG_PATH);
+    unlinkSync(bakPath);
+    console.log("     sshd_config 已从备份恢复（.bak 已删除）");
+  } catch (err) {
+    console.error(
+      `     [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
+    );
+    console.log("     [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
+  }
+}
+
+// ============================================================
 // step5: 卸载 Windows SSH 服务
 // ============================================================
 
@@ -1505,7 +1616,7 @@ async function step4CheckStatus(): Promise<void> {
  *          不自动删除 C:\ProgramData\ssh 与 C:\Program Files\OpenSSH 目录：
  *          前者可能含用户自定义配置，避免误删；仅在末尾提示可手动删除。
  */
-async function step5UninstallSsh(): Promise<void> {
+async function doUninstallSsh(): Promise<void> {
   console.log("\n[step] 卸载 Windows SSH 服务");
 
   // 检测安装方式（同时确认是否已安装）
@@ -1608,113 +1719,6 @@ async function step5UninstallSsh(): Promise<void> {
   console.log("           如需彻底清除，请手动删除该目录");
 }
 
-/**
- * @brief 从 authorized_keys 移除 MCP 专用公钥
- * @details 读取 .embedded/ssh/id_mcp_server.pub 的公钥内容，在 ~/.ssh/authorized_keys
- *          中按整行精确匹配删除对应行。保留其它公钥不受影响。公钥文件不存在或
- *          authorized_keys 不存在时静默跳过（非错误，可能未执行过 step2/step3）。
- */
-async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
-  const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
-  if (!existsSync(pubKeyPath)) {
-    console.log("     [info] 未找到本地公钥文件，跳过 authorized_keys 清理");
-    return;
-  }
-  const pubKey = readFileSync(pubKeyPath, "utf8").trim();
-  if (!pubKey) {
-    console.log("     [info] 本地公钥文件为空，跳过 authorized_keys 清理");
-    return;
-  }
-
-  const akPath = join(homedir(), ".ssh", "authorized_keys");
-  if (!existsSync(akPath)) {
-    console.log("     [info] authorized_keys 不存在，无需清理");
-    return;
-  }
-
-  const akContent = readFileSync(akPath, "utf8");
-  const lines = akContent.split(/\r?\n/);
-  // 精确匹配：整行 trim 后等于公钥的行视为需删除
-  const before = lines.length;
-  const filtered = lines.filter((l) => l.trim() !== pubKey);
-  const removed = before - filtered.length;
-
-  if (removed === 0) {
-    console.log("     [info] authorized_keys 中未找到 MCP 公钥，无需清理");
-    return;
-  }
-
-  // 重写文件（过滤掉空行尾部的多余换行）
-  const newContent = filtered.filter((l) => l.trim() !== "").join("\n");
-  if (newContent) {
-    writeFileSync(akPath, newContent + "\n", "utf8");
-  } else {
-    // 所有公钥都被移除，文件变空——保留空文件而非删除（避免权限丢失）
-    writeFileSync(akPath, "", "utf8");
-  }
-  console.log(`     已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
-}
-
-/**
- * @brief 从 .bak 备份恢复 sshd_config
- * @details step3 修改 sshd_config 前备份为 .bak（首次备份不覆盖）。卸载时若 .bak
- *          存在，则用它覆盖回 sshd_config，恢复 step3 修改前的原始配置。恢复后
- *          删除 .bak（已完成使命）。sshd_config 不存在或 .bak 不存在时静默跳过。
- */
-function restoreSshdConfigFromBackup(): void {
-  if (!existsSync(SSHD_CONFIG_PATH)) {
-    console.log("     [info] sshd_config 不存在，跳过恢复");
-    return;
-  }
-  const bakPath = SSHD_CONFIG_PATH + ".bak";
-  if (!existsSync(bakPath)) {
-    console.log("     [info] 未找到 sshd_config.bak 备份，跳过恢复");
-    return;
-  }
-  try {
-    copyFileSync(bakPath, SSHD_CONFIG_PATH);
-    unlinkSync(bakPath);
-    console.log("     sshd_config 已从备份恢复（.bak 已删除）");
-  } catch (err) {
-    console.error(
-      `     [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
-    );
-    console.log("     [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
-  }
-}
-
-/**
- * @brief 打开"程序和功能"并等待用户手动卸载后按回车继续
- * @details 封装 step5 中三处相同的"开 appwiz.cpl + 等待回车"逻辑。
- *          手动卸载是异步过程，程序无法感知结束时机，故用 prompt 阻塞等待。
- *
- *          实现说明：.cpl 不能直接 spawn（报 EFTYPE），也不能用 control.exe
- *          （它启动控制面板后固定返回退出码 1，execFile 会误判为失败）。
- *          用 `cmd /c start "" "appwiz.cpl"` 是 Windows 打开文件/程序的标准方式：
- *          start 自身立即返回退出码 0，控制面板窗口正常弹出。
- * @returns 打开失败时返回 false（已打印错误提示）
- */
-async function openAppwizAndAwait(): Promise<boolean> {
-  console.log('     [run] 正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
-  const openResult = await runCmd("cmd", [
-    "/c",
-    "start",
-    "",
-    "appwiz.cpl",
-  ]);
-  if (!openResult.success) {
-    console.error(
-      `     [err] 打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
-    );
-    console.log('     [info] 可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
-    return false;
-  }
-  console.log('     [info] 已打开"程序和功能"，请在窗口中卸载 OpenSSH');
-  console.log("           卸载完成后按回车继续...");
-  await prompt("  ");
-  return true;
-}
-
 // ============================================================
 // step6: 查看本机连接信息
 // ============================================================
@@ -1727,7 +1731,7 @@ async function openAppwizAndAwait(): Promise<boolean> {
  *          (c) 拼接一条可直接在 Linux 端执行的示例 ssh 命令（含 -i 指定专用密钥）
  *          多网卡环境下列出所有候选 IP，由用户根据网络拓扑自行判断选哪个。
  */
-async function step6ShowConnectionInfo(): Promise<void> {
+async function doShowConnectionInfo(): Promise<void> {
   console.log("\n[step] 查看本机连接信息");
 
   // (a) 当前登录用户名
@@ -1782,6 +1786,16 @@ async function step6ShowConnectionInfo(): Promise<void> {
 // ============================================================
 
 /**
+ * @brief 打印命令 banner（标题分隔线）
+ * @details 每次清屏后重新显示，作为菜单顶部固定的标题栏。
+ */
+function printBanner(): void {
+  console.log("===================================");
+  console.log("  embedded-mcp-toolkit sshd-config");
+  console.log("===================================");
+}
+
+/**
  * @brief sshd-config 命令主入口
  * @details 执行流程：平台校验 → 管理员权限检查 → 交互式菜单循环。
  *          非管理员或非 Windows 平台直接退出，不进入菜单。
@@ -1797,21 +1811,15 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
   }
 
   // 管理员权限检查：非管理员时自动 UAC 提权重启（本进程退出）
-  if (!checkAdmin()) {
+  if (!isAdmin()) {
     relaunchAsAdmin();
     return; // relaunchAsAdmin 内部会 exit，此行仅作类型安全兜底
   }
 
-  console.log("===================================");
-  console.log("  embedded-mcp-toolkit sshd-config");
-  console.log("===================================");
-
-  // 交互式菜单循环
+  // 交互式菜单循环（首次即清屏 + 打印 banner，无需循环前预先打印）
   while (true) {
     clearScreen();
-    console.log("===================================");
-    console.log("  embedded-mcp-toolkit sshd-config");
-    console.log("===================================");
+    printBanner();
     showMenu();
     const choice = await prompt("请选择: ");
 
@@ -1823,22 +1831,22 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
 
     switch (choice) {
       case MENU_INSTALL_SSH:
-        await step1InstallSsh();
+        await doInstallSsh();
         break;
       case MENU_GENERATE_KEY:
-        await step2GenerateKey();
+        await doGenerateKey();
         break;
       case MENU_CONFIG_SSHD:
-        await step3ConfigSshd();
+        await doConfigSshd();
         break;
       case MENU_CHECK_STATUS:
-        await step4CheckStatus();
+        await doCheckStatus();
         break;
       case MENU_UNINSTALL_SSH:
-        await step5UninstallSsh();
+        await doUninstallSsh();
         break;
       case MENU_SHOW_INFO:
-        await step6ShowConnectionInfo();
+        await doShowConnectionInfo();
         break;
       default:
         console.log("[warn] 无效选项，请重新选择");
