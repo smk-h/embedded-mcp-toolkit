@@ -106,6 +106,8 @@ const MENU_CHECK_STATUS = "4";
 const MENU_UNINSTALL_SSH = "5";
 /** @brief 菜单选项：查看 Windows 连接信息（用户名/IP） */
 const MENU_SHOW_INFO = "6";
+/** @brief 菜单选项：生成 Linux 端 MCP 配置模板 */
+const MENU_GEN_TEMPLATE = "7";
 /** @brief 菜单选项：退出 */
 const MENU_EXIT = "0";
 
@@ -124,6 +126,9 @@ const LOCAL_PUBKEY_REL = ".embedded/ssh/id_mcp_server.pub";
 
 /** @brief MSI 安装包在本地的缓存路径（相对 cwd），step1 下载、step5 卸载复用 */
 const LOCAL_MSI_REL = ".embedded/ssh/OpenSSH-Win64.msi";
+
+/** @brief Linux 端 .mcp.json 模板输出路径（相对 cwd），自动填充 IP/用户名/路径 */
+const REMOTE_MCP_TEMPLATE_REL = ".embedded/ssh/mcp-remote-template.json";
 
 /** @brief sshd.exe 候选路径（按优先级：MSI 安装目录 → Windows 自带目录） */
 const SSHD_EXE_CANDIDATES = [MSI_SSHD_EXE, CAPABILITY_SSHD_EXE];
@@ -934,6 +939,7 @@ function showMenu(): void {
   console.log(`  [${MENU_CHECK_STATUS}] 检查 sshd 配置状态（只读诊断）`);
   console.log(`  [${MENU_UNINSTALL_SSH}] 卸载 Windows SSH 服务`);
   console.log(`  [${MENU_SHOW_INFO}] 查看本机连接信息（用户名/IP）`);
+  console.log(`  [${MENU_GEN_TEMPLATE}] 生成 Linux 端 MCP 配置模板`);
   console.log(`  [${MENU_EXIT}] 退出`);
   console.log("");
 }
@@ -1724,21 +1730,30 @@ async function doUninstallSsh(): Promise<void> {
 // ============================================================
 
 /**
- * @brief 查看本机 Windows 的连接信息（用户名 / IP），供 Linux 端 ssh 连接参考
- * @details 纯只读，不修改任何状态。展示：
- *          (a) 当前 Windows 登录用户名（os.userInfo().username）
- *          (b) 本机所有 IPv4 地址（os.networkInterfaces()），过滤回环与虚拟网卡
- *          (c) 拼接一条可直接在 Linux 端执行的示例 ssh 命令（含 -i 指定专用密钥）
- *          多网卡环境下列出所有候选 IP，由用户根据网络拓扑自行判断选哪个。
+ * @brief 本机连接信息采集结果
+ * @param sshUser  ssh 登录用户名（已剥离 DOMAIN\ 前缀）
+ * @param ipList   可用 IPv4 地址列表（已过滤回环 / 链路本地 / 虚拟网卡）
  */
-async function doShowConnectionInfo(): Promise<void> {
-  console.log("\n[step] 查看本机连接信息");
+interface ConnectionInfo {
+  sshUser: string;
+  ipList: string[];
+}
 
-  // (a) 当前登录用户名
-  const username = userInfo().username;
-  console.log(`  [info] Windows 用户名: ${username}`);
+/**
+ * @brief 采集本机连接信息（用户名 + 可用 IPv4 地址）
+ * @details 统一 doShowConnectionInfo 与 doGenerateTemplate 的信息采集逻辑：
+ *          (a) 当前 Windows 登录用户名（os.userInfo().username），剥离 DOMAIN\ 前缀
+ *          (b) 本机所有 IPv4 地址，过滤回环（127.x）、链路本地（169.254）、虚拟网卡
+ * @returns 连接信息对象
+ */
+function collectConnectionInfo(): ConnectionInfo {
+  // (a) 当前登录用户名（剥离 DOMAIN\ 前缀，ssh 只取反斜杠后的部分）
+  const rawUser = userInfo().username;
+  const sshUser = rawUser.includes("\\")
+    ? rawUser.slice(rawUser.indexOf("\\") + 1)
+    : rawUser;
 
-  // (b) 枚举所有 IPv4 地址（排除回环 127.x、自动私有地址 169.254、虚拟网卡）
+  // (b) 枚举所有 IPv4 地址（排除回环 127.x、链路本地 169.254、虚拟网卡）
   const interfaces = networkInterfaces();
   const ipList: string[] = [];
   for (const [ifName, addrs] of Object.entries(interfaces)) {
@@ -1754,6 +1769,26 @@ async function doShowConnectionInfo(): Promise<void> {
     }
   }
 
+  return { sshUser, ipList };
+}
+
+/**
+ * @brief 查看本机 Windows 的连接信息（用户名 / IP），供 Linux 端 ssh 连接参考
+ * @details 纯只读，不修改任何状态。展示：
+ *          (a) 当前 Windows 登录用户名（os.userInfo().username）
+ *          (b) 本机所有 IPv4 地址（os.networkInterfaces()），过滤回环与虚拟网卡
+ *          (c) 拼接一条可直接在 Linux 端执行的示例 ssh 命令（含 -i 指定专用密钥）
+ *          多网卡环境下列出所有候选 IP，由用户根据网络拓扑自行判断选哪个。
+ */
+async function doShowConnectionInfo(): Promise<void> {
+  console.log("\n[step] 查看本机连接信息");
+
+  const { sshUser, ipList } = collectConnectionInfo();
+
+  // (a) 用户名
+  console.log(`  [info] Windows 用户名: ${sshUser}`);
+
+  // (b) IPv4 地址列表
   console.log("  [info] 本机 IPv4 地址:");
   if (ipList.length === 0) {
     console.log("    (未检测到可用的 IPv4 地址)");
@@ -1767,10 +1802,6 @@ async function doShowConnectionInfo(): Promise<void> {
   console.log("\n  [info] 在 Linux 端执行以下命令连接本机（免密登录）:");
   const keyPath = "~/.ssh/id_mcp_server";
   const primaryIp = ipList[0] ?? "<Windows_IP>";
-  // Windows 用户名可能含域名（DOMAIN\user），ssh 只取反斜杠后的部分
-  const sshUser = username.includes("\\")
-    ? username.slice(username.indexOf("\\") + 1)
-    : username;
   console.log(`    ssh -i ${keyPath} ${sshUser}@${primaryIp}`);
   if (ipList.length > 1) {
     console.log("    （若上面 IP 不通，换用列表中其它 IP 重试）");
@@ -1779,6 +1810,97 @@ async function doShowConnectionInfo(): Promise<void> {
   console.log(
     "\n  [tip] 确保已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd，连接才能免密成功"
   );
+}
+
+// ============================================================
+// step7: 生成 Linux 端 MCP 配置模板
+// ============================================================
+
+/**
+ * @brief 生成 Linux 端 Claude Code 的 .mcp.json 配置模板
+ * @details 自动采集本机用户名与 IPv4 地址，结合专用密钥名（id_mcp_server）与
+ *          remote-start-mcp.bat 脚本路径，生成一份 Linux 端可直接使用的
+ *          .mcp.json 模板，写入 .embedded/ssh/mcp-remote-template.json。
+ *
+ *          生成后打印模板路径与内容摘要，提示用户复制到 Linux 端项目根目录
+ *          并按需修改 IP / 脚本路径。多网卡时取首个 IP 作为示例，同时在模板
+ *          注释中列出其它候选 IP。
+ */
+async function doGenerateTemplate(): Promise<void> {
+  console.log("\n[step] 生成 Linux 端 MCP 配置模板");
+
+  const { sshUser, ipList } = collectConnectionInfo();
+
+  if (ipList.length === 0) {
+    console.error("     [err] 未检测到可用的 IPv4 地址，无法生成模板");
+    console.log("     [info] 请确认网络连接正常后重试");
+    return;
+  }
+
+  // 取首个 IP 作为模板默认值，其余 IP 在提示中列出
+  const primaryIp = ipList[0];
+  const keyPath = "~/.ssh/id_mcp_server";
+
+  // Windows 上 remote-start-mcp.bat 的绝对路径（模板中用户需确认与修改）
+  // 统一用正斜杠：JSON 无需转义反斜杠，视觉清爽，且 Windows 的 node / ssh
+  // 完全支持正斜杠路径（node 内部 path 与 spawn 均做归一化）
+  const batPath = join(resolve(process.cwd()), "remote-start-mcp.bat").replace(
+    /\\/g,
+    "/"
+  );
+
+  // 构造 .mcp.json 模板内容
+  const template = {
+    $schema: "https://json.schemastore.org/claude-code-settings.json",
+    mcpServers: {
+      "embedded-board": {
+        command: "ssh",
+        args: [
+          "-i",
+          keyPath,
+          `${sshUser}@${primaryIp}`,
+          batPath,
+        ],
+      },
+    },
+  };
+
+  // 序列化（2 空格缩进，与项目 .mcp.json 风格一致）
+  const content = JSON.stringify(template, null, 2) + "\n";
+
+  // 写入 .embedded/ssh/mcp-remote-template.json
+  const templatePath = resolve(process.cwd(), REMOTE_MCP_TEMPLATE_REL);
+  const templateDir = dirname(templatePath);
+  if (!existsSync(templateDir)) {
+    mkdirSync(templateDir, { recursive: true });
+  }
+  writeFileSync(templatePath, content, "utf8");
+
+  // 打印结果与使用指引
+  console.log(`     [info] Windows 用户名: ${sshUser}`);
+  console.log(`     [info] 模板默认 IP:   ${primaryIp}`);
+  if (ipList.length > 1) {
+    console.log("     [info] 其它可用 IP:");
+    for (const ip of ipList.slice(1)) {
+      console.log(`       ${ip}`);
+    }
+  }
+  console.log(`     [ok] 模板已生成: ${templatePath}`);
+  console.log("");
+  console.log("     [info] 使用步骤：");
+  console.log(`       1. 将 ${templatePath} 复制到 Linux 项目根目录`);
+  console.log("          并重命名为 .mcp.json");
+  console.log("       2. 按需修改以下内容：");
+  console.log(`          - ssh 连接的 IP（当前为 ${primaryIp}，若不通换用其它候选 IP）`);
+  console.log(`          - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`);
+  console.log("       3. 在 Linux 端重启 Claude Code 使配置生效");
+  console.log("");
+  console.log("     [warn] 前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd");
+  console.log("            否则 ssh 连接会失败（密码提示 / 连接拒绝）");
+  console.log("");
+  console.log("     --- 模板内容预览 ---");
+  console.log(content.replace(/\n$/, ""));
+  console.log("     --- 预览结束 ---");
 }
 
 // ============================================================
@@ -1847,6 +1969,9 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
         break;
       case MENU_SHOW_INFO:
         await doShowConnectionInfo();
+        break;
+      case MENU_GEN_TEMPLATE:
+        await doGenerateTemplate();
         break;
       default:
         console.log("[warn] 无效选项，请重新选择");
