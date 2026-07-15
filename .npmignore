@@ -1,46 +1,58 @@
-# npm 发布忽略的文件
+# =============================================================================
+# npm 发布忽略清单（npm pack / npm publish 时排除以下文件）
+# 默认发布：out/（编译产物）、bin/（CLI 入口）、package.json、README.md、LICENSE
+#           以及各工具的 .tmp 模板文件
+# =============================================================================
+
+# ---- 环境变量与密钥（含认证信息，禁止发布）----
 .env
 .env.tmp
 .npmrc
+
+# ---- IDE / 编辑器配置 ----
+.vscode
 .cnb
 .roo
-.vscode
 
-client
-node_modules
+# ---- 源码与开发目录（源码不发布，仅发布编译产物）----
 src
+client
 test
 docs
 plan
+scripts
+node_modules
 
+# ---- 工程配置文件（仅本地开发使用）----
 .cnb.yml
 .editorconfig
 .prettierignore
 .prettierrc.cjs
-.npmignore
 eslint.config.ts
 tsconfig.json
+.npmignore
 
-# Claude Code 敏感文件（含 token / 本地密钥，仅排除真实文件，.tmp 模板需发布）
+# ---- 构建产物与日志 ----
+log/
+*.log
+*embedded-mcp-toolkit*.tgz
+*embedded-mcp-toolkit*.zip
+
+# ---- SSH 依赖与本地密钥（不随包发布）----
+.embedded/ssh
+
+# ---- Claude Code 敏感文件（含 token / 本地密钥；.tmp 模板仍会发布）----
 .claude/start-claude.bat
 .claude/start-claude.ps1
 .claude/.env
 
-# 设备配置（仅保留模板，真实配置不上传）
+# ---- 设备配置（仅保留模板，真实设备配置不上传）----
 .embedded/configs/config.yaml
-# 分文件布局：devices/ 下除 board-example.yaml 模板外，真实设备配置不上传
 .embedded/configs/devices/*.yaml
 !.embedded/configs/devices/board-example.yaml
-log/
-*.log
 
-*embedded-mcp-toolkit*.tgz
-*embedded-mcp-toolkit*.zip
-
-# OpenCode 本地开发文件
+# ---- OpenCode 本地开发文件 ----
 .opencode/package.json
 .opencode/package-lock.json
 .opencode/README.md
 .opencode/.gitignore
-
-scripts
