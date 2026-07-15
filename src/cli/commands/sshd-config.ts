@@ -662,33 +662,37 @@ function findSshdExe(): string | null {
 
 /**
  * @brief 检测 OpenSSH 的安装方式（MSI / Capability / 未知）
- * @details 综合三个信号交叉判定，任一单一信号都不足以区分 MSI 与 Capability：
+ * @details 综合三个信号交叉判定，任一单一信号都不足以区分 MSI 与 Capability。
+ *          执行顺序按"快→慢"排列，能尽早判定就尽早返回，避免慢命令卡死：
  *
- *   信号 A：Get-WindowsCapability 的 State
- *     命令：Get-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
- *           | Select-Object -ExpandProperty State
- *     - "Installed"  → 由 Windows 组件（Capability）安装，但部分 MSI 安装后也可能
- *       被 Capability 探测到（因 OpenSSH 文件落到了系统目录），故仅作"强提示"。
- *     - "NotPresent" → 肯定不是 Capability 方式装的。
+ *   信号 C（最快，同步）：findSshdExe() 文件探测
+ *     方法：existsSync 探测 MSI_SSHD_EXE / CAPABILITY_SSHD_EXE 两个候选路径
  *
- *   信号 B：sshd 服务的 ImagePath（注册表 HKLM\SYSTEM\...\ssh 的 ImagePath）
+ *   信号 B（快，~100ms）：sshd 服务的 ImagePath
  *     命令：(Get-CimInstance Win32_Service -Filter "Name='sshd'").ImagePath
  *     - 含 "Program Files\OpenSSH" → MSI（MSI 安装器把文件释放到此目录）
  *     - 含 "System32\OpenSSH"      → Capability（Windows 组件目录）
  *     这是最可靠的区分信号：服务实际加载的 exe 路径不会撒谎。
  *
- *   信号 C：findSshdExe() 文件探测
- *     方法：existsSync 探测 MSI_SSHD_EXE / CAPABILITY_SSHD_EXE 两个候选路径
- *     - MSI_SSHD_EXE 存在  → 倾向 MSI
- *     - CAPABILITY_SSHD_EXE 存在 → 倾向 Capability
- *     作 B 的补充（服务未注册时，B 不可用，靠 C 兜底）。
+ *   判定优先级（实际执行顺序）：
+ *     1. 先取信号 C（瞬时），再取信号 B（快）。
+ *     2. 信号 B 命中 → 立即返回（最可靠 + 快）。
+ *     3. 信号 B 未命中（服务未注册）→ 用信号 C 兜底判定。
+ *     4. 信号 C 也无法判定 → 才调用慢速的信号 A。
  *
- *   判定优先级：B（服务 ImagePath）> A（Capability State）> C（文件探测）。
- *   当 B 不可用（服务未注册）且 A、C 矛盾时，标记为 "unknown"。
+ *   信号 A（慢，可能数十秒）：Get-WindowsCapability 的 State
+ *     命令：Get-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+ *           | Select-Object -ExpandProperty State
+ *     - "Installed"  → 由 Windows 组件（Capability）安装，但部分 MSI 安装后也可能
+ *       被 Capability 探测到（因 OpenSSH 文件落到了系统目录），故仅作"强提示"。
+ *     - "NotPresent" → 肯定不是 Capability 方式装的。
+ *     给独立 30 秒超时（runPowerShell 默认 5 分钟会卡死）。仅在 B、C 都无法判定
+ *     时才调用，绝大多数场景不会执行到这里。
  *
  * @returns 安装方式信息（method / methodLabel / exePath / detail）
  */
 async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
+  console.log("     [run] 正在检测安装方式...");
   // 信号 C：文件探测（同步，先拿到 exe 路径供后续填充）
   const exePath = findSshdExe();
 
@@ -706,16 +710,7 @@ async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
     }
   }
 
-  // 信号 A：Capability State
-  let capabilityInstalled = false;
-  const capResult = await runPowerShell(
-    `Get-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME} | Select-Object -ExpandProperty State`
-  );
-  if (capResult.success && capResult.stdout.includes("Installed")) {
-    capabilityInstalled = true;
-  }
-
-  // —— 信号 B 优先：服务 ImagePath 是最可靠来源 ——
+  // —— 信号 B 优先：服务 ImagePath 是最可靠来源，且 Get-CimInstance 很快 ——
   if (svcImagePath) {
     // 取 ImagePath 中的 exe 路径（去掉首尾引号与尾部参数）
     const pathLower = svcImagePath.toLowerCase();
@@ -741,18 +736,7 @@ async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
     }
   }
 
-  // —— 信号 A 次之：Capability State ——
-  //   Installed 且 exe 不在 MSI 目录 → 判为 Capability
-  if (capabilityInstalled && !existsSync(MSI_SSHD_EXE)) {
-    return {
-      method: "capability",
-      methodLabel: "Capability",
-      exePath,
-      detail: "Get-WindowsCapability 报告 Installed",
-    };
-  }
-
-  // —— 信号 C 兜底：仅靠文件路径 ——
+  // —— 信号 C 兜底：仅靠文件路径（服务未注册时 B 不可用，跳过慢速的 A） ——
   if (exePath === MSI_SSHD_EXE) {
     return {
       method: "msi",
@@ -767,6 +751,29 @@ async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
       methodLabel: "Capability",
       exePath,
       detail: "仅在系统目录发现 sshd.exe",
+    };
+  }
+
+  // —— 信号 A：Capability State（慢，仅在 B、C 都无法判定时才调用） ——
+  //   Get-WindowsCapability -Online 要扫描 CBS 组件存储，某些机器上需要数十秒。
+  //   给独立较短超时（30 秒），避免默认的 5 分钟卡死。
+  console.log("     [run] 进一步查询 Capability 状态（可能需要数秒）...");
+  let capabilityInstalled = false;
+  const capResult = await runPowerShell(
+    `Get-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME} | Select-Object -ExpandProperty State`,
+    30000
+  );
+  if (capResult.success && capResult.stdout.includes("Installed")) {
+    capabilityInstalled = true;
+  }
+
+  // Capability Installed 且 exe 不在 MSI 目录 → 判为 Capability
+  if (capabilityInstalled && !existsSync(MSI_SSHD_EXE)) {
+    return {
+      method: "capability",
+      methodLabel: "Capability",
+      exePath,
+      detail: "Get-WindowsCapability 报告 Installed",
     };
   }
 
@@ -1487,11 +1494,13 @@ async function step4CheckStatus(): Promise<void> {
  *          - capability → Remove-WindowsCapability（系统组件卸载）
  *          - unknown    → 直接打开 appwiz.cpl 让用户手动卸载
  *
- *          卸载后做三步清理（对应 step1/step3 的逆操作）：
- *          1. 删除 sshd 服务残留（sc.exe delete sshd）
- *          2. 从 authorized_keys 移除 MCP 专用公钥（按 .embedded/ssh/id_mcp_server.pub
+ *          卸载流程顺序（先停服务再卸载，避免运行中的 sshd 占用文件）：
+ *          0. 停止 sshd 服务（Stop-Service sshd -Force）
+ *          1. 按安装方式卸载 OpenSSH（msiexec / Remove-WindowsCapability / appwiz.cpl）
+ *          2. 删除 sshd 服务残留（卸载有时不删服务，sc.exe delete 补删）
+ *          3. 从 authorized_keys 移除 MCP 专用公钥（按 .embedded/ssh/id_mcp_server.pub
  *             内容精确匹配删除对应行，保留其它公钥）
- *          3. 从 .bak 备份恢复 sshd_config（step3 修改前的原始配置）
+ *          4. 从 .bak 备份恢复 sshd_config（step3 修改前的原始配置）
  *
  *          不自动删除 C:\ProgramData\ssh 与 C:\Program Files\OpenSSH 目录：
  *          前者可能含用户自定义配置，避免误删；仅在末尾提示可手动删除。
@@ -1507,6 +1516,23 @@ async function step5UninstallSsh(): Promise<void> {
   }
   console.log(`     [info] 检测到安装方式: ${info.methodLabel}（${info.detail}）`);
 
+  // ===== 步骤 0：先停止 sshd 服务（后续卸载/删文件时避免被运行中进程占用） =====
+  if (await isSshdServiceRegistered()) {
+    console.log("     [run] 停止 sshd 服务...");
+    const stopResult = await runPowerShell(
+      "Stop-Service sshd -Force -ErrorAction SilentlyContinue"
+    );
+    if (stopResult.success) {
+      console.log("     sshd 服务已停止");
+    } else {
+      // 停止失败不阻断后续流程（服务可能已是停止状态或权限受限）
+      console.log("     [warn] 停止 sshd 服务失败（可能已停止），继续后续步骤");
+    }
+  } else {
+    console.log("     [info] sshd 服务未注册，跳过停止");
+  }
+
+  // ===== 步骤 1：按安装方式卸载 OpenSSH =====
   if (info.method === "capability") {
     // ===== Capability 方式：用系统组件卸载 =====
     console.log("     [run] 通过 Remove-WindowsCapability 卸载...");
@@ -1551,26 +1577,30 @@ async function step5UninstallSsh(): Promise<void> {
     await openAppwizAndAwait();
   }
 
-  // ===== 清理 1：删除 sshd 服务残留（MSI / Capability 卸载有时不删服务） =====
+  // ===== 步骤 2：删除 sshd 服务残留（卸载有时不删服务，sc.exe delete 补删） =====
   if (await isSshdServiceRegistered()) {
     console.log("     [run] sshd 服务仍存在，正在删除服务...");
     const delResult = await runCmd("sc.exe", ["delete", "sshd"]);
     if (delResult.success) {
       console.log("     sshd 服务已删除");
     } else {
-      console.error(
-        `     [err] 删除 sshd 服务失败: ${delResult.stderr || "未知错误"}`
-      );
+      // sc.exe 的错误信息输出到 stdout 而非 stderr（且为 GBK 编码可能乱码），
+      // 优先取 stderr，其次 stdout，最后兜底 exitCode
+      const errMsg =
+        delResult.stderr ||
+        delResult.stdout ||
+        `退出码 ${delResult.exitCode}`;
+      console.error(`     [err] 删除 sshd 服务失败: ${errMsg}`);
       console.log("     [info] 可手动执行: sc.exe delete sshd");
     }
   } else {
     console.log("     [info] sshd 服务已不存在");
   }
 
-  // ===== 清理 2：从 authorized_keys 移除 MCP 专用公钥（对应 step3 的写入） =====
+  // ===== 步骤 3：从 authorized_keys 移除 MCP 专用公钥（对应 step3 的写入） =====
   await removeMcpPubKeyFromAuthorizedKeys();
 
-  // ===== 清理 3：从 .bak 备份恢复 sshd_config（对应 step3 的修改） =====
+  // ===== 步骤 4：从 .bak 备份恢复 sshd_config（对应 step3 的修改） =====
   restoreSshdConfigFromBackup();
 
   console.log("     Windows SSH 服务卸载完成");
@@ -1657,11 +1687,21 @@ function restoreSshdConfigFromBackup(): void {
  * @brief 打开"程序和功能"并等待用户手动卸载后按回车继续
  * @details 封装 step5 中三处相同的"开 appwiz.cpl + 等待回车"逻辑。
  *          手动卸载是异步过程，程序无法感知结束时机，故用 prompt 阻塞等待。
+ *
+ *          实现说明：.cpl 不能直接 spawn（报 EFTYPE），也不能用 control.exe
+ *          （它启动控制面板后固定返回退出码 1，execFile 会误判为失败）。
+ *          用 `cmd /c start "" "appwiz.cpl"` 是 Windows 打开文件/程序的标准方式：
+ *          start 自身立即返回退出码 0，控制面板窗口正常弹出。
  * @returns 打开失败时返回 false（已打印错误提示）
  */
 async function openAppwizAndAwait(): Promise<boolean> {
   console.log('     [run] 正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
-  const openResult = await runCmd("appwiz.cpl", []);
+  const openResult = await runCmd("cmd", [
+    "/c",
+    "start",
+    "",
+    "appwiz.cpl",
+  ]);
   if (!openResult.success) {
     console.error(
       `     [err] 打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
