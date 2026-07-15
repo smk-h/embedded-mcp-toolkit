@@ -1,30 +1,45 @@
+# =============================================================================
+# Git 忽略清单（以下文件不纳入版本控制）
+# =============================================================================
+
+# ---- 依赖 ----
 node_modules
+
+# ---- 构建产物 ----
 out
-my-psh/keygen
-my-psh/psh
-config.yaml
-.claude/.env
-.claude/start-claude.ps1
+*.o
+*.out
+
+# ---- 环境变量与密钥（含认证信息，禁止提交）----
+# 注：.env 不带前导斜杠，会匹配所有层级的 .env 文件（含 .claude/.env）
+.env
+.npmrc
 .claude/start-claude.bat
+.claude/start-claude.ps1
 
-.embedded/ssh
-
-!.claude/settings.local.json
+# ---- 日志 ----
 *.log
 
-# npm token — 禁止提交含认证信息的 .npmrc
-.npmrc
-*embedded-mcp-toolkit*.tgz
-*embedded-mcp-toolkit*.zip
-
-.embedded/configs/devices/*.yaml
-!.embedded/configs/devices/board-example.yaml
-
+# ---- 打包产物 ----
+*.tgz
 *.zip
 *.tar.bz2
 *.tar.gz
+
+# ---- 设备配置（仅保留模板，真实配置不上传）----
+config.yaml
+.embedded/configs/devices/*.yaml
+!.embedded/configs/devices/board-example.yaml
+
+# ---- SSH 依赖与本地密钥 ----
+.embedded/ssh
+
+# ---- Claude 本地设置（保留，纳入版本控制）----
+!.claude/settings.local.json
+
+# ---- PSH 构建产物（遗留规则，预防性保留）----
+my-psh/keygen
+my-psh/psh
 my-psh/psh_demo2/libs/libqrencode-4.1.1
 my-psh/psh_demo2/libs/mbedtls-4.0.0
-*.o
-*.out
 psh
