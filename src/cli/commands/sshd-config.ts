@@ -1785,13 +1785,23 @@ async function doUninstallSsh(): Promise<void> {
 // ============================================================
 
 /**
+ * @brief 单个可用 IPv4 地址及其所属网卡
+ * @param ip    IPv4 地址
+ * @param iface 网卡名（os.networkInterfaces() 的 key）
+ */
+interface IpEntry {
+  ip: string;
+  iface: string;
+}
+
+/**
  * @brief 本机连接信息采集结果
  * @param sshUser  ssh 登录用户名（已剥离 DOMAIN\ 前缀）
- * @param ipList   可用 IPv4 地址列表（已过滤回环 / 链路本地 / 虚拟网卡）
+ * @param ipList   可用 IPv4 地址列表（已过滤回环 / 链路本地 / 虚拟网卡），每项含网卡名
  */
 interface ConnectionInfo {
   sshUser: string;
-  ipList: string[];
+  ipList: IpEntry[];
 }
 
 /**
@@ -1810,7 +1820,7 @@ function collectConnectionInfo(): ConnectionInfo {
 
   // (b) 枚举所有 IPv4 地址（排除回环 127.x、链路本地 169.254、虚拟网卡）
   const interfaces = networkInterfaces();
-  const ipList: string[] = [];
+  const ipList: IpEntry[] = [];
   for (const [ifName, addrs] of Object.entries(interfaces)) {
     if (!addrs) continue;
     // 跳过常见虚拟网卡（VirtualBox / VMware / Hyper-V / WSL），减少干扰
@@ -1819,7 +1829,7 @@ function collectConnectionInfo(): ConnectionInfo {
       if (addr.family === "IPv4" && !addr.internal) {
         // 跳过 169.254 链路本地地址（未正确获取 DHCP 时出现）
         if (addr.address.startsWith("169.254")) continue;
-        ipList.push(addr.address);
+        ipList.push({ ip: addr.address, iface: ifName });
       }
     }
   }
@@ -1836,34 +1846,37 @@ function collectConnectionInfo(): ConnectionInfo {
  *          多网卡环境下列出所有候选 IP，由用户根据网络拓扑自行判断选哪个。
  */
 async function doShowConnectionInfo(): Promise<void> {
-  console.log("\n[step] 查看本机连接信息");
+  log.info("查看本机连接信息");
 
   const { sshUser, ipList } = collectConnectionInfo();
 
   // (a) 用户名
-  console.log(`  [info] Windows 用户名: ${sshUser}`);
+  log.info("Windows 用户名");
+  log.message(`当前登录用户名: ${sshUser}(用于 Linux 端 ssh 登录)`);
 
   // (b) IPv4 地址列表
-  console.log("  [info] 本机 IPv4 地址:");
+  log.info("本机 IPv4 地址");
   if (ipList.length === 0) {
-    console.log("    (未检测到可用的 IPv4 地址)");
+    log.message("    未检测到可用的 IPv4 地址");
   } else {
-    for (const ip of ipList) {
-      console.log(`    ${ip}`);
+    for (const entry of ipList) {
+      log.message(`    ${entry.ip}(${entry.iface})`);
     }
   }
 
-  // (c) 拼接 Linux 端可直接执行的 ssh 命令示例
-  console.log("\n  [info] 在 Linux 端执行以下命令连接本机（免密登录）:");
+  // (c) 为每个 IP 拼接一条 Linux 端可直接执行的 ssh 命令（末尾标注网卡名）
+  log.info("Linux 端连接本机命令(免密登录)示例");
   const keyPath = "~/.ssh/id_mcp_server";
-  const primaryIp = ipList[0] ?? "<Windows_IP>";
-  console.log(`    ssh -i ${keyPath} ${sshUser}@${primaryIp}`);
-  if (ipList.length > 1) {
-    console.log("    （若上面 IP 不通，换用列表中其它 IP 重试）");
+  if (ipList.length === 0) {
+    log.message(`    ssh -i ${keyPath} ${sshUser}@<Windows_IP>`);
+  } else {
+    for (const entry of ipList) {
+      log.message(`    ssh -i ${keyPath} ${sshUser}@${entry.ip}(${entry.iface})`);
+    }
   }
-
-  console.log(
-    "\n  [tip] 确保已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd，连接才能免密成功"
+  log.success("以上信息可直接在 Linux 端使用，确保已生成专用密钥并配置 sshd");
+  log.message(
+    "    确保已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd, 连接才能免密成功"
   );
 }
 
@@ -1893,7 +1906,7 @@ async function doGenerateTemplate(): Promise<void> {
   }
 
   // 取首个 IP 作为模板默认值，其余 IP 在提示中列出
-  const primaryIp = ipList[0];
+  const primaryIp = ipList[0].ip;
   const keyPath = "~/.ssh/id_mcp_server";
 
   // Windows 上 remote-start-mcp.bat 的绝对路径（模板中用户需确认与修改）
@@ -1936,8 +1949,8 @@ async function doGenerateTemplate(): Promise<void> {
   console.log(`     [info] 模板默认 IP:   ${primaryIp}`);
   if (ipList.length > 1) {
     console.log("     [info] 其它可用 IP:");
-    for (const ip of ipList.slice(1)) {
-      console.log(`       ${ip}`);
+    for (const entry of ipList.slice(1)) {
+      console.log(`       ${entry.ip}（${entry.iface}）`);
     }
   }
   console.log(`     [ok] 模板已生成: ${templatePath}`);
