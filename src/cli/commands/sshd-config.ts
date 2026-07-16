@@ -6,10 +6,11 @@
  * 通过公钥免密登录 Windows 本地（MCP 服务所在机器）。
  *
  * 菜单功能：
- * [1] 安装 Windows OpenSSH Server（在线 / MSI 双途径）
- * [2] 登录 Linux 编译服务器，生成密钥对，SFTP 拉取公钥到本地
- * [3] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
- * [4] 检查 sshd 配置状态（只读诊断）
+ * [1] 一键完成全流程（安装→密钥→配置→模板）
+ * [2] 安装 Windows OpenSSH Server（在线 / MSI 双途径）
+ * [3] 登录 Linux 编译服务器，生成密钥对，SFTP 拉取公钥到本地
+ * [4] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
+ * [5] 检查 sshd 配置状态（只读诊断）
  *
  * SSH 操作基于 ssh2 库在本文件内独立实现（sshConnect / sshExec / sshDownload /
  * sshDisconnect），不复用 src/transports/ssh.ts 的 SSHShell（后者绑定 MCP 会话注册、
@@ -57,7 +58,7 @@ export type SshdConfigOptions = Record<string, never>;
 
 /**
  * @brief Linux 编译服务器连接信息（仅内存，不落盘）
- * @details 第 [2] 步交互式收集，用于 SSH 登录 Linux 生成密钥对。
+ * @details 第 [3] 步交互式收集，用于 SSH 登录 Linux 生成密钥对。
  *          password 仅存在于进程内存，不写入日志或磁盘。
  */
 interface LinuxServerInfo {
@@ -103,20 +104,22 @@ const CAPABILITY_SSHD_EXE = "C:\\Windows\\System32\\OpenSSH\\sshd.exe";
 /** @brief MSI 安装方式下 sshd.exe 的标准路径（由 MSI 安装器释放） */
 const MSI_SSHD_EXE = "C:\\Program Files\\OpenSSH\\sshd.exe";
 
+/** @brief 菜单选项：一键完成全流程（安装→密钥→配置→模板） */
+const MENU_ONE_CLICK = "1";
 /** @brief 菜单选项：安装 Windows SSH 服务 */
-const MENU_INSTALL_SSH = "1";
+const MENU_INSTALL_SSH = "2";
 /** @brief 菜单选项：编译服务器生成密钥对 */
-const MENU_GENERATE_KEY = "2";
+const MENU_GENERATE_KEY = "3";
 /** @brief 菜单选项：配置 Windows 中 sshd 服务 */
-const MENU_CONFIG_SSHD = "3";
+const MENU_CONFIG_SSHD = "4";
 /** @brief 菜单选项：检查 sshd 配置状态（只读诊断） */
-const MENU_CHECK_STATUS = "4";
+const MENU_CHECK_STATUS = "5";
 /** @brief 菜单选项：卸载 Windows SSH 服务 */
-const MENU_UNINSTALL_SSH = "5";
+const MENU_UNINSTALL_SSH = "6";
 /** @brief 菜单选项：查看 Windows 连接信息（用户名/IP） */
-const MENU_SHOW_INFO = "6";
+const MENU_SHOW_INFO = "7";
 /** @brief 菜单选项：生成 Linux 端 MCP 配置模板 */
-const MENU_GEN_TEMPLATE = "7";
+const MENU_GEN_TEMPLATE = "8";
 /** @brief 菜单选项：退出 */
 const MENU_EXIT = "0";
 
@@ -125,6 +128,7 @@ const MENU_EXIT = "0";
  * @details 复用 MENU_* 常量，供 clack select 泛型约束，确保 switch 分支穷举。
  */
 type MenuChoice =
+  | typeof MENU_ONE_CLICK
   | typeof MENU_INSTALL_SSH
   | typeof MENU_GENERATE_KEY
   | typeof MENU_CONFIG_SSHD
@@ -962,6 +966,10 @@ async function mainMenu(): Promise<MenuChoice | null> {
     message: "Windows SSH 免密登录配置",
     options: [
       {
+        value: MENU_ONE_CLICK,
+        label: `[${MENU_ONE_CLICK}] 一键完成全流程（安装→密钥→配置→模板）`,
+      },
+      {
         value: MENU_INSTALL_SSH,
         label: `[${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`,
       },
@@ -1013,13 +1021,13 @@ async function mainMenu(): Promise<MenuChoice | null> {
  *          安装后启动 sshd 并设为开机自启。每步失败均打印中文提示并 return，
  *          不抛异常。
  */
-async function doInstallSsh(): Promise<void> {
+async function doInstallSsh(): Promise<boolean> {
   log.info("开始安装 Windows SSH ...");
 
   // 检测 sshd 服务是否已存在
   if (await isSshdServiceRegistered()) {
     log.message("    OpenSSH Server 已安装，跳过");
-    return;
+    return true;
   }
 
   // 检测 Windows Capability 状态
@@ -1028,7 +1036,7 @@ async function doInstallSsh(): Promise<void> {
   );
   if (checkCap.success && checkCap.stdout.includes("Installed")) {
     log.message("    OpenSSH Server 已安装(Capability)，跳过");
-    return;
+    return true;
   }
 
   // 让用户选择安装方式（默认 MSI）
@@ -1052,7 +1060,7 @@ async function doInstallSsh(): Promise<void> {
   // Ctrl+C 取消：直接返回主菜单
   if (isCancel(methodChoiceRaw)) {
     log.message("    已取消安装方式选择");
-    return;
+    return false;
   }
   const methodChoice = methodChoiceRaw;
 
@@ -1070,7 +1078,7 @@ async function doInstallSsh(): Promise<void> {
     if (!installOnline.success) {
       log.error(`    在线安装失败: ${installOnline.stderr || "未知错误"}`);
       log.message("     可重新运行本项改选 MSI 离线安装");
-      return;
+      return false;
     }
     log.message("在线安装成功");
   } else {
@@ -1099,14 +1107,14 @@ async function doInstallSsh(): Promise<void> {
       ]);
       if (!installMsi.success) {
         log.message(`    MSI 安装失败: ${installMsi.stderr || "未知错误"}`);
-        return;
+        return false;
       }
       log.message("    MSI 安装成功");
     } catch (err) {
       log.message(
         `    MSI 下载/安装失败: ${err instanceof Error ? err.message : err}`
       );
-      return;
+      return false;
     }
   }
 
@@ -1115,7 +1123,7 @@ async function doInstallSsh(): Promise<void> {
   const serviceReady = await ensureSshdService();
   if (!serviceReady) {
     log.warn("请手动注册 sshd 服务：<sshd.exe 路径> install");
-    return;
+    return false;
   }
 
   // 启动 sshd 服务
@@ -1123,7 +1131,7 @@ async function doInstallSsh(): Promise<void> {
   const startResult = await runPowerShell("Start-Service sshd");
   if (!startResult.success) {
     log.message(`    启动 sshd 失败: ${startResult.stderr || "未知错误"}`);
-    return;
+    return false;
   }
   log.message("    sshd 服务已启动");
 
@@ -1134,10 +1142,11 @@ async function doInstallSsh(): Promise<void> {
   );
   if (!autoResult.success) {
     log.message(`    设置自启失败: ${autoResult.stderr || "未知错误"}`);
-    return;
+    return false;
   }
   log.message("    sshd 已设为开机自启");
   log.success("Windows SSH 服务安装完成");
+  return true;
 }
 
 // ============================================================
@@ -1152,7 +1161,7 @@ async function doInstallSsh(): Promise<void> {
  *          3. 通过 SFTP 把公钥拉取到本地 .embedded/ssh/id_mcp_server.pub
  *          SSH 操作基于 ssh2 在本文件内独立实现，不复用 SSHShell。
  */
-async function doGenerateKey(): Promise<void> {
+async function doGenerateKey(): Promise<boolean> {
   log.info("开始在编译服务器生成密钥对 ...");
 
   // 交互式收集连接信息（不落盘）
@@ -1163,12 +1172,12 @@ async function doGenerateKey(): Promise<void> {
   });
   if (isCancel(addressRaw)) {
     log.message("    已取消");
-    return;
+    return false;
   }
   const addressInput = addressRaw.trim();
   if (!addressInput) {
     log.message("    已取消");
-    return;
+    return false;
   }
 
   const parsed = parseServerAddress(addressInput);
@@ -1176,7 +1185,7 @@ async function doGenerateKey(): Promise<void> {
     log.message(
       "    地址格式错误，应为 user@host[:port]（如 root@1.2.3.4 或 root@1.2.3.4:2222）"
     );
-    return;
+    return false;
   }
 
   const pwdRaw = await password({
@@ -1184,7 +1193,7 @@ async function doGenerateKey(): Promise<void> {
   });
   if (isCancel(pwdRaw)) {
     log.message("    已取消");
-    return;
+    return false;
   }
 
   const info: LinuxServerInfo = { ...parsed, password: pwdRaw };
@@ -1199,7 +1208,7 @@ async function doGenerateKey(): Promise<void> {
     log.message(
       `    无法连接编译服务器: ${err instanceof Error ? err.message : err}`
     );
-    return;
+    return false;
   }
 
   try {
@@ -1229,7 +1238,7 @@ async function doGenerateKey(): Promise<void> {
       log.message(
         "        RHEL/CentOS:   sudo dnf install openssh-server && sudo systemctl start sshd"
       );
-      return;
+      return false;
     }
     log.message("    远端 sshd 运行正常");
 
@@ -1248,7 +1257,7 @@ async function doGenerateKey(): Promise<void> {
       });
       if (isCancel(overwrite) || !overwrite) {
         log.message("    已取消，保留原密钥");
-        return;
+        return false;
       }
       // 先删除旧密钥文件，避免 ssh-keygen 触发交互式 "Overwrite (y/n)?" 确认
       // sshExec 基于 exec 通道，无法向远端 stdin 写入回应，ssh-keygen 会死等输入导致卡死
@@ -1292,8 +1301,10 @@ async function doGenerateKey(): Promise<void> {
     await sshDownload(client, pubPathRemote, localPubPath);
     log.message(`    公钥已保存: ${localPubPath}`);
     log.success("密钥对生成完成");
+    return true;
   } catch (err) {
     log.message(`    操作失败: ${err instanceof Error ? err.message : err}`);
+    return false;
   } finally {
     sshDisconnect(client);
   }
@@ -1312,7 +1323,7 @@ async function doGenerateKey(): Promise<void> {
  *          4. 重启 sshd 使配置生效（先检查服务是否注册；未注册则跳过重启不回滚，仅提示）
  *          5. 回显最终关键配置项供用户核对
  */
-async function doConfigSshd(): Promise<void> {
+async function doConfigSshd(): Promise<boolean> {
   log.info("开始配置 Windows sshd 服务 ...");
 
   // 1. 读取本地公钥
@@ -1320,8 +1331,8 @@ async function doConfigSshd(): Promise<void> {
   const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   if (!existsSync(pubKeyPath)) {
     log.message(`    未找到公钥文件: ${pubKeyPath}`);
-    log.message("    请先执行 [2] 编译服务器生成密钥对");
-    return;
+    log.message(`    请先执行 [${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
+    return false;
   } else {
     log.message(`    已找到公钥文件: ${pubKeyPath}`);
   }
@@ -1358,8 +1369,8 @@ async function doConfigSshd(): Promise<void> {
   // 3. 检查 sshd_config 是否存在
   if (!existsSync(SSHD_CONFIG_PATH)) {
     log.message(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
-    log.message("    请先执行 [1] 安装 Windows SSH 服务");
-    return;
+    log.message(`    请先执行 [${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
+    return false;
   }
 
   // 4. 备份 sshd_config（已存在 .bak 不覆盖，保留首次备份）
@@ -1381,14 +1392,16 @@ async function doConfigSshd(): Promise<void> {
 
   // 6. 重启 sshd 使配置生效
   //    先检查 sshd 服务是否已注册：未注册时（如 sshd 以非服务方式运行）跳过重启，
-  //    不回滚配置（配置本身已正确），仅提示用户手动重启或执行 [1] 安装服务。
+  //    不回滚配置（配置本身已正确），仅提示用户手动重启或执行 [2] 安装服务。
   log.info("检查 sshd 服务是否已注册 ...");
   const svcRegistered = await isSshdServiceRegistered();
 
   if (!svcRegistered) {
     log.message("    sshd 服务未注册（可能以非服务方式运行），跳过自动重启");
     log.message("    配置已写入，请手动重启 sshd 使其生效：");
-    log.message("      若 sshd 以服务方式运行：先执行 [1] 安装服务");
+    log.message(
+      `      若 sshd 以服务方式运行：先执行 [${MENU_INSTALL_SSH}] 安装服务`
+    );
     log.message("      若 sshd 以进程方式运行：手动结束 sshd 进程后重新启动");
   } else {
     log.message("    sshd 服务已注册");
@@ -1405,7 +1418,7 @@ async function doConfigSshd(): Promise<void> {
           `    回滚失败: ${err instanceof Error ? err.message : err}`
         );
       }
-      return;
+      return false;
     }
     log.message("    sshd 服务已重启");
   }
@@ -1435,6 +1448,7 @@ async function doConfigSshd(): Promise<void> {
   );
 
   log.success("Windows sshd 配置完成");
+  return true;
 }
 
 // ============================================================
@@ -1463,7 +1477,7 @@ async function doCheckStatus(): Promise<void> {
   );
   if (!svcResult.success || svcResult.stdout === "NOT_INSTALLED") {
     log.message("    sshd 服务未安装");
-    issues.push("[1] 安装 Windows SSH 服务");
+    issues.push(`[${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
   } else {
     const parts = svcResult.stdout.split("|");
     const status = parts[0]?.trim() ?? "Unknown";
@@ -1473,10 +1487,10 @@ async function doCheckStatus(): Promise<void> {
     log.message(`    状态: ${status}`);
     log.message(`    启动类型: ${startType}`);
     if (!isRunning) {
-      issues.push("启动 sshd 服务（或重新执行 [1]）");
+      issues.push(`启动 sshd 服务（或重新执行 [${MENU_INSTALL_SSH}]）`);
     }
     if (!isAuto) {
-      issues.push("将 sshd 设为开机自启（或重新执行 [1]）");
+      issues.push(`将 sshd 设为开机自启（或重新执行 [${MENU_INSTALL_SSH}]）`);
     }
   }
 
@@ -1490,7 +1504,9 @@ async function doCheckStatus(): Promise<void> {
   log.info("sshd_config 关键项");
   if (!existsSync(SSHD_CONFIG_PATH)) {
     log.message(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
-    issues.push("[1] 安装 Windows SSH 服务(生成 sshd_config)");
+    issues.push(
+      `[${MENU_INSTALL_SSH}] 安装 Windows SSH 服务(生成 sshd_config)`
+    );
   } else {
     const configContent = readFileSync(SSHD_CONFIG_PATH, "utf8");
     const configLines = configContent.split(/\r?\n/);
@@ -1504,7 +1520,8 @@ async function doCheckStatus(): Promise<void> {
     log.message(
       `    PubkeyAuthentication: ${pubKeyLine?.trim() ?? "(未设置，需为 yes)"}`
     );
-    if (!pubKeyOk) issues.push("[3] 配置 sshd (PubkeyAuthentication yes)");
+    if (!pubKeyOk)
+      issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (PubkeyAuthentication yes)`);
 
     // AuthorizedKeysFile
     const authKeysLine = findActiveConfigLine(
@@ -1516,7 +1533,8 @@ async function doCheckStatus(): Promise<void> {
     log.message(
       `    AuthorizedKeysFile: ${authKeysLine?.trim() ?? "(未设置)"}`
     );
-    if (!authKeysOk) issues.push("[3] 配置 sshd (AuthorizedKeysFile)");
+    if (!authKeysOk)
+      issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (AuthorizedKeysFile)`);
 
     // Match Group administrators（非注释行存在 = 仍激活）
     const matchAdminLine = findActiveConfigLine(
@@ -1527,7 +1545,8 @@ async function doCheckStatus(): Promise<void> {
     log.message(
       `    Match Group administrators: ${matchAdminOk ? "已禁用" : "仍激活（" + matchAdminLine.trim() + "）"}`
     );
-    if (!matchAdminOk) issues.push("[3] 配置 sshd (禁用 administrators 分组)");
+    if (!matchAdminOk)
+      issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (禁用 administrators 分组)`);
   }
 
   // (c) authorized_keys 状态
@@ -1536,7 +1555,7 @@ async function doCheckStatus(): Promise<void> {
   if (!existsSync(akPath)) {
     log.message(`    不存在: ${akPath}`);
     log.message("    公钥条数: 0");
-    issues.push("[3] 配置 sshd (写入 authorized_keys)");
+    issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (写入 authorized_keys)`);
   } else {
     const akContent = readFileSync(akPath, "utf8");
     const keyCount = akContent
@@ -1545,7 +1564,8 @@ async function doCheckStatus(): Promise<void> {
     const hasKeys = keyCount > 0;
     log.message(`    路径: ${akPath}`);
     log.message(`    公钥条数: ${keyCount}`);
-    if (!hasKeys) issues.push("[3] 配置 sshd (authorized_keys 为空)");
+    if (!hasKeys)
+      issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (authorized_keys 为空)`);
   }
 
   // (d) 本地公钥状态
@@ -1553,7 +1573,7 @@ async function doCheckStatus(): Promise<void> {
   const localPubPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   const pubExists = existsSync(localPubPath);
   log.message(`    ${pubExists ? "存在" : "不存在"}: ${localPubPath}`);
-  if (!pubExists) issues.push("[2] 编译服务器生成密钥对");
+  if (!pubExists) issues.push(`[${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
 
   // 汇总结论
   if (issues.length === 0) {
@@ -1902,7 +1922,7 @@ async function doShowConnectionInfo(): Promise<void> {
     "    首次连接会提示主机密钥确认(Are you sure you want to continue connecting?)，输入 yes 即可，之后不再询问"
   );
   log.message(
-    "    确保已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd, 连接才能免密成功"
+    `    确保已依次执行 [${MENU_INSTALL_SSH}] 安装 → [${MENU_GENERATE_KEY}] 生成密钥 → [${MENU_CONFIG_SSHD}] 配置 sshd, 连接才能免密成功`
   );
 }
 
@@ -1920,7 +1940,7 @@ async function doShowConnectionInfo(): Promise<void> {
  *          并按需修改 IP / 脚本路径。多网卡时取首个 IP 作为示例，同时在模板
  *          注释中列出其它候选 IP。
  */
-async function doGenerateTemplate(): Promise<void> {
+async function doGenerateTemplate(): Promise<boolean> {
   log.info("开始生成 Linux 端 MCP 配置模板");
 
   const { sshUser, ipList } = collectConnectionInfo();
@@ -1928,7 +1948,7 @@ async function doGenerateTemplate(): Promise<void> {
   if (ipList.length === 0) {
     log.message("    未检测到可用的 IPv4 地址，无法生成模板");
     log.message("    请确认网络连接正常后重试");
-    return;
+    return false;
   }
 
   // 取首个 IP 作为模板默认值，其余 IP 在提示中列出
@@ -1997,13 +2017,48 @@ async function doGenerateTemplate(): Promise<void> {
     "    注意: MCP 客户端首次连接 Windows 会触发主机密钥确认，需先在 Linux 端手动执行一次 ssh 连接并输入 yes 完成信任，之后客户端即可自动免密连接"
   );
   log.message(
-    "    前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd"
+    `    前置条件：已依次执行 [${MENU_INSTALL_SSH}] 安装 → [${MENU_GENERATE_KEY}] 生成密钥 → [${MENU_CONFIG_SSHD}] 配置 sshd`
   );
   log.message("    否则 ssh 连接会失败（密码提示 / 连接拒绝）");
 
   // 模板内容预览（box 包裹，标题作为独立节点）
   log.info("模板内容如下");
   box(content.replace(/\n$/, ""), "模板内容预览");
+  return true;
+}
+
+// ============================================================
+// step8: 一键完成全流程
+// ============================================================
+
+/**
+ * @brief 一键完成全流程：安装 → 生成密钥 → 配置 sshd → 生成模板
+ * @details 顺序调用四个 step 函数，任一步返回 false 即中止并提示。
+ *          安装方式选择（MSI / 在线）仍会交互式询问。
+ * @returns 整体是否全部成功完成
+ */
+async function doOneClickFlow(): Promise<boolean> {
+  log.info("一键完成全流程 ...");
+
+  if (!(await doInstallSsh())) {
+    log.message("    安装步骤未完成，中止流程");
+    return false;
+  }
+  if (!(await doGenerateKey())) {
+    log.message("    生成密钥步骤未完成，中止流程");
+    return false;
+  }
+  if (!(await doConfigSshd())) {
+    log.message("    配置 sshd 步骤未完成，中止流程");
+    return false;
+  }
+  if (!(await doGenerateTemplate())) {
+    log.message("    生成模板步骤未完成，中止流程");
+    return false;
+  }
+
+  log.success("全流程已完成，可从 Linux 免密登录 Windows");
+  return true;
 }
 
 // ============================================================
@@ -2054,6 +2109,9 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
     }
 
     switch (choice) {
+      case MENU_ONE_CLICK:
+        await doOneClickFlow();
+        break;
       case MENU_INSTALL_SSH:
         await doInstallSsh();
         break;
