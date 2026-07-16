@@ -33,7 +33,7 @@ import { createInterface } from "readline";
 import { get as httpsGet } from "https";
 
 import { Client, type ConnectConfig } from "ssh2";
-import { select, isCancel } from "@clack/prompts";
+import { select, isCancel, log } from "@clack/prompts";
 
 // ============================================================
 // 类型与常量
@@ -712,7 +712,7 @@ function findSshdExe(): string | null {
  * @returns 安装方式信息（method / methodLabel / exePath / detail）
  */
 async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
-  console.log("     [run] 正在检测安装方式...");
+  log.message("    正在检测安装方式...");
   // 信号 C：文件探测（同步，先拿到 exe 路径供后续填充）
   const exePath = findSshdExe();
 
@@ -777,7 +777,7 @@ async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
   // —— 信号 A：Capability State（慢，仅在 B、C 都无法判定时才调用） ——
   //   Get-WindowsCapability -Online 要扫描 CBS 组件存储，某些机器上需要数十秒。
   //   给独立较短超时（30 秒），避免默认的 5 分钟卡死。
-  console.log("     [run] 进一步查询 Capability 状态（可能需要数秒）...");
+  log.message("    进一步查询 Capability 状态（可能需要数秒）...");
   let capabilityInstalled = false;
   const capResult = await runPowerShell(
     `Get-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME} | Select-Object -ExpandProperty State`,
@@ -988,11 +988,11 @@ async function mainMenu(): Promise<MenuChoice | null> {
  *          不抛异常。
  */
 async function doInstallSsh(): Promise<void> {
-  console.log("\n[step] 安装 Windows SSH 服务");
+  log.info("开始安装 Windows SSH ...");
 
   // 检测 sshd 服务是否已存在
   if (await isSshdServiceRegistered()) {
-    console.log("     OpenSSH Server 已安装，跳过");
+    log.message("    OpenSSH Server 已安装，跳过");
     return;
   }
 
@@ -1001,16 +1001,34 @@ async function doInstallSsh(): Promise<void> {
     `Get-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME} | Select-Object -ExpandProperty State`
   );
   if (checkCap.success && checkCap.stdout.includes("Installed")) {
-    console.log("     OpenSSH Server 已安装（Capability），跳过");
+    log.message("    OpenSSH Server 已安装(Capability)，跳过");
     return;
   }
 
   // 让用户选择安装方式（默认 MSI）
-  console.log("");
-  console.log("  选择安装方式：");
-  console.log("    [1] MSI 离线安装（默认，下载一次可重复使用）");
-  console.log("    [2] 在线安装（Add-WindowsCapability，依赖 Windows Update）");
-  const methodChoice = await prompt("  请选择 [1]/[2] (默认 1): ");
+  // clack select：方向键选择、Enter 确认；value 复用原 "1"/"2" 分支判断
+  const methodChoiceRaw = await select<string>({
+    message: "选择安装方式",
+    options: [
+      {
+        value: "1",
+        label: "MSI 离线安装",
+        hint: "默认，下载一次可重复使用",
+      },
+      {
+        value: "2",
+        label: "在线安装(Add-WindowsCapability)",
+        hint: "依赖 Windows Update",
+      },
+    ],
+    initialValue: "1",
+  });
+  // Ctrl+C 取消：直接返回主菜单
+  if (isCancel(methodChoiceRaw)) {
+    log.message("    已取消安装方式选择");
+    return;
+  }
+  const methodChoice = methodChoiceRaw;
 
   // MSI 缓存路径（与 step2 拉取的公钥同目录，使用模块常量便于 step5 卸载复用）
   const msiPath = resolve(process.cwd(), LOCAL_MSI_REL);
@@ -1018,19 +1036,19 @@ async function doInstallSsh(): Promise<void> {
 
   if (methodChoice === "2") {
     // ===== 在线安装分支 =====
-    console.log("     [run] 在线安装 (Add-WindowsCapability)...");
-    console.log("        依赖 Windows Update，网络不佳时可能长时间卡住");
+    log.message("    在线安装 (Add-WindowsCapability)...");
+    log.message("    依赖 Windows Update, 网络不佳时可能长时间卡住");
     const installOnline = await runPowerShell(
       `Add-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME}`
     );
     if (!installOnline.success) {
-      console.error(
-        `     [err] 在线安装失败: ${installOnline.stderr || "未知错误"}`
+      log.error(
+        `    在线安装失败: ${installOnline.stderr || "未知错误"}`
       );
-      console.log("     [info] 可重新运行本项改选 MSI 离线安装");
+      log.message("     可重新运行本项改选 MSI 离线安装");
       return;
     }
-    console.log("     在线安装成功");
+    log.message("在线安装成功");
   } else {
     // ===== MSI 离线安装分支（默认）=====
     // 确保下载目录存在
@@ -1041,14 +1059,14 @@ async function doInstallSsh(): Promise<void> {
     try {
       // 本地已存在 MSI 包则跳过下载
       if (existsSync(msiPath)) {
-        console.log(`     已存在 MSI 安装包，跳过下载: ${msiPath}`);
+        log.message(`    已存在 MSI 安装包，跳过下载: ${msiPath}`);
       } else {
-        console.log(`     [run] 下载 MSI 安装包: ${OPENSSH_MSI_URL}`);
+        log.message(`    下载 MSI 安装包: ${OPENSSH_MSI_URL}`);
         await downloadFile(OPENSSH_MSI_URL, msiPath);
-        console.log(`     下载完成: ${msiPath}`);
+        log.message(`    下载完成: ${msiPath}`);
       }
 
-      console.log("     [run] 执行 MSI 静默安装...");
+      log.message("    执行 MSI 静默安装...");
       const installMsi = await runCmd("msiexec", [
         "/i",
         msiPath,
@@ -1056,51 +1074,52 @@ async function doInstallSsh(): Promise<void> {
         "/norestart",
       ]);
       if (!installMsi.success) {
-        console.error(
-          `     [err] MSI 安装失败: ${installMsi.stderr || "未知错误"}`
+        log.message(
+          `    MSI 安装失败: ${installMsi.stderr || "未知错误"}`
         );
         return;
       }
-      console.log("     MSI 安装成功");
+      log.message("    MSI 安装成功");
     } catch (err) {
-      console.error(
-        `     [err] MSI 下载/安装失败: ${err instanceof Error ? err.message : err}`
+      log.message(
+        `    MSI 下载/安装失败: ${err instanceof Error ? err.message : err}`
       );
       return;
     }
   }
 
+  log.info("启动 sshd 服务 ...");
   // 确保 sshd 服务已注册（MSI 静默安装有时不注册服务，需用 sshd.exe install 补注册）
   const serviceReady = await ensureSshdService();
   if (!serviceReady) {
-    console.log("     [info] 请手动注册 sshd 服务：<sshd.exe 路径> install");
+    log.warn("请手动注册 sshd 服务：<sshd.exe 路径> install");
     return;
   }
 
   // 启动 sshd 服务
-  console.log("     [run] 启动 sshd 服务...");
+  log.message("    正在启动 sshd 服务...");
   const startResult = await runPowerShell("Start-Service sshd");
   if (!startResult.success) {
-    console.error(
-      `     [err] 启动 sshd 失败: ${startResult.stderr || "未知错误"}`
+    log.message(
+      `    启动 sshd 失败: ${startResult.stderr || "未知错误"}`
     );
     return;
   }
-  console.log("     sshd 服务已启动");
+  log.message("    sshd 服务已启动");
 
   // 设为开机自启
-  console.log("     [run] 设置 sshd 开机自启...");
+  log.info("设置 sshd 开机自启 ...");
   const autoResult = await runPowerShell(
     "Set-Service -Name sshd -StartupType Automatic"
   );
   if (!autoResult.success) {
-    console.error(
-      `     [err] 设置自启失败: ${autoResult.stderr || "未知错误"}`
+    log.message(
+      `    设置自启失败: ${autoResult.stderr || "未知错误"}`
     );
     return;
   }
-  console.log("     sshd 已设为开机自启");
-  console.log("     Windows SSH 服务安装完成");
+  log.message("    sshd 已设为开机自启");
+  log.success("Windows SSH 服务安装完成");
 }
 
 // ============================================================
@@ -1538,19 +1557,19 @@ async function doCheckStatus(): Promise<void> {
  * @returns 打开失败时返回 false（已打印错误提示）
  */
 async function openAppwizAndAwait(): Promise<boolean> {
-  console.log(
-    '     [run] 正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...'
+  log.message(
+    '    正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...'
   );
   const openResult = await runCmd("cmd", ["/c", "start", "", "appwiz.cpl"]);
   if (!openResult.success) {
-    console.error(
-      `     [err] 打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
+    log.message(
+      `    打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
     );
-    console.log('     [info] 可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
+    log.message('    可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
     return false;
   }
-  console.log('     [info] 已打开"程序和功能"，请在窗口中卸载 OpenSSH');
-  console.log("           卸载完成后按回车继续...");
+  log.message('    已打开"程序和功能"，请在窗口中卸载 OpenSSH');
+  log.message("    卸载完成后按回车继续...");
   await prompt("  ");
   return true;
 }
@@ -1564,18 +1583,18 @@ async function openAppwizAndAwait(): Promise<boolean> {
 async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
   const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   if (!existsSync(pubKeyPath)) {
-    console.log("     [info] 未找到本地公钥文件，跳过 authorized_keys 清理");
+    log.message("    未找到本地公钥文件，跳过 authorized_keys 清理");
     return;
   }
   const pubKey = readFileSync(pubKeyPath, "utf8").trim();
   if (!pubKey) {
-    console.log("     [info] 本地公钥文件为空，跳过 authorized_keys 清理");
+    log.message("    本地公钥文件为空，跳过 authorized_keys 清理");
     return;
   }
 
   const akPath = join(homedir(), ".ssh", "authorized_keys");
   if (!existsSync(akPath)) {
-    console.log("     [info] authorized_keys 不存在，无需清理");
+    log.message("    authorized_keys 不存在，无需清理");
     return;
   }
 
@@ -1587,7 +1606,7 @@ async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
   const removed = before - filtered.length;
 
   if (removed === 0) {
-    console.log("     [info] authorized_keys 中未找到 MCP 公钥，无需清理");
+    log.message("    authorized_keys 中未找到 MCP 公钥，无需清理");
     return;
   }
 
@@ -1599,7 +1618,7 @@ async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
     // 所有公钥都被移除，文件变空——保留空文件而非删除（避免权限丢失）
     writeFileSync(akPath, "", "utf8");
   }
-  console.log(`     已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
+  log.message(`    已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
 }
 
 /**
@@ -1610,23 +1629,23 @@ async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
  */
 function restoreSshdConfigFromBackup(): void {
   if (!existsSync(SSHD_CONFIG_PATH)) {
-    console.log("     [info] sshd_config 不存在，跳过恢复");
+    log.message("    sshd_config 不存在，跳过恢复");
     return;
   }
   const bakPath = SSHD_CONFIG_PATH + ".bak";
   if (!existsSync(bakPath)) {
-    console.log("     [info] 未找到 sshd_config.bak 备份，跳过恢复");
+    log.message("    未找到 sshd_config.bak 备份，跳过恢复");
     return;
   }
   try {
     copyFileSync(bakPath, SSHD_CONFIG_PATH);
     unlinkSync(bakPath);
-    console.log("     sshd_config 已从备份恢复（.bak 已删除）");
+    log.message("    sshd_config 已从备份恢复（.bak 已删除）");
   } catch (err) {
-    console.error(
-      `     [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
+    log.message(
+      `    [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
     );
-    console.log("     [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
+    log.message("    [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
   }
 }
 
@@ -1653,55 +1672,55 @@ function restoreSshdConfigFromBackup(): void {
  *          前者可能含用户自定义配置，避免误删；仅在末尾提示可手动删除。
  */
 async function doUninstallSsh(): Promise<void> {
-  console.log("\n[step] 卸载 Windows SSH 服务");
+  log.info("卸载 Windows SSH 服务");
 
   // 检测安装方式（同时确认是否已安装）
+  log.info("检测安装方式 ...");
   const info = await detectOpenSshInstallMethod();
   if (info.method === "unknown" && info.exePath === null) {
-    console.log("     [info] 未检测到 OpenSSH 安装，无需卸载");
+    log.message("    未检测到 OpenSSH 安装，无需卸载");
     return;
   }
-  console.log(
-    `     [info] 检测到安装方式: ${info.methodLabel}（${info.detail}）`
-  );
+  log.message(`    检测到安装方式: ${info.methodLabel}(${info.detail})`);
 
   // ===== 步骤 0：先停止 sshd 服务（后续卸载/删文件时避免被运行中进程占用） =====
   if (await isSshdServiceRegistered()) {
-    console.log("     [run] 停止 sshd 服务...");
+    log.info("停止 sshd 服务 ...");
     const stopResult = await runPowerShell(
       "Stop-Service sshd -Force -ErrorAction SilentlyContinue"
     );
     if (stopResult.success) {
-      console.log("     sshd 服务已停止");
+      log.message("    sshd 服务已停止");
     } else {
       // 停止失败不阻断后续流程（服务可能已是停止状态或权限受限）
-      console.log("     [warn] 停止 sshd 服务失败（可能已停止），继续后续步骤");
+      log.message("    停止 sshd 服务失败（可能已停止），继续后续步骤");
     }
   } else {
-    console.log("     [info] sshd 服务未注册，跳过停止");
+    log.message("    sshd 服务未注册，跳过停止");
   }
 
   // ===== 步骤 1：按安装方式卸载 OpenSSH =====
   if (info.method === "capability") {
     // ===== Capability 方式：用系统组件卸载 =====
-    console.log("     [run] 通过 Remove-WindowsCapability 卸载...");
+    log.info("通过 Remove-WindowsCapability 卸载...");
     const capResult = await runPowerShell(
       `Remove-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME}`
     );
     if (!capResult.success) {
-      console.error(
-        `     [err] Capability 卸载失败: ${capResult.stderr || "未知错误"}`
+      log.message(
+        `    Capability 卸载失败: ${capResult.stderr || "未知错误"}`
       );
-      console.log('     [info] 请打开"程序和功能"手动卸载');
+      log.message('    请打开"程序和功能"手动卸载');
       await openAppwizAndAwait();
     } else {
-      console.log("     Capability 卸载成功");
+      log.message("    Capability 卸载成功");
     }
   } else if (info.method === "msi") {
     // ===== MSI 方式：优先 msiexec /x 静默卸载，否则 appwiz.cpl =====
+
     const msiPath = resolve(process.cwd(), LOCAL_MSI_REL);
     if (existsSync(msiPath)) {
-      console.log(`     [run] 使用 MSI 包卸载: ${msiPath}`);
+      log.info(`使用 MSI 包卸载: ${msiPath}`);
       const uninstallResult = await runCmd("msiexec", [
         "/x",
         msiPath,
@@ -1709,54 +1728,56 @@ async function doUninstallSsh(): Promise<void> {
         "/norestart",
       ]);
       if (uninstallResult.success) {
-        console.log("     MSI 卸载成功");
+        log.message("    MSI 卸载成功");
       } else {
-        console.log(
-          `     [err] MSI 卸载失败: ${uninstallResult.stderr || "未知错误"}`
+        log.message(
+          `     MSI 卸载失败: ${uninstallResult.stderr || "未知错误"}`
         );
-        console.log(`     [info] 请改用下方打开的"程序和功能"手动卸载`);
+        log.message(`    请改用下方打开的"程序和功能"手动卸载`);
         await openAppwizAndAwait();
       }
     } else {
       // 本地没有 MSI 包，只能走图形界面
-      console.log(`     [info] 未找到本地 MSI 包（${msiPath}），无法静默卸载`);
+      log.message(`    未找到本地 MSI 包（${msiPath}），无法静默卸载`);
       await openAppwizAndAwait();
     }
   } else {
     // ===== unknown：无法确定来源，交给用户手动卸载 =====
-    console.log("     [warn] 无法确定安装来源，需手动卸载");
+    log.message("    无法确定安装来源，需手动卸载");
     await openAppwizAndAwait();
   }
 
   // ===== 步骤 2：删除 sshd 服务残留（卸载有时不删服务，sc.exe delete 补删） =====
   if (await isSshdServiceRegistered()) {
-    console.log("     [run] sshd 服务仍存在，正在删除服务...");
+    log.info("sshd 服务仍存在，正在删除服务...");
     const delResult = await runCmd("sc.exe", ["delete", "sshd"]);
     if (delResult.success) {
-      console.log("     sshd 服务已删除");
+      log.message("    sshd 服务已删除");
     } else {
       // sc.exe 的错误信息输出到 stdout 而非 stderr（且为 GBK 编码可能乱码），
       // 优先取 stderr，其次 stdout，最后兜底 exitCode
       const errMsg =
         delResult.stderr || delResult.stdout || `退出码 ${delResult.exitCode}`;
-      console.error(`     [err] 删除 sshd 服务失败: ${errMsg}`);
-      console.log("     [info] 可手动执行: sc.exe delete sshd");
+      log.message(`    删除 sshd 服务失败: ${errMsg}`);
+      log.message("    可手动执行: sc.exe delete sshd");
     }
   } else {
-    console.log("     [info] sshd 服务已不存在");
+    log.message("    sshd 服务已不存在");
   }
 
   // ===== 步骤 3：从 authorized_keys 移除 MCP 专用公钥（对应 step3 的写入） =====
+  log.info("从 authorized_keys 移除 MCP 专用公钥 ...");
   await removeMcpPubKeyFromAuthorizedKeys();
 
   // ===== 步骤 4：从 .bak 备份恢复 sshd_config（对应 step3 的修改） =====
+  log.info("从 .bak 备份恢复 sshd_config ...");
   restoreSshdConfigFromBackup();
 
-  console.log("     Windows SSH 服务卸载完成");
-  console.log(
-    "     [info] 配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）"
+  log.success("    Windows SSH 服务卸载完成");
+  log.message(
+    "    配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）"
   );
-  console.log("           如需彻底清除，请手动删除该目录");
+  log.message("    如需彻底清除，请手动删除该目录");
 }
 
 // ============================================================
