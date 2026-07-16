@@ -1,6 +1,6 @@
 {
   "name": "@smai-kit/embedded-mcp-toolkit",
-  "version": "0.2.2",
+  "version": "1.0.0",
   "description": "MCP Server for remote management of embedded Linux boards via SSH",
   "type": "module",
   "main": "out/cli/index.js",
