@@ -953,17 +953,35 @@ async function mainMenu(): Promise<MenuChoice | null> {
   const choice = await select<MenuChoice>({
     message: "Windows SSH 免密登录配置",
     options: [
-      { value: MENU_INSTALL_SSH, label: "安装 Windows SSH 服务" },
-      { value: MENU_GENERATE_KEY, label: "编译服务器生成密钥对" },
-      { value: MENU_CONFIG_SSHD, label: "配置 Windows 中 sshd 服务" },
+      {
+        value: MENU_INSTALL_SSH,
+        label: `[${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`,
+      },
+      {
+        value: MENU_GENERATE_KEY,
+        label: `[${MENU_GENERATE_KEY}] 编译服务器生成密钥对`,
+      },
+      {
+        value: MENU_CONFIG_SSHD,
+        label: `[${MENU_CONFIG_SSHD}] 配置 Windows 中 sshd 服务`,
+      },
       {
         value: MENU_CHECK_STATUS,
-        label: "检查 sshd 配置状态（只读诊断）",
+        label: `[${MENU_CHECK_STATUS}] 检查 sshd 配置状态（只读诊断）`,
       },
-      { value: MENU_UNINSTALL_SSH, label: "卸载 Windows SSH 服务" },
-      { value: MENU_SHOW_INFO, label: "查看本机连接信息（用户名/IP）" },
-      { value: MENU_GEN_TEMPLATE, label: "生成 Linux 端 MCP 配置模板" },
-      { value: MENU_EXIT, label: "退出" },
+      {
+        value: MENU_UNINSTALL_SSH,
+        label: `[${MENU_UNINSTALL_SSH}] 卸载 Windows SSH 服务`,
+      },
+      {
+        value: MENU_SHOW_INFO,
+        label: `[${MENU_SHOW_INFO}] 查看本机连接信息（用户名/IP）`,
+      },
+      {
+        value: MENU_GEN_TEMPLATE,
+        label: `[${MENU_GEN_TEMPLATE}] 生成 Linux 端 MCP 配置模板`,
+      },
+      { value: MENU_EXIT, label: `[${MENU_EXIT}] 退出` },
     ],
   });
   if (isCancel(choice)) {
@@ -1042,9 +1060,7 @@ async function doInstallSsh(): Promise<void> {
       `Add-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME}`
     );
     if (!installOnline.success) {
-      log.error(
-        `    在线安装失败: ${installOnline.stderr || "未知错误"}`
-      );
+      log.error(`    在线安装失败: ${installOnline.stderr || "未知错误"}`);
       log.message("     可重新运行本项改选 MSI 离线安装");
       return;
     }
@@ -1074,9 +1090,7 @@ async function doInstallSsh(): Promise<void> {
         "/norestart",
       ]);
       if (!installMsi.success) {
-        log.message(
-          `    MSI 安装失败: ${installMsi.stderr || "未知错误"}`
-        );
+        log.message(`    MSI 安装失败: ${installMsi.stderr || "未知错误"}`);
         return;
       }
       log.message("    MSI 安装成功");
@@ -1100,9 +1114,7 @@ async function doInstallSsh(): Promise<void> {
   log.message("    正在启动 sshd 服务...");
   const startResult = await runPowerShell("Start-Service sshd");
   if (!startResult.success) {
-    log.message(
-      `    启动 sshd 失败: ${startResult.stderr || "未知错误"}`
-    );
+    log.message(`    启动 sshd 失败: ${startResult.stderr || "未知错误"}`);
     return;
   }
   log.message("    sshd 服务已启动");
@@ -1113,9 +1125,7 @@ async function doInstallSsh(): Promise<void> {
     "Set-Service -Name sshd -StartupType Automatic"
   );
   if (!autoResult.success) {
-    log.message(
-      `    设置自启失败: ${autoResult.stderr || "未知错误"}`
-    );
+    log.message(`    设置自启失败: ${autoResult.stderr || "未知错误"}`);
     return;
   }
   log.message("    sshd 已设为开机自启");
@@ -1421,17 +1431,17 @@ async function doConfigSshd(): Promise<void> {
  *          末尾给出汇总结论，列出异常项与建议执行的菜单项。
  */
 async function doCheckStatus(): Promise<void> {
-  console.log("\n[step] 检查 sshd 配置状态（只读诊断）");
+  log.info("检查 sshd 配置状态（只读诊断）");
 
   const issues: string[] = [];
 
   // (a) sshd 服务状态
-  console.log("\n  [a] sshd 服务状态");
+  log.info("sshd 服务状态");
   const svcResult = await runPowerShell(
     "$s = Get-Service sshd -ErrorAction SilentlyContinue; if ($s) { '{0}|{1}' -f $s.Status, $s.StartType } else { 'NOT_INSTALLED' }"
   );
   if (!svcResult.success || svcResult.stdout === "NOT_INSTALLED") {
-    console.log("    [warn] sshd 服务未安装");
+    log.message("    sshd 服务未安装");
     issues.push("[1] 安装 Windows SSH 服务");
   } else {
     const parts = svcResult.stdout.split("|");
@@ -1439,8 +1449,8 @@ async function doCheckStatus(): Promise<void> {
     const startType = parts[1]?.trim() ?? "Unknown";
     const isRunning = status === "Running";
     const isAuto = startType === "Automatic";
-    console.log(`    [${isRunning ? "ok" : "warn"}] 状态: ${status}`);
-    console.log(`    [${isAuto ? "ok" : "warn"}] 启动类型: ${startType}`);
+    log.message(`    状态: ${status}`);
+    log.message(`    启动类型: ${startType}`);
     if (!isRunning) {
       issues.push("启动 sshd 服务（或重新执行 [1]）");
     }
@@ -1450,17 +1460,16 @@ async function doCheckStatus(): Promise<void> {
   }
 
   // (a.2) 安装方式（MSI / Capability / 未知）
-  console.log("    ---");
   const installInfo = await detectOpenSshInstallMethod();
-  console.log(
-    `    [info] 安装方式: ${installInfo.methodLabel}（${installInfo.detail}）`
+  log.message(
+    `    安装方式: ${installInfo.methodLabel}(${installInfo.detail})`
   );
 
   // (b) sshd_config 关键项
-  console.log("\n  [b] sshd_config 关键项");
+  log.info("sshd_config 关键项");
   if (!existsSync(SSHD_CONFIG_PATH)) {
-    console.log(`    [warn] 未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
-    issues.push("[1] 安装 Windows SSH 服务（生成 sshd_config）");
+    log.message(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
+    issues.push("[1] 安装 Windows SSH 服务(生成 sshd_config)");
   } else {
     const configContent = readFileSync(SSHD_CONFIG_PATH, "utf8");
     const configLines = configContent.split(/\r?\n/);
@@ -1471,10 +1480,10 @@ async function doCheckStatus(): Promise<void> {
       /^\s*PubkeyAuthentication\s+/i
     );
     const pubKeyOk = pubKeyLine && /yes/i.test(pubKeyLine.trim());
-    console.log(
-      `    [${pubKeyOk ? "ok" : "warn"}] PubkeyAuthentication: ${pubKeyLine?.trim() ?? "(未设置，需为 yes)"}`
+    log.message(
+      `    PubkeyAuthentication: ${pubKeyLine?.trim() ?? "(未设置，需为 yes)"}`
     );
-    if (!pubKeyOk) issues.push("[3] 配置 sshd（PubkeyAuthentication yes）");
+    if (!pubKeyOk) issues.push("[3] 配置 sshd (PubkeyAuthentication yes)");
 
     // AuthorizedKeysFile
     const authKeysLine = findActiveConfigLine(
@@ -1483,10 +1492,10 @@ async function doCheckStatus(): Promise<void> {
     );
     const authKeysOk =
       authKeysLine && authKeysLine.includes(".ssh/authorized_keys");
-    console.log(
-      `    [${authKeysOk ? "ok" : "warn"}] AuthorizedKeysFile: ${authKeysLine?.trim() ?? "(未设置)"}`
+    log.message(
+      `    AuthorizedKeysFile: ${authKeysLine?.trim() ?? "(未设置)"}`
     );
-    if (!authKeysOk) issues.push("[3] 配置 sshd（AuthorizedKeysFile）");
+    if (!authKeysOk) issues.push("[3] 配置 sshd (AuthorizedKeysFile)");
 
     // Match Group administrators（非注释行存在 = 仍激活）
     const matchAdminLine = findActiveConfigLine(
@@ -1494,49 +1503,46 @@ async function doCheckStatus(): Promise<void> {
       /^\s*Match\s+Group\s+administrators/i
     );
     const matchAdminOk = !matchAdminLine;
-    console.log(
-      `    [${matchAdminOk ? "ok" : "warn"}] Match Group administrators: ${matchAdminOk ? "已禁用" : "仍激活（" + matchAdminLine.trim() + "）"}`
+    log.message(
+      `    Match Group administrators: ${matchAdminOk ? "已禁用" : "仍激活（" + matchAdminLine.trim() + "）"}`
     );
-    if (!matchAdminOk) issues.push("[3] 配置 sshd（禁用 administrators 分组）");
+    if (!matchAdminOk) issues.push("[3] 配置 sshd (禁用 administrators 分组)");
   }
 
   // (c) authorized_keys 状态
-  console.log("\n  [c] authorized_keys 状态");
+  log.info("authorized_keys 状态");
   const akPath = join(homedir(), ".ssh", "authorized_keys");
   if (!existsSync(akPath)) {
-    console.log(`    [warn] 不存在: ${akPath}`);
-    console.log("           公钥条数: 0");
-    issues.push("[3] 配置 sshd（写入 authorized_keys）");
+    log.message(`    不存在: ${akPath}`);
+    log.message("    公钥条数: 0");
+    issues.push("[3] 配置 sshd (写入 authorized_keys)");
   } else {
     const akContent = readFileSync(akPath, "utf8");
     const keyCount = akContent
       .split(/\r?\n/)
       .filter((l) => PUBKEY_LINE_RE.test(l)).length;
     const hasKeys = keyCount > 0;
-    console.log(`    [${hasKeys ? "ok" : "warn"}] 路径: ${akPath}`);
-    console.log(`    [${hasKeys ? "ok" : "warn"}] 公钥条数: ${keyCount}`);
-    if (!hasKeys) issues.push("[3] 配置 sshd（authorized_keys 为空）");
+    log.message(`    路径: ${akPath}`);
+    log.message(`    公钥条数: ${keyCount}`);
+    if (!hasKeys) issues.push("[3] 配置 sshd (authorized_keys 为空)");
   }
 
   // (d) 本地公钥状态
-  console.log("\n  [d] 本地公钥状态");
+  log.info("本地公钥状态");
   const localPubPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   const pubExists = existsSync(localPubPath);
-  console.log(
-    `    [${pubExists ? "ok" : "warn"}] ${pubExists ? "存在" : "不存在"}: ${localPubPath}`
-  );
+  log.message(`    ${pubExists ? "存在" : "不存在"}: ${localPubPath}`);
   if (!pubExists) issues.push("[2] 编译服务器生成密钥对");
 
   // 汇总结论
-  console.log("\n  --- 汇总结论 ---");
   if (issues.length === 0) {
-    console.log("  [ok] 配置就绪，可尝试从 Linux 免密登录");
+    log.success("配置就绪，可尝试从 Linux 免密登录");
   } else {
-    console.log(`  [warn] 存在 ${issues.length} 项异常，建议依次执行：`);
+    log.message(`    存在 ${issues.length} 项异常，建议依次执行：`);
     // 去重（同一菜单项可能被多次建议）
     const unique = Array.from(new Set(issues));
     for (const item of unique) {
-      console.log(`       ${item}`);
+      log.message(`    ${item}`);
     }
   }
 }
@@ -1557,14 +1563,10 @@ async function doCheckStatus(): Promise<void> {
  * @returns 打开失败时返回 false（已打印错误提示）
  */
 async function openAppwizAndAwait(): Promise<boolean> {
-  log.message(
-    '    正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...'
-  );
+  log.message('    正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
   const openResult = await runCmd("cmd", ["/c", "start", "", "appwiz.cpl"]);
   if (!openResult.success) {
-    log.message(
-      `    打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
-    );
+    log.message(`    打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`);
     log.message('    可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
     return false;
   }
@@ -1707,9 +1709,7 @@ async function doUninstallSsh(): Promise<void> {
       `Remove-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME}`
     );
     if (!capResult.success) {
-      log.message(
-        `    Capability 卸载失败: ${capResult.stderr || "未知错误"}`
-      );
+      log.message(`    Capability 卸载失败: ${capResult.stderr || "未知错误"}`);
       log.message('    请打开"程序和功能"手动卸载');
       await openAppwizAndAwait();
     } else {
