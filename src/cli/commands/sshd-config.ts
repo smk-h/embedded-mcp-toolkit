@@ -33,7 +33,7 @@ import { createInterface } from "readline";
 import { get as httpsGet } from "https";
 
 import { Client, type ConnectConfig } from "ssh2";
-import { select, isCancel, log } from "@clack/prompts";
+import { select, isCancel, log, box } from "@clack/prompts";
 
 // ============================================================
 // 类型与常量
@@ -1871,7 +1871,9 @@ async function doShowConnectionInfo(): Promise<void> {
     log.message(`    ssh -i ${keyPath} ${sshUser}@<Windows_IP>`);
   } else {
     for (const entry of ipList) {
-      log.message(`    ssh -i ${keyPath} ${sshUser}@${entry.ip}(${entry.iface})`);
+      log.message(
+        `    ssh -i ${keyPath} ${sshUser}@${entry.ip}(${entry.iface})`
+      );
     }
   }
   log.success("以上信息可直接在 Linux 端使用，确保已生成专用密钥并配置 sshd");
@@ -1895,13 +1897,13 @@ async function doShowConnectionInfo(): Promise<void> {
  *          注释中列出其它候选 IP。
  */
 async function doGenerateTemplate(): Promise<void> {
-  console.log("\n[step] 生成 Linux 端 MCP 配置模板");
+  log.info("开始生成 Linux 端 MCP 配置模板");
 
   const { sshUser, ipList } = collectConnectionInfo();
 
   if (ipList.length === 0) {
-    console.error("     [err] 未检测到可用的 IPv4 地址，无法生成模板");
-    console.log("     [info] 请确认网络连接正常后重试");
+    log.message("    未检测到可用的 IPv4 地址，无法生成模板");
+    log.message("    请确认网络连接正常后重试");
     return;
   }
 
@@ -1944,37 +1946,37 @@ async function doGenerateTemplate(): Promise<void> {
   }
   writeFileSync(templatePath, content, "utf8");
 
-  // 打印结果与使用指引
-  console.log(`     [info] Windows 用户名: ${sshUser}`);
-  console.log(`     [info] 模板默认 IP:   ${primaryIp}`);
+  // 生成结果
+  log.info("Windows 用户名和IP地址");
+  log.message(`    Windows 用户名: ${sshUser}`);
+  log.message(`    模板默认 IP:   ${primaryIp}`);
   if (ipList.length > 1) {
-    console.log("     [info] 其它可用 IP:");
+    log.message("    其它可用 IP:");
     for (const entry of ipList.slice(1)) {
-      console.log(`       ${entry.ip}（${entry.iface}）`);
+      log.message(`      ${entry.ip}（${entry.iface}）`);
     }
   }
-  console.log(`     [ok] 模板已生成: ${templatePath}`);
-  console.log("");
-  console.log("     [info] 使用步骤：");
-  console.log(`       1. 将 ${templatePath} 复制到 Linux 项目根目录`);
-  console.log("          并重命名为 .mcp.json");
-  console.log("       2. 按需修改以下内容：");
-  console.log(
-    `          - ssh 连接的 IP（当前为 ${primaryIp}，若不通换用其它候选 IP）`
+  log.success(`模板已生成: ${templatePath}`);
+
+  // 使用步骤
+  log.info("使用步骤");
+  log.message(
+    `    1. 将 ${templatePath} 复制到 Linux 项目根目录并重命名为 .mcp.json`
   );
-  console.log(
-    `          - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`
+  log.message("    2. 按需修改以下内容：");
+  log.message(
+    `       - ssh 连接的 IP（当前为 ${primaryIp}，若不通换用其它候选 IP）`
   );
-  console.log("       3. 在 Linux 端重启 Claude Code 使配置生效");
-  console.log("");
-  console.log(
-    "     [warn] 前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd"
+  log.message(`       - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`);
+  log.message("    3. 在 Linux 端重启 Claude Code 使配置生效");
+  log.message(
+    "    前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd"
   );
-  console.log("            否则 ssh 连接会失败（密码提示 / 连接拒绝）");
-  console.log("");
-  console.log("     --- 模板内容预览 ---");
-  console.log(content.replace(/\n$/, ""));
-  console.log("     --- 预览结束 ---");
+  log.message("    否则 ssh 连接会失败（密码提示 / 连接拒绝）");
+
+  // 模板内容预览（box 包裹，标题作为独立节点）
+  log.info("模板内容如下");
+  box(content.replace(/\n$/, ""), "模板内容预览");
 }
 
 // ============================================================
