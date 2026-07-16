@@ -1899,6 +1899,9 @@ async function doShowConnectionInfo(): Promise<void> {
   }
   log.success("以上信息可直接在 Linux 端使用，确保已生成专用密钥并配置 sshd");
   log.message(
+    "    首次连接会提示主机密钥确认(Are you sure you want to continue connecting?)，输入 yes 即可，之后不再询问"
+  );
+  log.message(
     "    确保已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd, 连接才能免密成功"
   );
 }
@@ -1990,6 +1993,9 @@ async function doGenerateTemplate(): Promise<void> {
   );
   log.message(`       - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`);
   log.message("    3. 在 Linux 端重启 Claude Code 使配置生效");
+  log.message(
+    "    注意: MCP 客户端首次连接 Windows 会触发主机密钥确认，需先在 Linux 端手动执行一次 ssh 连接并输入 yes 完成信任，之后客户端即可自动免密连接"
+  );
   log.message(
     "    前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd"
   );
