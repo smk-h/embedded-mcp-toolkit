@@ -26,6 +26,7 @@ node_modules
 
 # ---- 工程配置文件（仅本地开发使用）----
 .cnb.yml
+.github
 .editorconfig
 .prettierignore
 .prettierrc.cjs

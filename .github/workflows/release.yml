@@ -1,0 +1,145 @@
+name: Publish Release
+
+# 触发条件：推送到 main/master 且 commit message 含 [release] 标记
+# 触发链：CNB push(main) → tencentcom/git-sync 同步到 GitHub → 本流水线触发
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write # 创建 tag / release 需要
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. 读取版本号并创建草稿 Release（占位，后续 job 上传产物）
+  # ─────────────────────────────────────────────────────────────
+  release:
+    name: Create Draft Release
+    runs-on: ubuntu-latest
+    if: contains(join(github.event.commits.*.message, ' '), '[release]')
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read version from package.json
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 产物说明
+
+            | 文件 | 适用场景 |
+            |------|---------|
+            | `embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-offline.tar.gz` | 离线包（含预编译 out/ + 生产 node_modules），**无网**环境 |
+
+            ### 离线环境（offline 包）
+
+            下载 `embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-offline.tar.gz`，传到目标服务器后：
+
+            ```bash
+            tar -xzf embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-offline.tar.gz
+            cd embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-offline
+            node bin/embedded-mcp-toolkit-cli.js
+            ```
+
+            > 离线包已预编译 `out/`，并内置生产 `node_modules`（serialport 的 prebuilds 已覆盖 linux/darwin/win32/arm 全平台 `.node`），无需 `npm install`，开箱即用。
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. 构建：基于 npm 发布内容 + 精简 node_modules 打出全平台离线包
+  #    serialport 的 @serialport/bindings-cpp/prebuilds 已内置全平台二进制，
+  #    单 Linux runner 一次 npm ci 即拿到 linux/darwin/win32/arm 的 .node，无需矩阵
+  # ─────────────────────────────────────────────────────────────
+  build:
+    name: Build offline bundle
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies (含 dev，用于编译)
+        run: npm ci
+
+      - name: Build TypeScript → out/
+        run: npm run build
+
+      - name: Prune devDependencies（精简离线包 node_modules）
+        # 等价于 npm i @smai-kit/embedded-mcp-toolkit 时自动安装的依赖范围
+        run: npm prune --omit=dev
+
+      - name: Verify platform binaries
+        run: |
+          echo "== @serialport/bindings-cpp prebuilds =="
+          ls node_modules/@serialport/bindings-cpp/prebuilds/ || true
+
+      # 离线包 = npm 发布内容（npm pack，遵循 .npmignore）+ 生产 node_modules
+      # 用 npm pack 复刻发布清单，保证与 npm 包零漂移
+      - name: Pack offline bundle
+        id: pack
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          PKG_DIR="embedded-mcp-toolkit-${VERSION}-offline"
+          ARCHIVE="${PKG_DIR}.tar.gz"
+
+          # 1. npm pack 生成 npm 发布内容（.tgz，内含 package/ 前缀）
+          npm pack
+
+          # 2. 解包到 PKG_DIR，去掉 package/ 前缀
+          TGZ="$(ls *.tgz | head -1)"
+          mkdir -p "$PKG_DIR"
+          tar -xzf "$TGZ" --strip-components=1 -C "$PKG_DIR"
+
+          # 3. 补入生产 node_modules（已在上方 npm prune 精简）
+          cp -a node_modules "$PKG_DIR/"
+
+          # 4. 打包最终离线包
+          tar -czf "$ARCHIVE" "$PKG_DIR"
+          ls -lh "$ARCHIVE"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload offline bundle
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          draft: true
+          files: ${{ steps.pack.outputs.archive }}
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. 全部产物上传完毕，把草稿 Release 正式发布
+  # ─────────────────────────────────────────────────────────────
+  publish:
+    name: Publish Release
+    needs: [release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark release as published (undraft)
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          draft: false
+          make_latest: true
