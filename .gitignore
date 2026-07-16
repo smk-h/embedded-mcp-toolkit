@@ -37,6 +37,9 @@ config.yaml
 # ---- Claude 本地设置（保留，纳入版本控制）----
 !.claude/settings.local.json
 
+# ---- zcode 本地设置（----
+.zcode/plans
+
 # ---- PSH 构建产物（遗留规则，预防性保留）----
 my-psh/keygen
 my-psh/psh
