@@ -576,7 +576,13 @@ export async function serialShellLoginHandler(args: {
     const detail = handler
       ? `(PSH already unlocked)\nProfile: ${handler.profile.name}`
       : "(no PSH detected, shell is ready)";
-    return registerSession(shell, baseConfig.port, existingId, deviceName, detail);
+    return registerSession(
+      shell,
+      baseConfig.port,
+      existingId,
+      deviceName,
+      detail
+    );
   }
 
   // --- 解锁中：悬挂的密码提示，需 key 完成输入 ---
@@ -696,7 +702,13 @@ export async function serialShellLoginHandler(args: {
   const detail = handler
     ? `(PSH state unknown)\nProfile: ${handler.profile.name}`
     : "(PSH state unknown)";
-  return registerSession(shell, baseConfig.port, existingId, deviceName, detail);
+  return registerSession(
+    shell,
+    baseConfig.port,
+    existingId,
+    deviceName,
+    detail
+  );
 }
 
 // ── serial_enter_uboot ────────────────────────────────────────

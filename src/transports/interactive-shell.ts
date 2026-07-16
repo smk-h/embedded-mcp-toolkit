@@ -35,11 +35,7 @@ export interface InteractiveShell {
    * @param clear             清空标志（1=清空后收集，0=追加收集）
    * @param appendLineEnding  是否追加换行符（false 时发送原始数据）
    */
-  write(
-    data: string,
-    clear?: number,
-    appendLineEnding?: boolean
-  ): void;
+  write(data: string, clear?: number, appendLineEnding?: boolean): void;
 
   /**
    * @brief 读取缓冲区中的输出数据

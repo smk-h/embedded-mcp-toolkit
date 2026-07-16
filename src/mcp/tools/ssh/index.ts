@@ -45,11 +45,7 @@ export const mcpSshTools: ToolEntry[] = [
   ),
   mcpDefineTool("ssh_shell_login", sshShellLoginConfig, sshShellLoginHandler),
   mcpDefineTool("ssh_build", sshBuildConfig, sshBuildHandler),
-  mcpDefineTool(
-    "ssh_sftp_upload",
-    sshSftpUploadConfig,
-    sshSftpUploadHandler
-  ),
+  mcpDefineTool("ssh_sftp_upload", sshSftpUploadConfig, sshSftpUploadHandler),
   mcpDefineTool(
     "ssh_sftp_download",
     sshSftpDownloadConfig,

@@ -787,9 +787,10 @@ async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
     method: "unknown",
     methodLabel: "未知",
     exePath: null,
-    detail: !svcRegistered && !exePath
-      ? "未检测到 OpenSSH 安装"
-      : "安装来源无法确定（信号矛盾）",
+    detail:
+      !svcRegistered && !exePath
+        ? "未检测到 OpenSSH 安装"
+        : "安装来源无法确定（信号矛盾）",
   };
 }
 
@@ -1175,7 +1176,10 @@ async function doGenerateKey(): Promise<void> {
       // 先删除旧密钥文件，避免 ssh-keygen 触发交互式 "Overwrite (y/n)?" 确认
       // sshExec 基于 exec 通道，无法向远端 stdin 写入回应，ssh-keygen 会死等输入导致卡死
       console.log("     [run] 删除旧密钥文件...");
-      await sshExec(client, "rm -f ~/.ssh/id_mcp_server ~/.ssh/id_mcp_server.pub");
+      await sshExec(
+        client,
+        "rm -f ~/.ssh/id_mcp_server ~/.ssh/id_mcp_server.pub"
+      );
     }
 
     // 生成密钥对（专用密钥名 id_mcp_server）
@@ -1402,7 +1406,9 @@ async function doCheckStatus(): Promise<void> {
   // (a.2) 安装方式（MSI / Capability / 未知）
   console.log("    ---");
   const installInfo = await detectOpenSshInstallMethod();
-  console.log(`    [info] 安装方式: ${installInfo.methodLabel}（${installInfo.detail}）`);
+  console.log(
+    `    [info] 安装方式: ${installInfo.methodLabel}（${installInfo.detail}）`
+  );
 
   // (b) sshd_config 关键项
   console.log("\n  [b] sshd_config 关键项");
@@ -1505,13 +1511,10 @@ async function doCheckStatus(): Promise<void> {
  * @returns 打开失败时返回 false（已打印错误提示）
  */
 async function openAppwizAndAwait(): Promise<boolean> {
-  console.log('     [run] 正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
-  const openResult = await runCmd("cmd", [
-    "/c",
-    "start",
-    "",
-    "appwiz.cpl",
-  ]);
+  console.log(
+    '     [run] 正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...'
+  );
+  const openResult = await runCmd("cmd", ["/c", "start", "", "appwiz.cpl"]);
   if (!openResult.success) {
     console.error(
       `     [err] 打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`
@@ -1631,7 +1634,9 @@ async function doUninstallSsh(): Promise<void> {
     console.log("     [info] 未检测到 OpenSSH 安装，无需卸载");
     return;
   }
-  console.log(`     [info] 检测到安装方式: ${info.methodLabel}（${info.detail}）`);
+  console.log(
+    `     [info] 检测到安装方式: ${info.methodLabel}（${info.detail}）`
+  );
 
   // ===== 步骤 0：先停止 sshd 服务（后续卸载/删文件时避免被运行中进程占用） =====
   if (await isSshdServiceRegistered()) {
@@ -1679,7 +1684,9 @@ async function doUninstallSsh(): Promise<void> {
       if (uninstallResult.success) {
         console.log("     MSI 卸载成功");
       } else {
-        console.log(`     [err] MSI 卸载失败: ${uninstallResult.stderr || "未知错误"}`);
+        console.log(
+          `     [err] MSI 卸载失败: ${uninstallResult.stderr || "未知错误"}`
+        );
         console.log(`     [info] 请改用下方打开的"程序和功能"手动卸载`);
         await openAppwizAndAwait();
       }
@@ -1704,9 +1711,7 @@ async function doUninstallSsh(): Promise<void> {
       // sc.exe 的错误信息输出到 stdout 而非 stderr（且为 GBK 编码可能乱码），
       // 优先取 stderr，其次 stdout，最后兜底 exitCode
       const errMsg =
-        delResult.stderr ||
-        delResult.stdout ||
-        `退出码 ${delResult.exitCode}`;
+        delResult.stderr || delResult.stdout || `退出码 ${delResult.exitCode}`;
       console.error(`     [err] 删除 sshd 服务失败: ${errMsg}`);
       console.log("     [info] 可手动执行: sc.exe delete sshd");
     }
@@ -1721,7 +1726,9 @@ async function doUninstallSsh(): Promise<void> {
   restoreSshdConfigFromBackup();
 
   console.log("     Windows SSH 服务卸载完成");
-  console.log("     [info] 配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）");
+  console.log(
+    "     [info] 配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）"
+  );
   console.log("           如需彻底清除，请手动删除该目录");
 }
 
@@ -1850,6 +1857,7 @@ async function doGenerateTemplate(): Promise<void> {
   );
 
   // 构造 .mcp.json 模板内容
+  // prettier-ignore
   const template = {
     $schema: "https://json.schemastore.org/claude-code-settings.json",
     mcpServers: {
@@ -1864,7 +1872,6 @@ async function doGenerateTemplate(): Promise<void> {
       },
     },
   };
-
   // 序列化（2 空格缩进，与项目 .mcp.json 风格一致）
   const content = JSON.stringify(template, null, 2) + "\n";
 
@@ -1891,11 +1898,17 @@ async function doGenerateTemplate(): Promise<void> {
   console.log(`       1. 将 ${templatePath} 复制到 Linux 项目根目录`);
   console.log("          并重命名为 .mcp.json");
   console.log("       2. 按需修改以下内容：");
-  console.log(`          - ssh 连接的 IP（当前为 ${primaryIp}，若不通换用其它候选 IP）`);
-  console.log(`          - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`);
+  console.log(
+    `          - ssh 连接的 IP（当前为 ${primaryIp}，若不通换用其它候选 IP）`
+  );
+  console.log(
+    `          - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`
+  );
   console.log("       3. 在 Linux 端重启 Claude Code 使配置生效");
   console.log("");
-  console.log("     [warn] 前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd");
+  console.log(
+    "     [warn] 前置条件：已依次执行 [1] 安装 → [2] 生成密钥 → [3] 配置 sshd"
+  );
   console.log("            否则 ssh 连接会失败（密码提示 / 连接拒绝）");
   console.log("");
   console.log("     --- 模板内容预览 ---");

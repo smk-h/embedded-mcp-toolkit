@@ -63,8 +63,7 @@ function formatRate(bytesPerSec: number): string {
  * @return 多行文本摘要
  */
 export function formatTransferSummary(result: TransferResult): string {
-  const verb =
-    result.direction === "upload" ? "Upload" : "Download";
+  const verb = result.direction === "upload" ? "Upload" : "Download";
   const status = result.success ? "succeeded" : "failed";
 
   const lines = [`${verb} ${status}`];
@@ -110,7 +109,8 @@ export const sshSftpUploadConfig = {
     properties: {
       session_id: {
         type: "string",
-        description: "The session ID returned by ssh_shell_open / ssh_shell_login",
+        description:
+          "The session ID returned by ssh_shell_open / ssh_shell_login",
       },
       local_path: {
         type: "string",
@@ -180,7 +180,8 @@ export const sshSftpDownloadConfig = {
     properties: {
       session_id: {
         type: "string",
-        description: "The session ID returned by ssh_shell_open / ssh_shell_login",
+        description:
+          "The session ID returned by ssh_shell_open / ssh_shell_login",
       },
       remote_path: {
         type: "string",

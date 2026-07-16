@@ -36,9 +36,9 @@ import { logger } from "../../shared/logger.js";
  * 由各通道的 open/login handler 构建后传入 create()。
  */
 export interface CreateSessionMeta {
-  type: SessionType;            // 连接类型（ssh / serial / adb / powershell）
-  deviceName: string;           // 设备别名，如 "board-a"；PowerShell 为 "local"
-  connectionInfo: string;       // 人可读的连接细节，如 "192.168.16.103:22"、"COM3@115200"
+  type: SessionType; // 连接类型（ssh / serial / adb / powershell）
+  deviceName: string; // 设备别名，如 "board-a"；PowerShell 为 "local"
+  connectionInfo: string; // 人可读的连接细节，如 "192.168.16.103:22"、"COM3@115200"
 }
 
 /**
