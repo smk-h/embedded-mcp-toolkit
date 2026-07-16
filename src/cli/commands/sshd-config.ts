@@ -33,6 +33,7 @@ import { createInterface } from "readline";
 import { get as httpsGet } from "https";
 
 import { Client, type ConnectConfig } from "ssh2";
+import { select, isCancel } from "@clack/prompts";
 
 // ============================================================
 // 类型与常量
@@ -110,6 +111,20 @@ const MENU_SHOW_INFO = "6";
 const MENU_GEN_TEMPLATE = "7";
 /** @brief 菜单选项：退出 */
 const MENU_EXIT = "0";
+
+/**
+ * @brief 主菜单可选 value 联合类型
+ * @details 复用 MENU_* 常量，供 clack select 泛型约束，确保 switch 分支穷举。
+ */
+type MenuChoice =
+  | typeof MENU_INSTALL_SSH
+  | typeof MENU_GENERATE_KEY
+  | typeof MENU_CONFIG_SSHD
+  | typeof MENU_CHECK_STATUS
+  | typeof MENU_UNINSTALL_SSH
+  | typeof MENU_SHOW_INFO
+  | typeof MENU_GEN_TEMPLATE
+  | typeof MENU_EXIT;
 
 /** @brief OpenSSH Server 的 Windows Capability 名称（在线安装用） */
 const OPENSSH_CAPABILITY_NAME = "OpenSSH.Server~~~~0.0.1.0";
@@ -929,20 +944,32 @@ function modifySshdConfig(content: string): string {
 // ============================================================
 
 /**
- * @brief 打印主菜单
+ * @brief 显示主菜单并等待用户选择（clack select）
+ * @details 基于 @clack/prompts 的 select 交互组件，方向键选择、Enter 确认。
+ *          Ctrl+C 取消时返回 null，由调用方决定退出逻辑。
+ * @returns 选中的菜单 value；用户取消（Ctrl+C）返回 null
  */
-function showMenu(): void {
-  console.log("");
-  console.log("=== Windows SSH 免密登录配置 ===");
-  console.log(`  [${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
-  console.log(`  [${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
-  console.log(`  [${MENU_CONFIG_SSHD}] 配置 Windows 中 sshd 服务`);
-  console.log(`  [${MENU_CHECK_STATUS}] 检查 sshd 配置状态（只读诊断）`);
-  console.log(`  [${MENU_UNINSTALL_SSH}] 卸载 Windows SSH 服务`);
-  console.log(`  [${MENU_SHOW_INFO}] 查看本机连接信息（用户名/IP）`);
-  console.log(`  [${MENU_GEN_TEMPLATE}] 生成 Linux 端 MCP 配置模板`);
-  console.log(`  [${MENU_EXIT}] 退出`);
-  console.log("");
+async function mainMenu(): Promise<MenuChoice | null> {
+  const choice = await select<MenuChoice>({
+    message: "Windows SSH 免密登录配置",
+    options: [
+      { value: MENU_INSTALL_SSH, label: "安装 Windows SSH 服务" },
+      { value: MENU_GENERATE_KEY, label: "编译服务器生成密钥对" },
+      { value: MENU_CONFIG_SSHD, label: "配置 Windows 中 sshd 服务" },
+      {
+        value: MENU_CHECK_STATUS,
+        label: "检查 sshd 配置状态（只读诊断）",
+      },
+      { value: MENU_UNINSTALL_SSH, label: "卸载 Windows SSH 服务" },
+      { value: MENU_SHOW_INFO, label: "查看本机连接信息（用户名/IP）" },
+      { value: MENU_GEN_TEMPLATE, label: "生成 Linux 端 MCP 配置模板" },
+      { value: MENU_EXIT, label: "退出" },
+    ],
+  });
+  if (isCancel(choice)) {
+    return null;
+  }
+  return choice;
 }
 
 // ============================================================
@@ -1951,15 +1978,14 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
     return; // relaunchAsAdmin 内部会 exit，此行仅作类型安全兜底
   }
 
-  // 交互式菜单循环（首次即清屏 + 打印 banner，无需循环前预先打印）
+  // 交互式菜单循环（每轮清屏 + 打印 banner，clack select 渲染菜单）
   while (true) {
     clearScreen();
     printBanner();
-    showMenu();
-    const choice = await prompt("请选择: ");
+    const choice = await mainMenu();
 
-    // 0 = 直接退出，无需暂停
-    if (choice === MENU_EXIT) {
+    // 用户在主菜单 Ctrl+C 取消，或选择退出
+    if (choice === null || choice === MENU_EXIT) {
       console.log("[info] 再见");
       return;
     }
@@ -1987,7 +2013,8 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
         await doGenerateTemplate();
         break;
       default:
-        console.log("[warn] 无效选项，请重新选择");
+        // clack select 只会返回已定义的 value，理论上不会进入 default；
+        // 保留兜底分支以防后续扩展遗漏
         break;
     }
 

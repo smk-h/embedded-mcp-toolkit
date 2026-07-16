@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
+    "@clack/prompts": "^1.7.0",
     "@modelcontextprotocol/server": "^2.0.0-beta.3",
     "commander": "^14.0.3",
     "js-yaml": "^4.1.1",
