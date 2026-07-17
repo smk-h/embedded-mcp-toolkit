@@ -66,13 +66,18 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────
   # 2. 构建：基于 npm 发布内容 + 精简 node_modules 打出全平台离线包
-  #    serialport 的 @serialport/bindings-cpp/prebuilds 已内置全平台二进制，
-  #    单 Linux runner 一次 npm ci 即拿到 linux/darwin/win32/arm 的 .node，无需矩阵
+  #    serialport 的 @serialport/bindings-cpp/prebuilds 已内置全平台二进制（与 runner 平台无关）。
+  #    使用 windows runner 打包：离线包主要在 Windows 使用，且 Windows 上 npm 生成的
+  #    node_modules/.bin 是普通文件（.cmd/.ps1）而非符号链接，解压时不会触发 WinRAR
+  #    "不能创建符号链接 / 客户端没有所需的特权" 错误。
   # ─────────────────────────────────────────────────────────────
   build:
     name: Build offline bundle
     needs: release
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash # Windows runner 默认 PowerShell，统一改用 Git Bash 跑 tar/npm pack
     steps:
       - name: Checkout
         uses: actions/checkout@v7
