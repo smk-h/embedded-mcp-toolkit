@@ -13,6 +13,8 @@ import {
   serialReadHandler,
   serialExecConfig,
   serialExecHandler,
+  serialSendCtrlConfig,
+  serialSendCtrlHandler,
   serialShellLoginConfig,
   serialShellLoginHandler,
   serialEnterUbootConfig,
@@ -31,6 +33,11 @@ export const mcpSerialTools: ToolEntry[] = [
   mcpDefineTool("serial_write", serialWriteConfig, serialWriteHandler),
   mcpDefineTool("serial_read", serialReadConfig, serialReadHandler),
   mcpDefineTool("serial_exec", serialExecConfig, serialExecHandler),
+  mcpDefineTool(
+    "serial_send_ctrl",
+    serialSendCtrlConfig,
+    serialSendCtrlHandler
+  ),
   mcpDefineTool(
     "serial_shell_login",
     serialShellLoginConfig,

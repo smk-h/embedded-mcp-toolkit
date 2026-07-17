@@ -16,6 +16,7 @@ interface KeyProviderYaml {
 }
 
 interface DeviceConfig {
+  promptPattern?: string; // exec 提示符检测正则，覆盖默认正则；留空用 PromptDetector.DEFAULT_PATTERN
   adb?: {
     serialNo?: string; // ADB 设备序列号，留空则自动发现
   };
@@ -223,6 +224,23 @@ export function getAdbConfig(name?: string): AdbDeviceConfig {
   return {
     serialNo: yaml.serialNo,
   };
+}
+
+/**
+ * @brief 获取设备的 exec 提示符检测正则
+ *
+ * 用于交互式 shell exec（adb_shell_exec / ssh_shell_exec / serial_exec）的
+ * 命令结束判定。设备级配置，三个通道共享同一正则。
+ *
+ * 配置优先级：config.yaml 中 devices.<name>.promptPattern > 无（返回 undefined，
+ * 由调用方使用 PromptDetector.DEFAULT_PATTERN 兜底）。
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ * @returns 提示符正则字符串，未配置时返回 undefined
+ */
+export function getPromptPattern(name?: string): string | undefined {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  return device.promptPattern;
 }
 
 /**

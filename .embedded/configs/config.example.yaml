@@ -29,6 +29,16 @@ default: board-example
 #     baudRate: 115200
 #   adb:
 #     serialNo: "sn_none"
+#   promptPattern: "..."  # 可选，设备级 exec 提示符正则（与 ssh/serial/adb 平级，见下方说明）
+#
+# ── promptPattern（exec 提示符检测，可选）──
+# *_shell_exec（adb/ssh/serial）轮询输出检测 shell 提示符以判断命令结束，三通道共享同一正则。
+# 留空则用内置默认正则（已覆盖 Android :/ $、Linux $/#/>、U-Boot => 等常见提示符）。
+# 仅当设备自定义 PS1 且默认正则不命中时才配置；正则按 JavaScript RegExp 语法，new RegExp() 构造。
+# 注意层级差异：
+#   - 分文件布局（devices/<设备名>.yaml）：写在设备文件根层，与 adb/ssh/serial 平级
+#   - 单文件布局（本文件 devices 段）：写在 devices.<设备名> 下，与 adb/ssh/serial 平级（缩进 4 格）
+# 示例见下方 board-example 内联段（已注释）。
 #
 # 加载优先级（重要）：
 #   当 devices/ 目录存在且非空时：
@@ -62,6 +72,7 @@ default: board-example
 #       设备多时建议改用 devices/ 目录，并删除本段。
 devices:
   board-example:
+    # promptPattern: "(?:\\[[0-9]+\\][^\r\n]*[#$]\s*)$" # 设备级 exec 提示符正则（与 adb/ssh/serial 平级）；留空用默认正则。例：匹配 [130]root@host:~#
     adb:
       serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
     ssh:

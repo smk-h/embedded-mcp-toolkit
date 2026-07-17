@@ -8,6 +8,25 @@
 #   serial 段 port 设为 "none" → 该设备不启用串口（调用 serial 工具会返回 "does not support serial"）
 #   adb 段    serialNo 设为 "sn_none" 或留空 → 不绑定具体 ADB 设备，由 adb 自动发现
 # 不需要的通道可直接整段删除，或保留段并把关键字段置 "none"/"sn_none"。
+#
+# exec 提示符检测约定：
+#   *_shell_exec（adb/ssh/serial）在执行命令后会轮询输出缓冲区，检测 shell 提示符
+#   以判断命令是否结束（结束则提前返回，不必等满 maxDuration）。三通道共享同一正则。
+#
+#   promptPattern —— 设备级提示符正则，与下方 adb/ssh/serial 段平级（同属设备根层）。
+#   留空（或删除该行）则使用内置默认正则。
+#   默认正则已覆盖常见提示符，绝大多数设备无需配置：
+#     - Android :  :/ $ 、 :/ #
+#     - Linux   :  $ 、 # 、 >
+#     - U-Boot  :  => 、 U-Boot>
+#   仅当设备使用自定义 PS1 且默认正则不命中时才需要配置，例如：
+#     - 带 exit code 前缀的 PS1：[130]root@host:~# → 匹配数字+]
+#     - 自定义颜色/日期的 PS1：正则需兼顾 ANSI 转义码或固定前缀
+#   正则按 JavaScript RegExp 语法书写，内部会 new RegExp(promptPattern) 构造。
+#   未命中时由 exec 的 maxDuration 熔断兜底，不会挂死。
+#
+# ↓↓↓ 设备级字段，与 adb/ssh/serial 平级（分文件布局写在设备文件根层）↓↓↓
+# promptPattern: "(?:\\[[0-9]+\\][^\r\n]*[#$]\s*)$" # 例：匹配 [130]root@host:~# 这类带退出码前缀的 PS1
 
 adb:
   serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置

@@ -23,6 +23,8 @@ import {
   adbShellReadHandler,
   adbShellExecConfig,
   adbShellExecHandler,
+  adbShellSendCtrlConfig,
+  adbShellSendCtrlHandler,
 } from "./shell.js";
 import {
   adbDeviceListConfig,
@@ -44,4 +46,9 @@ export const mcpAdbTools: ToolEntry[] = [
   mcpDefineTool("adb_shell_write", adbShellWriteConfig, adbShellWriteHandler),
   mcpDefineTool("adb_shell_read", adbShellReadConfig, adbShellReadHandler),
   mcpDefineTool("adb_shell_exec", adbShellExecConfig, adbShellExecHandler),
+  mcpDefineTool(
+    "adb_shell_send_ctrl",
+    adbShellSendCtrlConfig,
+    adbShellSendCtrlHandler
+  ),
 ];

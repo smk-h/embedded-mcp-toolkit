@@ -13,6 +13,8 @@ import {
   sshShellReadHandler,
   sshShellExecConfig,
   sshShellExecHandler,
+  sshShellSendCtrlConfig,
+  sshShellSendCtrlHandler,
   sshConnectionsConfig,
   sshConnectionsHandler,
   sshShellLoginConfig,
@@ -38,6 +40,11 @@ export const mcpSshTools: ToolEntry[] = [
   mcpDefineTool("ssh_shell_write", sshShellWriteConfig, sshShellWriteHandler),
   mcpDefineTool("ssh_shell_read", sshShellReadConfig, sshShellReadHandler),
   mcpDefineTool("ssh_shell_exec", sshShellExecConfig, sshShellExecHandler),
+  mcpDefineTool(
+    "ssh_shell_send_ctrl",
+    sshShellSendCtrlConfig,
+    sshShellSendCtrlHandler
+  ),
   mcpDefineTool(
     "ssh_shell_connection",
     sshConnectionsConfig,

@@ -6,8 +6,10 @@ import {
   type SerialShellConfig,
 } from "../../../transports/serial.js";
 import {
+  getPromptPattern,
   getSerialConfig,
   getKeyProviderConfig,
+  resolveDeviceName,
 } from "../../../shared/config.js";
 import {
   PshState,
@@ -16,6 +18,13 @@ import {
 } from "../../../services/psh.js";
 import { KeyProvider } from "../../../services/key-provider.js";
 import { serialStore, portToSession } from "./sessions.js";
+import {
+  CONTROL_CHAR_MAP,
+  type ControlChar,
+  PromptDetector,
+} from "../../shared/prompt-detector.js";
+import { sendControlChar } from "../../shared/send-ctrl.js";
+import { runExec } from "../../shared/exec-runner.js";
 
 // ── serial_open ─────────────────────────────────────────────
 
@@ -361,6 +370,7 @@ export const serialExecConfig = {
     command: string;
     delay?: number;
     clear?: number;
+    maxDuration?: number;
   }>({
     type: "object",
     properties: {
@@ -375,12 +385,17 @@ export const serialExecConfig = {
       delay: {
         type: "number",
         description:
-          "Wait time in milliseconds before reading output (default: 1000)",
+          "Minimum polling duration in milliseconds (default: 1000), kept for backward compat",
       },
       clear: {
         type: "number",
         description:
           "Buffer clear flag: 1 (default) = clear buffer before collecting, 0 = append to buffer",
+      },
+      maxDuration: {
+        type: "number",
+        description:
+          "Max execution time in ms before auto-interrupting with Ctrl+C (default: 10000)",
       },
     },
     required: ["session_id", "command"],
@@ -390,20 +405,24 @@ export const serialExecConfig = {
 /**
  * @brief serial_exec 处理函数
  *
- * 一次性完成命令发送、等待、读取三个步骤，适用于简单的命令执行场景。
- * 对于需要精细控制缓冲区或多次交互的场景，应分别使用 write + read。
+ * 通过 runExec 统一编排完成命令发送、轮询、提示符检测、超时熔断。
+ * 常驻命令超过 maxDuration 自动熔断，返回中性 timed-out 标注。
  *
- * @param args  工具参数，包含 session_id、command 和可选的 delay、clear
- * @return MCP 响应，包含命令执行后的输出内容
+ * @param args  工具参数，包含 session_id、command 和可选的 delay、clear、maxDuration
+ * @return MCP 响应，包含命令执行后的输出内容（熔断时追加 timed-out 标注）
  */
 export async function serialExecHandler(args: {
   session_id: string;
   command: string;
   delay?: number;
   clear?: number;
+  maxDuration?: number;
 }) {
+  const delayVal = args.delay ?? 1000;
+  const clearVal = args.clear ?? 1;
+  const maxDurationVal = args.maxDuration;
   logger.info(
-    `[serial_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
+    `[serial_exec] session_id=${args.session_id} command=${args.command} delay=${delayVal} clear=${clearVal} maxDuration=${maxDurationVal ?? "(default)"}`
   );
   const result = serialStore.getOrNotFound(args.session_id);
   if (!result.ok) {
@@ -411,14 +430,105 @@ export async function serialExecHandler(args: {
   }
 
   const shell = result.shell;
+  const deviceName = resolveDeviceName();
 
-  shell.write(args.command, args.clear ?? 1);
+  const promptDetector = new PromptDetector(getPromptPattern(deviceName));
 
-  await new Promise((r) => setTimeout(r, args.delay ?? 1000));
+  const sendCtrl = (key: ControlChar): void => {
+    shell.write(CONTROL_CHAR_MAP[key], 1, false);
+  };
 
-  const output = shell.read(1);
+  const execResult = await runExec({
+    shell,
+    command: args.command,
+    delay: delayVal,
+    clear: clearVal,
+    maxDuration: maxDurationVal,
+    promptDetector,
+    sendCtrl,
+    logPrefix: "[serial_exec]",
+  });
+
+  let output = execResult.output;
+  if (execResult.timedOut) {
+    output =
+      (output ? output + "\n" : "") +
+      `[timed-out: collected ${execResult.elapsedMs}ms of output, Ctrl+C sent]`;
+  }
 
   return { content: [text(output || "(no output)")] };
+}
+
+// ── serial_send_ctrl ───────────────────────────────────────────
+
+/**
+ * @brief 控制字符可读名称映射（用于返回信息展示）
+ */
+const CTRL_LABEL: Readonly<Record<ControlChar, string>> = {
+  c: "Ctrl+C",
+  u: "Ctrl+U",
+  d: "Ctrl+D",
+  z: "Ctrl+Z",
+};
+
+/**
+ * @brief serial_send_ctrl 工具配置
+ *
+ * 向串口 Shell 会话发送控制字符（不追加换行），用于终止/控制前台命令。
+ *
+ * @param session_id  由 serial_open 返回的会话 ID
+ * @param key         控制字符类型：c(Ctrl+C)/u(Ctrl+U)/d(Ctrl+D)/z(Ctrl+Z)
+ */
+export const serialSendCtrlConfig = {
+  description:
+    "Send a control character (Ctrl+C/U/D/Z) to a serial shell session without appending a newline.",
+  inputSchema: fromJsonSchema<{
+    session_id: string;
+    key: ControlChar;
+  }>({
+    type: "object",
+    properties: {
+      session_id: {
+        type: "string",
+        description: "The session ID returned by serial_open",
+      },
+      key: {
+        type: "string",
+        enum: ["c", "u", "d", "z"],
+        description:
+          "Control character: c=Ctrl+C(SIGINT), u=Ctrl+U(clear line), d=Ctrl+D(EOF), z=Ctrl+Z(suspend)",
+      },
+    },
+    required: ["session_id", "key"],
+  }),
+};
+
+/**
+ * @brief serial_send_ctrl 处理函数
+ *
+ * 复用共享 sendControlChar，以不追加换行的方式发送控制字符。
+ *
+ * @param args  工具参数，包含 session_id 和 key
+ * @return MCP 响应，确认控制字符已发送
+ */
+export async function serialSendCtrlHandler(args: {
+  session_id: string;
+  key: ControlChar;
+}) {
+  logger.info(
+    `[serial_send_ctrl] session_id=${args.session_id} key=${args.key}`
+  );
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
+  }
+
+  const byte = await sendControlChar(result.shell, args.key);
+  const label = CTRL_LABEL[args.key];
+
+  return {
+    content: [text(`${label} sent (${byte})`)],
+  };
 }
 
 // ── serial_shell_login ──────────────────────────────────────────

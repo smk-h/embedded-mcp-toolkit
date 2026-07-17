@@ -158,11 +158,17 @@ export class AdbShell extends BaseShell {
     // 与 execSync（一次性执行，阻塞等待退出）不同，spawn 返回的进程持续存活，
     // 通过管道 stdin/stdout/stderr 与父进程实时通信，适合交互式 shell 场景
 
-    // 等价命令: adb -s <serialNo> shell
+    // 等价命令: adb -s <serialNo> shell -t -t
     // adb shell 不带参数时，adb 连接设备侧的 /system/bin/sh 并保持交互模式，
     // 设备侧 shell 等待 stdin 输入，不会自动退出，因此子进程可以长期存活。
     // 与之相对：adb shell ls → 等价于 sh -c "ls"，执行完立即退出（一次性）。
-    const args = ["-s", serialNo, "shell"];
+    //
+    // -t -t：强制分配远程 PTY。单个 -t 在 stdin 非 terminal（如 Node 管道）时
+    // 会被 adb 拒绝并提示 "Remote PTY will not be allocated because stdin is not
+    // a terminal"。两个 -t 强制分配，使设备侧 shell 回显提示符（如 ":/ $"），
+    // 这是 adb_shell_exec 提示符检测、命令结束判定的前提。PTY 同时会回显
+    // 输入命令本身（由 exec 编排层处理，不影响检测）。
+    const args = ["-s", serialNo, "shell", "-t", "-t"];
 
     // stdio: ["pipe", "pipe", "pipe"] 为 stdin/stdout/stderr 各创建一条管道
     //   [0] pipe → 通过 proc.stdin.write() 向子进程发送命令
