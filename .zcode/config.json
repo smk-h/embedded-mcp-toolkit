@@ -1,0 +1,21 @@
+{
+  "mcp": {
+    "servers": {
+      "embedded-board": {
+        "type": "stdio",
+        "command": "node",
+        "args": [
+          "./bin/embedded-mcp-toolkit-cli.js"
+        ],
+        "env": {
+          "DEVICE": "board-b",
+          "BOARD_CONFIG_PATH": "./.embedded/configs/config.yaml",
+          "LOG_SAVE": "1",
+          "LOG_DIR": "./.embedded/log",
+          "SAVE2FILE_PATH": "./.embedded/log"
+        },
+        "enable": false
+      }
+    }
+  }
+}
