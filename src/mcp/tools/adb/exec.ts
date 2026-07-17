@@ -14,7 +14,7 @@
  *   exec.ts 负责一次性命令执行。
  * ======================================================
  */
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 
 import { text } from "../../tool-registry.js";
@@ -27,31 +27,51 @@ import { resolveAdbSerial, resolveDeviceName } from "../../../shared/config.js";
 const ADB_EXEC_TIMEOUT = 15000;
 
 /**
- * @brief 执行一次性 ADB 命令并返回 stdout
+ * @brief 执行一次性 ADB 命令并返回合并后的输出
  *
  * 直接调用 adb 可执行文件，不依赖 PowerShell 或持久化 shell 会话。
  * 适用于 adb devices、adb install、adb push 等一次性操作。
  *
+ * 注意：adb 的 push/pull/install 等子命令会把进度信息和结果摘要
+ * （如 "1 file pushed, 0 skipped."）写入 stderr 而非 stdout，
+ * 因此这里同时捕获 stdout 和 stderr 并合并返回。
+ *
+ * 使用 spawnSync 而非 execSync：成功时也能拿到 stderr，且以数组形式
+ * 传参，避免 args.join(" ") 的 shell 拼接与转义隐患。
+ *
  * @param args     ADB 命令参数数组（不含 "adb" 前缀），如 ["-s", "serialNo", "shell", "ls"]
  * @param timeout  可选的自定义超时（默认 ADB_EXEC_TIMEOUT）
- * @returns stdout 字符串，出错时返回空字符串并记录日志
+ * @returns 合并后的输出字符串；失败时返回空字符串并记录日志
  * @example
  *   execAdb(["devices"])
  *   execAdb(["-s", "43b1e5fe7b186666", "shell", "getprop ro.product.model"])
  */
 export function execAdb(args: string[], timeout?: number): string {
-  try {
-    return execSync(`adb ${args.join(" ")}`, {
-      encoding: "utf-8",
-      timeout: timeout ?? ADB_EXEC_TIMEOUT,
-      stdio: ["pipe", "pipe", "ignore"],
-    }) as string;
-  } catch (err) {
+  const result = spawnSync("adb", args, {
+    encoding: "utf-8",
+    timeout: timeout ?? ADB_EXEC_TIMEOUT,
+    windowsHide: true,
+  });
+
+  const stdout = (result.stdout ?? "").trim();
+  const stderr = (result.stderr ?? "").trim();
+
+  if (result.status !== 0) {
+    // 进程级异常（命令不存在、被信号杀死等）：status 为 null
+    const reason =
+      result.status === null
+        ? (result.error?.message ?? "process error (no exit code)")
+        : `exit code ${result.status}`;
     logger.error(
-      `[adb] execAdb failed: ${err instanceof Error ? err.message : String(err)}`
+      `[adb] execAdb failed: adb ${args.join(" ")} → ${reason}` +
+        (stderr ? `\n[adb] stderr: ${stderr}` : "")
     );
     return "";
   }
+
+  // 成功时合并 stdout 与 stderr：adb push/pull/install 的结果摘要
+  // 写在 stderr，stdout 可能为空。
+  return [stdout, stderr].filter(Boolean).join("\n").trim();
 }
 
 // ── 接口 ──
