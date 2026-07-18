@@ -12,7 +12,7 @@
     "clean": "rimraf out",
     "clean-log": "rimraf --glob ./.embedded/log/**/*.log",
     "dev": "tsc --watch",
-    "start": "node out/index.js",
+    "start": "node out/cli/index.js",
     "inspector": "npm run inspector:win",
     "inspector:win": "powershell -ExecutionPolicy Bypass -File scripts/run-inspector.ps1",
     "git-sync-force": "node scripts/sync-force.mjs",
