@@ -133,7 +133,7 @@ export async function adbShellOpenHandler(args: { device?: string }) {
     connectionInfo: shell.getSerialNo(),
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
-  shell.fileLogger.enableFromEnv(sessionId);
+  shell.fileLogger.enableFromEnv(sessionId, deviceName);
 
   return {
     content: [

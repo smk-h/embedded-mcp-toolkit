@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "rimraf out",
-    "clean-log": "rimraf --glob ./.embedded/log/*.log",
+    "clean-log": "rimraf --glob ./.embedded/log/**/*.log",
     "dev": "tsc --watch",
     "start": "node out/index.js",
     "inspector": "npm run inspector:win",

@@ -23,11 +23,14 @@ export function beijingFields() {
 /**
  * @brief 日志文件名用时间戳（不含空格/冒号）
  *
- * 格式: YYYY-MM-DD_HH-mm-ss
+ * 格式: YYYY-MM-DD_HHMMSS
+ *   - 日期用 '-' 分隔，便于肉眼识别
+ *   - 时分秒紧凑无分隔符，缩短文件名
+ *   - 各字段从大到小且定宽，字典序等于时间序
  */
 export function fileTimestamp(): string {
   const f = beijingFields();
-  return `${f.y}-${f.m}-${f.d}_${f.hh}-${f.mm}-${f.ss}`;
+  return `${f.y}-${f.m}-${f.d}_${f.hh}${f.mm}${f.ss}`;
 }
 
 /**

@@ -167,7 +167,7 @@ export async function serialOpenHandler(args: {
   });
   portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
-  shell.fileLogger.enableFromEnv(sessionId);
+  shell.fileLogger.enableFromEnv(sessionId, deviceName);
 
   return {
     content: [
@@ -658,7 +658,7 @@ export async function serialShellLoginHandler(args: {
     });
     newSessionId = newId;
     portToSession.set(baseConfig.port, newId);
-    shell.fileLogger.enableFromEnv(newId);
+    shell.fileLogger.enableFromEnv(newId, deviceName);
   }
 
   // ===== 状态机驱动 profile 匹配 + 状态检测 =====
@@ -986,7 +986,7 @@ function registerSession(
   });
   portToSession.set(port, sessionId);
   logger.info(`[serial_shell_login] session opened: ${sessionId} port=${port}`);
-  shell.fileLogger.enableFromEnv(sessionId);
+  shell.fileLogger.enableFromEnv(sessionId, deviceName);
   return {
     content: [text(`Session ${sessionId} opened on ${port} ${detail}`)],
   };

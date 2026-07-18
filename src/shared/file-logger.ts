@@ -57,16 +57,24 @@ export class FileLogger {
   /**
    * @brief 根据环境变量 SAVE2FILE_PATH 自动启用日志
    *
-   * 若 SAVE2FILE_PATH 值为 "none" 或空则跳过；
-   * 否则在 {SAVE2FILE_PATH}/{sessionId}_{YYYY-MM-DD_HH-mm-ss}.log 创建日志文件。
+   * 若 SAVE2FILE_PATH 值为 "none" 或空则跳过；否则按以下规则创建日志文件：
+   *   - deviceName 可用：{SAVE2FILE_PATH}/{deviceName}/{sessionId}_{YYYY-MM-DD_HHMMSS}.log
+   *   - deviceName 缺失：{SAVE2FILE_PATH}/{sessionId}_{YYYY-MM-DD_HHMMSS}.log（降级到根目录）
+   *
+   * 设备子目录由 enable() 内部 mkdirSync 递归创建，无需此处额外建目录。
    *
    * @param sessionId 会话 ID（如 serial_1）
+   * @param deviceName 设备名（如 board-lubancat）；可选，缺失时降级写入根目录
    */
-  enableFromEnv(sessionId: string): void {
+  enableFromEnv(sessionId: string, deviceName?: string): void {
     const savePath = process.env.SAVE2FILE_PATH;
     if (!savePath || savePath === "none") return;
     const absDir = resolve(savePath);
-    const logPath = resolve(absDir, `${sessionId}_${fileTimestamp()}.log`);
+    const fileName = `${sessionId}_${fileTimestamp()}.log`;
+    // deviceName 真值检查：空串/undefined 均视为缺失，降级到根目录，保证日志不丢
+    const logPath = deviceName
+      ? resolve(absDir, deviceName, fileName)
+      : resolve(absDir, fileName);
     this.enable(logPath);
     logger.info(`[file-logger] file logging enabled: ${logPath}`);
   }

@@ -4,7 +4,7 @@
  * 通过 MCP 环境变量 LOG_SAVE / LOG_DIR 控制日志文件写入。
  * - LOG_SAVE 为真值时启用文件保存
  * - LOG_DIR 指定日志目录，默认 "./log"
- * - 日志文件名格式: YYYY-MM-DD_HH-mm-ss.log（北京时间）
+ * - 日志文件名格式: YYYY-MM-DD_HHMMSS.log（北京时间）
  *
  * 导出单例 logger 对象，通过 logger.info / error / warn 写入日志。
  */
