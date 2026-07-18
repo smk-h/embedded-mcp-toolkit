@@ -45,7 +45,6 @@ const EXCLUDES = new Set([
   'test',
   'docs',
   'plan',
-  'client',
   'out',
   'scripts',
   'configs/config.yaml',

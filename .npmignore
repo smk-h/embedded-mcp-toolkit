@@ -17,7 +17,6 @@
 
 # ---- 源码与开发目录（源码不发布，仅发布编译产物）----
 src
-client
 test
 docs
 plan
