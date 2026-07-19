@@ -15,6 +15,19 @@ interface KeyProviderYaml {
   timeout?: number;
 }
 
+/**
+ * @brief U-Boot 进入检测配置（serial.uboot 子段）
+ *
+ * 用于 serial_enter_uboot 工具的提示符识别与事后验证，全部字段可选。
+ * 字符串字段直接写 JavaScript 正则源码，由 UbootDetector 用 new RegExp(source, flags) 构造。
+ * 详见 docs/regex-guide.md。
+ */
+export interface UbootYaml {
+  autobootPrompts?: string[]; // autoboot 提示字符串数组，按数组顺序匹配；含 "Ctrl+u" 字样的条目 → 发送 \x15，其余 → 发送换行
+  prompt?: string; // 命令提示符字符串，命中即判成功（主层）
+  verifyEnvKeys?: string[]; // 提示符未命中时发 printenv 验证的环境变量键名数组（纯字面量，不走正则转换）
+}
+
 interface DeviceConfig {
   promptPattern?: string; // exec 提示符检测正则，覆盖默认正则；留空用 PromptDetector.DEFAULT_PATTERN
   adb?: {
@@ -39,6 +52,7 @@ interface DeviceConfig {
     loginUsername?: string; // 串口登录用户名
     loginPassword?: string; // 串口登录密码
     keyProvider?: KeyProviderYaml; // 串口侧密钥提供配置
+    uboot?: UbootYaml; // U-Boot 进入检测配置（可选，留空用默认值）
   };
 }
 
@@ -241,6 +255,21 @@ export function getAdbConfig(name?: string): AdbDeviceConfig {
 export function getPromptPattern(name?: string): string | undefined {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   return device.promptPattern;
+}
+
+/**
+ * @brief 获取设备的 U-Boot 进入检测配置
+ *
+ * 用于 serial_enter_uboot 工具的提示符识别与事后验证。
+ * 不做环境变量覆盖——U-Boot 配置仅从 yaml 读取（无对应环境变量的现实需求）。
+ * 空对象 {} 由 UbootDetector 构造时回退到默认值。
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ * @returns U-Boot 配置片段，未配置 serial.uboot 时返回空对象
+ */
+export function getUbootConfig(name?: string): UbootYaml {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  return device.serial?.uboot ?? {};
 }
 
 /**

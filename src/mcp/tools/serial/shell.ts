@@ -9,6 +9,7 @@ import {
   getPromptPattern,
   getSerialConfig,
   getKeyProviderConfig,
+  getUbootConfig,
   resolveDeviceName,
 } from "../../../shared/config.js";
 import {
@@ -22,6 +23,7 @@ import {
   CONTROL_CHAR_MAP,
   type ControlChar,
   PromptDetector,
+  UbootDetector,
 } from "../../shared/prompt-detector.js";
 import { sendControlChar } from "../../shared/send-ctrl.js";
 import { runExec } from "../../shared/exec-runner.js";
@@ -834,7 +836,11 @@ export async function serialShellLoginHandler(args: {
  */
 export const serialEnterUbootConfig = {
   description:
-    "Enter U-Boot by rebooting the device and stopping autoboot. Detects 'Hit any key' or 'Hit Ctrl+u' prompts, and '=>' or 'U-Boot>' command prompts.",
+    "Enter U-Boot by rebooting the device and stopping autoboot. " +
+    "Detection rules (autoboot prompts, command prompt, verify env keys) " +
+    "are configurable via device config serial.uboot; falls back to built-in defaults. " +
+    "Two-layer strategy: prompt match first; if not matched within a short window, " +
+    "sends 'printenv' and verifies U-Boot env keys. Fails fast on kernel boot or verify timeout.",
   inputSchema: fromJsonSchema<{
     session_id: string;
     timeout?: number;
@@ -858,18 +864,18 @@ export const serialEnterUbootConfig = {
 /**
  * @brief serial_enter_uboot 处理函数
  *
- * 流程：
- *   1. 发送 reboot 命令重启设备
- *   2. 轮询串口输出，检测 autoboot 提示：
- *      - "Hit any key to stop autoboot" → 发送换行键
- *      - "Hit Ctrl+u to stop autoboot"  → 发送 \x15（Ctrl+u）
- *   3. 根据提示内容自动判断发送换行还是 Ctrl+u
- *   4. 继续轮询检测 U-Boot 命令提示符：
- *      - "=>" (标准 U-Boot 提示符)
- *      - "U-Boot>" (部分厂商自定义提示符)
- *   5. 返回 U-Boot 命令行输出
+ * 流程（两层检测，对应 spec F3）：
+ *   1. 从设备配置读 serial.uboot 构造 UbootDetector；配置非法立即返回错误
+ *   2. 发送 reboot 重启设备
+ *   3. 阶段 1 — autoboot 提示检测：命中配置的 autobootPrompts 即发对应中断键
+ *      （含 "Ctrl+u" 字样发 \x15，否则发换行）
+ *   4. 阶段 2 — 主层：中断后窗口内，命中命令提示符即成功返回（via prompt）；
+ *      内核启动特征则立即失败
+ *   5. 阶段 3 — 验证层：主层窗口耗尽，发 printenv 一次，命中环境变量键即成功
+ *      （via verify）；窗口耗尽或内核启动特征则快速失败
+ *   6. 总超时兜底
  *
- * @param args  工具参数，包含 session_id 和可选的 timeout
+ * @param args  工具参数，包含 session_id 和可选的 timeout（默认 60 秒）
  * @return MCP 响应，包含进入 U-Boot 的结果和输出
  */
 export async function serialEnterUbootHandler(args: {
@@ -888,68 +894,140 @@ export async function serialEnterUbootHandler(args: {
 
   const shell = result.shell;
 
-  // Autoboot 提示模式
-  const AUTOBOOT_ANY_KEY_RE = /Hit\s+any\s+key\s+to\s+stop\s+autoboot/i;
-  const AUTOBOOT_CTRL_U_RE = /Hit\s+Ctrl\+u\s+to\s+stop\s+autoboot/i;
-
-  // U-Boot 命令提示符模式
-  const UBOOT_PROMPT_RE = /(?:=>|U-Boot>)\s*$/;
+  // 构造 U-Boot 检测器：从设备配置读 uboot 子段，未配置走默认值
+  // 配置非法（re: 后跟无效正则）时立即返回配置错误，不进入轮询
+  let detector: UbootDetector;
+  try {
+    detector = new UbootDetector(getUbootConfig(shell.getDeviceName()));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`[serial_enter_uboot] config error: ${msg}`);
+    return {
+      content: [text(`Failed to build U-Boot detector (config error): ${msg}`)],
+    };
+  }
 
   // 发送 reboot 重启设备
   shell.write("reboot", 1);
   logger.info(
     `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
   );
+
   const deadline = Date.now() + timeoutSec * 1000;
+  const verifyTimeoutMs = detector.verifyTimeoutMs;
   let allOutput = "";
-  let enteredUboot = false;
   let interruptKey = "";
+  let interruptedAt = 0; // 中断键发送时刻，用于主层窗口计时
+  let verifyStarted = false; // 是否已发 printenv（保证只发一次）
+  let verifyStartedAt = 0; // printenv 发送时刻，用于验证层窗口计时
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 500));
     const chunk = shell.read(0); // 不清空缓冲区，持续累积
     if (chunk) allOutput += chunk;
 
-    // 检测 autoboot 提示 — 优先匹配 Ctrl+u，再匹配 any key
-    if (!enteredUboot) {
-      if (AUTOBOOT_CTRL_U_RE.test(allOutput)) {
-        interruptKey = "Ctrl+u";
-        logger.info("[serial_enter_uboot] detected Ctrl+u autoboot prompt");
-      } else if (AUTOBOOT_ANY_KEY_RE.test(allOutput)) {
-        interruptKey = "Enter";
-        logger.info("[serial_enter_uboot] detected any-key autoboot prompt");
-      }
-
-      if (interruptKey) {
-        if (interruptKey === "Ctrl+u") {
-          shell.sendRaw("\x15", 1); // 发送 Ctrl+u
-        } else {
-          shell.sendRaw("\n", 1); // 发送换行键
-        }
-        enteredUboot = true;
-        allOutput = ""; // 重置，接下来只收集 U-Boot 输出
+    // 阶段 1：autoboot 提示检测（未中断时）
+    if (!interruptKey) {
+      const key = detector.matchAutoboot(allOutput);
+      if (key) {
+        shell.sendRaw(key, 1);
+        interruptKey = key === "\x15" ? "Ctrl+u" : "Enter";
+        interruptedAt = Date.now();
+        allOutput = ""; // 重置，接下来只收集 U-Boot 阶段输出
+        logger.info(
+          `[serial_enter_uboot] detected autoboot prompt, sent ${interruptKey}`
+        );
         continue;
       }
     }
 
-    // 检测 U-Boot 命令提示符
-    if (enteredUboot && UBOOT_PROMPT_RE.test(allOutput)) {
-      const finalOutput = shell.read(1);
-      if (finalOutput) allOutput += finalOutput;
+    // 已中断后才进入主层 / 验证层判定
+    if (!interruptKey) {
+      continue;
+    }
+
+    // 内核启动特征 → 立即失败（不论主层还是验证层）
+    if (detector.matchKernelBoot(allOutput)) {
+      logger.warn(
+        "[serial_enter_uboot] kernel boot detected, abort (device bypassed U-Boot)"
+      );
       return {
         content: [
           text(
-            `Entered U-Boot successfully (interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
+            `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
           ),
         ],
       };
     }
+
+    // 阶段 2：主层 — 提示符命中即成功
+    if (!verifyStarted && detector.matchPrompt(allOutput)) {
+      const finalOutput = shell.read(1);
+      if (finalOutput) allOutput += finalOutput;
+      logger.info(
+        `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
+      );
+      return {
+        content: [
+          text(
+            `Entered U-Boot successfully (via prompt, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
+          ),
+        ],
+      };
+    }
+
+    // 主层窗口耗尽 → 触发验证层（仅一次）
+    if (!verifyStarted && Date.now() - interruptedAt >= verifyTimeoutMs) {
+      shell.sendRaw("\nprintenv\n", 1);
+      verifyStarted = true;
+      verifyStartedAt = Date.now();
+      allOutput = ""; // 重置，接下来只收集 printenv 输出
+      logger.info(
+        "[serial_enter_uboot] prompt not matched in main window, sent printenv for verification"
+      );
+      continue;
+    }
+
+    // 阶段 3：验证层 — 环境变量键命中即成功
+    if (verifyStarted) {
+      if (detector.matchVerifyKey(allOutput)) {
+        const finalOutput = shell.read(1);
+        if (finalOutput) allOutput += finalOutput;
+        logger.info(
+          "[serial_enter_uboot] verify key matched (via verify), entered U-Boot"
+        );
+        return {
+          content: [
+            text(
+              `Entered U-Boot successfully (via verify, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
+            ),
+          ],
+        };
+      }
+
+      // 验证层窗口耗尽 → 快速失败
+      if (Date.now() - verifyStartedAt >= verifyTimeoutMs) {
+        logger.warn(
+          `[serial_enter_uboot] verify timeout (${verifyTimeoutMs}ms), no env key matched`
+        );
+        return {
+          content: [
+            text(
+              `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
+            ),
+          ],
+        };
+      }
+    }
   }
 
-  // 超时
+  // 总超时兜底
   const remaining = shell.read(1);
   if (remaining) allOutput += remaining;
 
+  logger.warn(
+    `[serial_enter_uboot] overall timeout after ${timeoutSec}s, interruptKey=${interruptKey || "(none)"}`
+  );
   return {
     content: [
       text(

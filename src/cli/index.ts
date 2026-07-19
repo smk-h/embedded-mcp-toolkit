@@ -14,6 +14,7 @@ import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
 import { runSshdConfig } from "./commands/sshd-config.js";
+import { runRegexVerify } from "./commands/regex-verify.js";
 import pkg from "../../package.json" with { type: "json" };
 
 /**
@@ -24,6 +25,7 @@ import pkg from "../../package.json" with { type: "json" };
  * ├── init                       ← 初始化配置文件（.action()）
  * ├── uninstall                  ← 清理 init 生成的文件（.action()）
  * ├── split                      ← 拆分 config.yaml 为 devices/*.yaml（.action()）
+ * ├── regex-verify               ← 自测设备 yaml 的 U-Boot 正则配置（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
  * │   ├── ssh                    ←   SSH 演示二级父命令
@@ -177,6 +179,38 @@ program
   .option("-f, --force", "覆盖已存在的设备文件", false)
   .action((opts) => {
     runSplit(opts);
+  });
+
+// =============================================================================
+// regex-verify 命令 —— 自测设备 yaml 中的 U-Boot 正则配置
+// =============================================================================
+
+/**
+ * @brief U-Boot 正则配置自测命令
+ *
+ * 加载指定设备的 serial.uboot 配置，构造 UbootDetector（自动合并默认值），
+ * 跑标准样本矩阵 + 用户自定义样本，展示每条匹配结果。
+ * 用于不连真机的情况下验证 yaml 正则能否正确识别 U-Boot 各类输出。
+ */
+program
+  .command("regex-verify")
+  .description(
+    "自测设备 yaml 的 U-Boot 正则配置（加载 serial.uboot，跑样本矩阵）"
+  )
+  .argument("<device>", "设备名（.embedded/configs/devices/<device>.yaml）")
+  .option(
+    "-s, --sample <text>",
+    "追加一条自定义测试样本（可多次使用）",
+    (value: string, previous: string[]) => [...previous, value],
+    []
+  )
+  .option("-v, --verbose", "显示构造出的 detector 内部状态", false)
+  .action((device: string, opts: { sample: string[]; verbose: boolean }) => {
+    runRegexVerify({
+      device,
+      sample: opts.sample,
+      verbose: opts.verbose,
+    });
   });
 
 // =============================================================================

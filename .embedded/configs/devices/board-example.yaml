@@ -58,3 +58,30 @@ serial:
     keyFilePath: "./.embedded/configs/password_input.txt" # 相对 cwd
     pollInterval: 500
     timeout: 120000
+  # ── uboot 子段（serial_enter_uboot 检测配置，全部可选，留空用默认值）──
+  # 字段值直接写 JavaScript 正则源码字符串，由 new RegExp(source, flags) 构造。
+  # YAML 双引号字符串中反斜杠必须双写：写 "\\s+" 而非 "\s+"（详见 docs/regex-guide.md）。
+  # 也可用单引号字符串避免双写：'\s+' 即字面量 \s+。
+  # 不配置整个 uboot 子段时，三组规则回退到内置默认值（行为等价改动前实现）。
+  uboot:
+    # autoboot 提示正则数组，按数组顺序匹配；构造时自动带 i 标志（大小写不敏感）。
+    # 含 "Ctrl+u" 字样的条目 → 发送 \x15；其余 → 发送换行。
+    autobootPrompts:
+      - "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot"
+      - "Hit\\s+any\\s+key\\s+to\\s+stop\\s+autoboot"
+    # 命令提示符正则，命中即判成功（主层）；构造时无 flags（=> 和 U-Boot> 固定大小写）。
+    # 默认值能认 => 和 U-Boot> 两种结尾。常见厂商提示符（按板子实际选一种）：
+    #   prompt: "=>"                          # 标准 U-Boot（最常见）
+    #   prompt: "Marvell>>"                   # Marvell 平台
+    #   prompt: "hisilicon#"                  # 海思平台
+    #   prompt: "sunxi#"                      # 全志平台
+    #   prompt: "STM32MP>"                    # STM32MP1/MP15
+    #   prompt: "ZynqMP>"                     # Xilinx ZynqMP
+    #   prompt: "rk35xx#"                     # Rockchip U-Boot
+    # 多板子共用配置时，用 (?:A|B) 联合，并用 $ 锚定末尾：
+    #   prompt: "(?:=>|Marvell>>|hisilicon#)\\s*$"
+    prompt: "(?:=>|U-Boot>)\\s*$"
+    # 提示符未命中时，发 printenv 验证的环境变量键（纯字面量，不走正则）。
+    verifyEnvKeys:
+      - "baudrate"
+      - "bootdelay"

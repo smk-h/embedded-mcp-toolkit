@@ -101,3 +101,16 @@ devices:
         keyFilePath: "./.embedded/configs/password_input.txt" # 相对 cwd
         pollInterval: 500
         timeout: 120000
+      # uboot 子段（serial_enter_uboot 检测配置，全部可选，留空用默认值）。
+      # 字段值直接写 JavaScript 正则源码字符串（双引号中反斜杠双写，详见 docs/regex-guide.md）。
+      # 详细示例见 devices/board-example.yaml。
+      uboot:
+        autobootPrompts: # 含 "Ctrl+u" 字样的条目 → 发 \x15；其余 → 发换行
+          - "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot"
+          - "Hit\\s+any\\s+key\\s+to\\s+stop\\s+autoboot"
+        # 命令提示符，命中即判成功（主层）。常见厂商：=> / Marvell>> / hisilicon# / STM32MP> / ZynqMP>
+        # 多板子共用配置时用联合正则，如 "(?:=>|Marvell>>|hisilicon#)\\s*$"
+        prompt: "(?:=>|U-Boot>)\\s*$"
+        verifyEnvKeys: # 提示符未命中时发 printenv 验证的环境变量键（纯字面量）
+          - "baudrate"
+          - "bootdelay"
