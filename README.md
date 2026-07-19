@@ -410,6 +410,8 @@ serial:
 
 **关于 keyProvider**：用于具有 PSH 的设备在解锁时提供密钥，支持 `file`（文件读写）和 `terminal`（终端输入）两种模式。Claude Code 自动调用工具登录的场景下推荐 `file` 模式。其 `challengeFilePath` / `keyFilePath` 是**相对运行 MCP server 时的工作目录（cwd）**的路径，通常写 `./` 开头的项目相对路径即可（与 config.yaml 或设备文件的位置无关）。
 
+**关于 uboot**：`serial.uboot` 子段用于 `serial_enter_uboot` 工具的提示符识别（autoboot 提示、命令提示符、printenv 验证键），全部可选，留空时使用内置默认值。各厂商 U-Boot 提示符差异较大，需要适配时请参考 [U-Boot 正则表达式配置指南](./docs/regex-guide.md)。
+
 #### 3.5 两个 txt 文本文件
 
 ```shell
