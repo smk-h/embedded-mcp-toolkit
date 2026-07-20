@@ -20,6 +20,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
 import { resolveAdbSerial, resolveDeviceName } from "../../../shared/config.js";
+import { resolveAdbDeviceName } from "./device-resolver.js";
 
 // ── 通用 ADB 执行函数 ──────────────────────────────────────
 
@@ -123,6 +124,22 @@ function parseAdbDevices(raw: string): AdbDeviceInfo[] {
 }
 
 /**
+ * @brief 现场扫描 adb devices，返回第一台可用设备的 serialNo
+ *
+ * 用于 adb_exec 在自动发现场景下拿到真实 serialNo 参与 deviceName 降级。
+ * 与 transports/adb.ts 的 #discoverDevice() 不同：本函数不抛错，无设备/多设备
+ * 时均返回 undefined（由调用方走降级链）。
+ *
+ * @returns 第一台状态为 "device" 的设备 serialNo；无可用设备返回 undefined
+ */
+function scanFirstAdbDeviceSerialNo(): string | undefined {
+  const raw = execAdb(["devices"]);
+  const devices = parseAdbDevices(raw);
+  const first = devices.find((d) => d.status === "device");
+  return first?.serialNo;
+}
+
+/**
  * @brief adb_device_list 处理函数
  */
 export async function adbDeviceListHandler() {
@@ -179,7 +196,7 @@ export const adbExecConfig = {
       device: {
         type: "string",
         description:
-          "Target device serial number (optional, defaults to the unique connected device)",
+          'Device alias (e.g. "board-lubancat"). Optional — when omitted, the program resolves the device name from the actually connected serial number internally, so there is NO need to call adb_device_list first. If a raw serial number is passed instead of an alias, it is automatically resolved to the alias when bound. Targeting and logging both follow the resolved device name.',
       },
       command: {
         type: "string",
@@ -220,8 +237,27 @@ export async function adbExecHandler(args: {
   }
   cmdArgs.push(...args.command.split(/\s+/));
 
+  // 确定 finalDeviceName（仅用于日志归档与 deviceName 归位，不影响 execAdb 的 serialNo）
+  // 三分支：显式传参用 args.device；config 绑定用 serialNo；自动发现现场扫一次 adb devices
+  let realSerialNo: string;
+  if (args.device) {
+    // 显式传参：信任调用方，realSerialNo 取 config 解析出的 serialNo（若有）或 args.device 本身
+    realSerialNo = serialNo ?? args.device;
+  } else if (serialNo) {
+    // config 绑定了 serialNo：realSerialNo 即 config 解析出的值
+    realSerialNo = serialNo;
+  } else {
+    // 自动发现：现场扫一次 adb devices 拿真实 serialNo（无设备则用占位符走降级）
+    realSerialNo = scanFirstAdbDeviceSerialNo() ?? "(auto)";
+  }
+  const finalDeviceName = resolveAdbDeviceName(
+    args.device,
+    realSerialNo,
+    deviceName
+  );
+
   logger.info(
-    `[adb_exec] command=${args.command} device=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`
+    `[adb_exec] command=${args.command} device=${finalDeviceName} preliminary=${deviceName} serialNo=${serialNo ?? "(auto)"} source=${serialSource}`
   );
 
   const output = execAdb(cmdArgs);

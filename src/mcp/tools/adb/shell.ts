@@ -32,6 +32,7 @@ import {
 } from "../../shared/prompt-detector.js";
 import { sendControlChar } from "../../shared/send-ctrl.js";
 import { runExec } from "../../shared/exec-runner.js";
+import { resolveAdbDeviceName } from "./device-resolver.js";
 
 // ── adb_shell_open ──────────────────────────────────────────
 
@@ -53,7 +54,7 @@ export const adbShellOpenConfig = {
       device: {
         type: "string",
         description:
-          "ADB device serial number (optional, defaults to the unique connected device)",
+          'Device alias (e.g. "board-lubancat"). Optional — when omitted, the program auto-discovers the unique connected device and resolves the device name from its serial number internally, so there is NO need to call adb_device_list first. If a raw serial number is passed instead of an alias, it is automatically resolved to the alias when bound. Targeting and log directory both follow the resolved device name.',
       },
     },
   }),
@@ -127,13 +128,22 @@ export async function adbShellOpenHandler(args: { device?: string }) {
   }
 
   // open() 成功后才将 shell 存入会话表，后续操作通过 session_id 复用该进程
+  // 连接成功后用真实 serialNo 按三级降级策略算出 finalDeviceName，
+  // 让日志目录与会话表 deviceName 字段反映真实连接的设备，而非连接前的静态猜测值
+  // （deviceName 变量保留原值，用于 serialSource 日志逻辑不改动）
+  const realSerialNo = shell.getSerialNo();
+  const finalDeviceName = resolveAdbDeviceName(
+    args.device,
+    realSerialNo,
+    deviceName
+  );
   const sessionId = adbStore.create(shell, {
     type: "adb",
-    deviceName,
-    connectionInfo: shell.getSerialNo(),
+    deviceName: finalDeviceName,
+    connectionInfo: realSerialNo,
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
-  shell.fileLogger.enableFromEnv(sessionId, deviceName);
+  shell.fileLogger.enableFromEnv(sessionId, finalDeviceName);
 
   return {
     content: [

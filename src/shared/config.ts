@@ -298,6 +298,81 @@ function parseSerialNo(raw?: string): string | undefined {
 }
 
 /**
+ * @brief 判定 adb 序列号（serialNo）字符串是否有效
+ *
+ * 无效形态（任一命中即视为无效，返回 false）：
+ *   - undefined / null：调用方未拿到 serialNo
+ *   - 空串或纯空白：trim 后为空
+ *   - 全 "?" 字符（如 "????????????"）：硬件无序列号时 adb 的标准占位输出
+ *   - "(auto)"：AdbShell.getSerialNo() 在未指定 serialNo 时的占位返回值
+ *
+ * 注意：本函数判定的是 "adb 序列号"，与 "串口（serial port）" 无关。
+ *
+ * @param serialNo 待判定的 serialNo 字符串
+ * @returns true 表示有效，可参与反查或直接用作目录名；false 表示无效，调用方应走占位符降级
+ */
+export function isValidSerialNo(serialNo: string | undefined | null): boolean {
+  // null/undefined 直接判无效
+  if (serialNo == null) {
+    return false;
+  }
+  // 空串或纯空白判无效
+  if (serialNo.trim() === "") {
+    return false;
+  }
+  // 全 ? 字符（硬件无序列号时 adb 的占位输出）判无效
+  if (/^\?+$/.test(serialNo)) {
+    return false;
+  }
+  // AdbShell.getSerialNo() 在未指定时的占位返回值，判无效
+  if (serialNo === "(auto)") {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * @brief 根据真实 adb serialNo 反查设备别名
+ *
+ * 遍历 config.yaml 的 devices 配置，对每个设备解析其 adb.serialNo
+ * （去掉 sn_ 前缀，复用私有 parseSerialNo），与入参 serialNo 字面相等即命中。
+ *
+ * 多设备绑定同一 serialNo 的边界处理：
+ *   - 返回**配置文件中先定义的那个**别名（JavaScript 保证 YAML 字符串键按插入顺序遍历）
+ *   - 同时记录 WARNING 日志，提示用户配置可能存在重复绑定
+ *
+ * 注意：本函数处理的是 "adb 序列号"，与 "串口（serial port）" 无关。
+ *
+ * @param serialNo 真实 serialNo（建议先经 isValidSerialNo 判定为有效再传入）
+ * @returns 命中的设备别名；未命中返回 undefined（由调用方决定降级策略）
+ */
+export function resolveDeviceNameBySerialNo(
+  serialNo: string
+): string | undefined {
+  const devices = loadConfig().devices;
+  // 无设备配置直接返回 undefined（loadConfig 失败时已降级为空对象）
+  if (!devices) {
+    return undefined;
+  }
+  // 遍历所有设备，收集所有匹配的别名（YAML 字符串键按插入顺序遍历）
+  const matchedNames: string[] = [];
+  for (const [name, cfg] of Object.entries(devices)) {
+    const cfgSerialNo = parseSerialNo(cfg.adb?.serialNo);
+    if (cfgSerialNo !== undefined && cfgSerialNo === serialNo) {
+      matchedNames.push(name);
+    }
+  }
+  // 多设备命中：返回先定义的别名，同时记录 WARNING 提示配置可能有误
+  if (matchedNames.length > 1) {
+    logger.warn(
+      `[config] serialNo "${serialNo}" 绑定到多个设备别名：${matchedNames.join(", ")}；将使用先定义的 "${matchedNames[0]}"`
+    );
+  }
+  // 返回首个命中的别名；未命中时 matchedNames[0] 为 undefined
+  return matchedNames[0];
+}
+
+/**
  * @brief 解析 ADB 设备参数，将设备别名转换为序列号
  *
  * 三种输入模式：
