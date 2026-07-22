@@ -48,7 +48,7 @@ log/
 .claude/.env
 
 # ---- 设备配置（仅保留模板，真实设备配置不上传）----
-.embedded/configs/config.yaml
+# .embedded/configs/config.yaml
 .embedded/configs/devices/*.yaml
 !.embedded/configs/devices/board-example.yaml
 

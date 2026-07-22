@@ -27,7 +27,7 @@ out
 *.tar.gz
 
 # ---- 设备配置（仅保留模板，真实配置不上传）----
-config.yaml
+# config.yaml
 .embedded/configs/devices/*.yaml
 !.embedded/configs/devices/board-example.yaml
 

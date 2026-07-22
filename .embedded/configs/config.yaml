@@ -1,0 +1,7 @@
+# ============================================
+# embedded-mcp-toolkit 设备配置文件模板
+# 复制并修改: cp config.example.yaml config.yaml
+# ============================================
+
+# 默认使用的设备（对应 devices 下的 key）
+default: board-a
