@@ -118,10 +118,27 @@ function copyFile(
 }
 
 /**
+ * @brief 判断 MCP server 配置项是否为 toolkit 自有 server
+ * @details init 的 patch 目的：把模板里 toolkit server 的占位命令替换为实际安装路径。
+ *          但模板可能同时携带其它 server（如 file_utils_remote 指向个人远程机），
+ *          盲改会破坏它们。这里通过检测原始 command/args 是否含 "embedded-mcp-toolkit"
+ *          来识别 toolkit 自有 server —— 模板里 toolkit server 的入口固定包含该字样，
+ *          与 key 名解耦，即便重命名 key 也不受影响。
+ *
+ * @param cmdParts 模板中该 server 的原始命令片段（command + args 合并后的数组）
+ * @returns `true` — 是 toolkit 自有 server，应执行 patch
+ */
+function isToolkitServer(cmdParts: unknown[]): boolean {
+  return cmdParts.some(
+    (p) => typeof p === "string" && p.includes("embedded-mcp-toolkit")
+  );
+}
+
+/**
  * @brief 复制并修补 JSON 配置文件（.mcp.json / opencode.json）
- * @details 读取模板 JSON，将其中的占位命令替换为实际二进制路径，
- *          同时注入 DEVICE 环境变量。自动适配 Claude Code（.mcp.json）
- *          和 OpenCode（opencode.json）两种格式。
+ * @details 读取模板 JSON，将其中 **toolkit 自有 server** 的占位命令替换为实际二进制路径，
+ *          同时注入 DEVICE 环境变量；模板中携带的其它 server（如 file_utils_remote）
+ *          原样保留。自动适配 Claude Code（.mcp.json）和 OpenCode（opencode.json）两种格式。
  *
  * @param src        模板 JSON 文件路径
  * @param dest       目标 JSON 文件路径
@@ -157,6 +174,10 @@ function copyAndPatchJson(
       json as Record<string, unknown>
     ).mcpServers as Record<string, Record<string, unknown>>) ?? {};
     for (const key of Object.keys(servers)) {
+      const origCommand = (servers[key].command as unknown) ?? "";
+      const origArgs = (servers[key].args as unknown[]) ?? [];
+      // 仅 patch toolkit 自有 server，其它 server 原样保留
+      if (!isToolkitServer([origCommand, ...origArgs])) continue;
       servers[key].command = binCommand;
       servers[key].args = binArgs;
       if (servers[key].env) {
@@ -168,6 +189,9 @@ function copyAndPatchJson(
       json as Record<string, unknown>
     ).mcp as Record<string, Record<string, unknown>>) ?? {};
     for (const key of Object.keys(mcp)) {
+      const origCommandArr = (mcp[key].command as unknown[]) ?? [];
+      // 仅 patch toolkit 自有 server，其它 server 原样保留
+      if (!isToolkitServer(origCommandArr)) continue;
       mcp[key].command = [binCommand, ...binArgs];
       if (mcp[key].environment) {
         (mcp[key].environment as Record<string, string>).DEVICE = device;
@@ -346,11 +370,20 @@ export function runInit(opts: InitOptions): void {
           destDir: ".embedded/configs",
           match: (e) => e.endsWith(".txt"),
         },
+        // config.yaml 现只含 default 字段并随包发布，直接复制即可，无需由 example 生成。
+        // 复用 copyFile 的覆盖保护：用户已编辑过的 config.yaml 在非 --force 下不会被覆盖。
         {
-          type: "configYaml",
-          src: ".embedded/configs/config.example.yaml",
+          type: "file",
+          src: ".embedded/configs/config.yaml",
           dest: ".embedded/configs/config.yaml",
         },
+        // 已停用（保留备用）：原先由 config.example.yaml 生成 config.yaml 的流程。
+        // 后续若 config.yaml 需动态生成（如注入更多字段），可恢复此任务。
+        // {
+        //   type: "configYaml",
+        //   src: ".embedded/configs/config.example.yaml",
+        //   dest: ".embedded/configs/config.yaml",
+        // },
         {
           type: "file",
           src: ".embedded/configs/devices/board-example.yaml",
