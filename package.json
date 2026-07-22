@@ -8,7 +8,8 @@
     "embedded-mcp-toolkit": "./bin/embedded-mcp-toolkit-cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/minify.mjs",
+    "build:minify": "node scripts/minify.mjs",
     "clean": "rimraf out",
     "clean-log": "rimraf --glob ./.embedded/log/**/*.log",
     "dev": "tsc --watch",
@@ -52,6 +53,7 @@
     "@types/ssh2": "^1.15.0",
     "adm-zip": "^0.5.17",
     "ccstatusline": "^2.2.19",
+    "esbuild": "^0.25.0",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",

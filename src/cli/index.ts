@@ -1,4 +1,7 @@
 import { Command } from "commander";
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { interactiveShell, pshDemoSsh } from "../transports/ssh.js";
 import {
   interactiveSerialShell,
@@ -15,7 +18,14 @@ import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
 import { runSshdConfig } from "./commands/sshd-config.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
-import pkg from "../../package.json" with { type: "json" };
+
+// 读取 package.json（与 server.ts/version.ts 一致用 readFileSync，
+// 避免依赖 ESM import attribute 语法——后者在 esbuild minify 下会丢空格导致 Node 解析失败）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const pkg = JSON.parse(
+  readFileSync(resolve(__dirname, "../../package.json"), "utf-8")
+);
 
 /**
  * 命令层级结构：
