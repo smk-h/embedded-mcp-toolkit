@@ -180,7 +180,9 @@ export async function adbDeviceListHandler() {
  * 执行一次性 ADB 命令，不建立持久会话。
  * 适用于 adb install、adb push、adb shell getprop 等场景。
  *
- * @param device  目标设备（可选，默认使用唯一连接的设备）
+ * @param device  目标设备别名（推荐传入，如 "board-lubancat"）。传入即直接使用 config
+ *                中该设备绑定的 serialNo，不触发探测、日志目录更准确；不传时才由
+ *                adb 自动发现唯一连接的设备
  * @param command ADB 命令及参数（不含 "adb" 前缀），如 "devices"、"shell ls /sdcard"
  */
 export const adbExecConfig = {
@@ -196,7 +198,16 @@ export const adbExecConfig = {
       device: {
         type: "string",
         description:
-          'Device alias (e.g. "board-lubancat"). Optional — when omitted, the program resolves the device name from the actually connected serial number internally, so there is NO need to call adb_device_list first. If a raw serial number is passed instead of an alias, it is automatically resolved to the alias when bound. Targeting and logging both follow the resolved device name.',
+          'Target device alias, e.g. "board-lubancat". ' +
+          "PREFER passing the alias when you know the target device: " +
+          "it reads the serialNo bound in config and runs the command directly without device probing, " +
+          "and logging follows the alias. " +
+          "Passing a raw serial number is also accepted — " +
+          "it is auto-resolved back to the alias when bound. " +
+          "Omit only when no specific device is intended; " +
+          "the program then auto-discovers the single connected device " +
+          "(errors out if 0 or >1 devices). " +
+          "There is NO need to call adb_device_list first.",
       },
       command: {
         type: "string",
