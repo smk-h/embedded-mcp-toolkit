@@ -14,6 +14,7 @@ import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "../services/psh.js";
 import { KeyProvider } from "../services/key-provider.js";
 import { getKeyProviderConfig } from "../shared/config.js";
+import { type TransferResult } from "../shared/transfer-result.js";
 
 /**
  * @brief SSH Shell 连接配置
@@ -34,22 +35,6 @@ export interface SSHShellConfig {
   privateKey?: string;
   passphrase?: string;
   deviceName?: string;
-}
-
-/**
- * @brief 文件传输结果摘要
- *
- * 由 SSHShell 的 uploadFile / downloadFile 返回，
- * 工具层据此格式化为 MCP 文本响应。
- */
-export interface TransferResult {
-  direction: "upload" | "download"; // 传输方向：upload 本地→远端，download 远端→本地
-  localPath: string; // 本地文件路径
-  remotePath: string; // 远端文件路径
-  bytes: number; // 传输字节数（源文件大小）
-  durationMs: number; // 耗时（毫秒）
-  success: boolean; // 是否成功
-  error?: string; // 失败时的错误信息（成功时为 undefined）
 }
 
 /**

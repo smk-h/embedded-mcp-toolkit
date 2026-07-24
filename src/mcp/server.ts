@@ -109,6 +109,18 @@ function registerCleanupHooks() {
       doCleanupAndExit(`${signal} received`);
     });
   }
+
+  // unhandledRejection / uncaughtException 兜底：
+  // zmodem.js 等第三方库内部 Promise 链可能 reject 无人接听，
+  // Node 默认会终止进程（导致 MCP 连接崩溃）。这里只记录日志、吞掉异常，
+  // 让工具层的 try-catch 能正常返回错误结果，不杀进程。
+  process.on("unhandledRejection", (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    logger.warn(`[mcp] unhandledRejection swallowed: ${msg}`);
+  });
+  process.on("uncaughtException", (err) => {
+    logger.warn(`[mcp] uncaughtException swallowed: ${err.message}`);
+  });
 }
 
 // ── 启动入口 ───────────────────────────────────────────────

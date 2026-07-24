@@ -20,6 +20,12 @@ import {
   serialEnterUbootConfig,
   serialEnterUbootHandler,
 } from "./shell.js";
+import {
+  serialUploadConfig,
+  serialUploadHandler,
+  serialDownloadConfig,
+  serialDownloadHandler,
+} from "./transfer.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
@@ -48,4 +54,6 @@ export const mcpSerialTools: ToolEntry[] = [
     serialEnterUbootConfig,
     serialEnterUbootHandler
   ),
+  mcpDefineTool("serial_upload", serialUploadConfig, serialUploadHandler),
+  mcpDefineTool("serial_download", serialDownloadConfig, serialDownloadHandler),
 ];

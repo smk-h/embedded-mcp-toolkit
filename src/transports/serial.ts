@@ -50,6 +50,8 @@ export interface SerialShellConfig {
 export class SerialShell extends BaseShell {
   #serialPort: SerialPort | null = null;
   #config: SerialShellConfig;
+  /** @brief 二进制旁路接收回调，默认 null（未启用时 data 监听仅走文本态路径） */
+  #rawReceiver: ((b: Buffer) => void) | null = null;
 
   /** @brief SSH/Serial 通道的 banner 采集等待时长 */
   protected bannerWaitMs = 500;
@@ -83,6 +85,44 @@ export class SerialShell extends BaseShell {
   }
 
   /**
+   * @brief 向串口发送原始数据（不追加换行、不碰文本态缓冲）
+   *
+   * 既是基类模板方法 write() 的发送子步骤（payload 为已拼换行的 string），
+   * 也供 ZMODEM 等二进制协议直接写字节（payload 为 Buffer）。
+   * serialport.write 本就接受 string | Buffer，两种形态共用一条出口。
+   *
+   * 注：相对基类的 protected 抽象方法，此处提为 public，
+   * 让 services/zmodem 层能直接发送 ZMODEM 帧，无需另造 public 别名。
+   *
+   * @param payload 已拼换行的文本，或原始字节 Buffer
+   * @throws 串口未打开时抛出 "Serial not open. Call open() first."
+   */
+  rawWrite(payload: string | Buffer): void {
+    if (!this.#serialPort || !this.#serialPort.isOpen) {
+      throw new Error("Serial not open. Call open() first.");
+    }
+    this.#serialPort.write(payload);
+  }
+
+  /**
+   * @brief 挂载 / 卸载原始字节接收回调
+   *
+   * 挂载后（cb 非空），串口 data 事件改为"双写"：
+   *   - 原始 Buffer 喂给 cb（ZMODEM 协议层消费）
+   *   - 仍按原样进文本态 OutputBuffer（不影响 serial_read 等现有工具）
+   * 卸载（cb=null 或调用返回的卸载函数）后恢复纯文本态。
+   *
+   * @param cb 字节接收回调；传 null 卸载
+   * @returns 卸载函数，调用后移除回调
+   */
+  attachRawReceiver(cb: ((b: Buffer) => void) | null): () => void {
+    this.#rawReceiver = cb;
+    return () => {
+      if (this.#rawReceiver === cb) this.#rawReceiver = null;
+    };
+  }
+
+  /**
    * @brief 打开串口连接，注册数据监听
    *
    * 模板方法 acquire：打开串口设备，注册 data/close/error 监听。
@@ -107,8 +147,12 @@ export class SerialShell extends BaseShell {
     });
 
     this.#serialPort = serialPort;
-    // 监听串口数据接收事件：将收到的二进制数据转为字符串后追加到内部缓冲区并写入文件日志
+    // 监听串口数据接收事件：双写策略
+    //   - #rawReceiver 非空时，原始 Buffer 喂给二进制旁路（ZMODEM 等协议消费）
+    //   - 始终按原样进文本态 OutputBuffer（不影响 serial_read 等现有工具）
+    // #rawReceiver 默认 null，此时与改动前逐字一致（只走 appendData 路径）
     serialPort.on("data", (data: Buffer) => {
+      if (this.#rawReceiver) this.#rawReceiver(data);
       this.appendData(data.toString());
     });
     // 关闭事件：串口被物理断开或系统关闭时触发，清空句柄防止野指针
@@ -119,21 +163,6 @@ export class SerialShell extends BaseShell {
     serialPort.on("error", () => {
       this.#serialPort = null;
     });
-  }
-
-  /**
-   * @brief 向串口发送原始字节
-   *
-   * payload 已含换行处理，此处只校验串口是否已打开并发送。
-   *
-   * @param payload 已拼接换行的完整发送内容
-   * @throws 串口未打开时抛出 "Serial not open. Call open() first."
-   */
-  protected rawWrite(payload: string): void {
-    if (!this.#serialPort || !this.#serialPort.isOpen) {
-      throw new Error("Serial not open. Call open() first.");
-    }
-    this.#serialPort.write(payload);
   }
 
   /**
@@ -156,6 +185,8 @@ export class SerialShell extends BaseShell {
    * fileLogger.disable 与 output.reset 由基类 close 统一处理。
    */
   protected async release(): Promise<void> {
+    // 释放时清理二进制旁路回调，防止野指针（ZMODEM 会话结束后回调不应再触发）
+    this.#rawReceiver = null;
     if (this.#serialPort) {
       const port = this.#serialPort;
       this.#serialPort = null;

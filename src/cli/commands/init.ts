@@ -472,7 +472,9 @@ export function runInit(opts: InitOptions): void {
   lines.push("  📁 .embedded/configs/");
   lines.push("  📁 .embedded/configs/devices/ (示例设备文件)");
   lines.push("  📁 .embedded/log/");
-  lines.push("  📄 remote-start-mcp.bat (MCP server 启动脚本，锁定 cwd 与环境变量)");
+  lines.push(
+    "  📄 remote-start-mcp.bat (MCP server 启动脚本，锁定 cwd 与环境变量)"
+  );
 
   console.log(`
 ✅ 初始化完成！已生成以下文件:
