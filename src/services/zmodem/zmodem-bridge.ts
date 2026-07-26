@@ -105,6 +105,93 @@ const ZMODEM_ABORT_SEQUENCE = Buffer.from([
 /** @brief 发 abort 序列后等设备退出的延时（毫秒） */
 const ABORT_SETTLE_MS = 500;
 
+/**
+ * @brief 握手期 CAN 连击判定的最小次数
+ *
+ * ZMODEM 协议用 CAN(0x18)×5+BS(0x08)×5 作标准中止。实测 lrzsz 在文件不存在等
+ * 错误场景会发 CAN×10（两轮 CAN×5）。为容忍单字节噪声，连续 ≥3 个 CAN 即判定
+ * 对端中止（远低于正常协议字节序列出现的概率）。
+ */
+const HANDSHAKE_CAN_THRESHOLD = 3;
+
+/**
+ * @brief 握手期缓冲区无 ZMODEM 头时的最大字节数
+ *
+ * 正常握手设备回的 ZRINIT/ZRQINIT 在几十毫秒内到达，且首帧本身约 20 字节。
+ * 若缓冲区已累积到这个量仍未 parse 出会话，基本可断定对端根本没进入协议态
+ * （如 sz 报错退出、命令未找到等），不再干等到 HANDSHAKE_TIMEOUT_MS。
+ */
+const HANDSHAKE_MAX_GARBAGE_BYTES = 256;
+
+/**
+ * @brief 设备端 sz/rz 启动失败的典型错误文本（小写匹配，ASCII 子串）
+ *
+ * 实测 lrzsz 在文件不存在、权限不足、命令格式错等场景会向串口打印这些文本，
+ * 随后发 CAN×N 退出。在 parse 出会话前嗅探到这些串即可立即判定握手失败，
+ * 避免继续等 ZRINIT 永远等不到（根因：上次 download 卡死 2 分多钟即此场景）。
+ */
+const DEVICE_CMD_ERROR_MARKERS = [
+  "cannot open",
+  "can't open",
+  "no such file",
+  "no such file or directory",
+  "permission denied",
+  "command not found",
+  "not found",
+  "can't open any requested files",
+  "skipped",
+  "errors detected",
+  "transfer incomplete",
+  "transfer canceled",
+  "transfer cancelled",
+];
+
+/**
+ * @brief 嗅探握手期缓冲区，判定对端是否已非协议态退出（CAN 连击 / 错误文本）
+ *
+ * 在 establishSession 的轮询循环里，每次拿到新字节先调本函数：
+ *   - 连续 CAN ≥ HANDSHAKE_CAN_THRESHOLD → 判定对端发中止序列，返回 abort
+ *   - 缓冲区累积超 HANDSHAKE_MAX_GARBAGE_BYTES 仍无 ZMODEM 头 → 返回 garbage
+ *   - 命中 DEVICE_CMD_ERROR_MARKERS 任一子串 → 返回 error-marker
+ *   - 命中 shell 提示符（# / $ 结尾的行）→ 返回 prompt（设备已回 shell，没进协议）
+ *
+ * @param bytes 预缓冲区
+ * @returns 失败原因；null 表示尚未检测到失败、应继续等首帧
+ */
+function detectHandshakeFailure(bytes: number[]): "abort" | "garbage" | "error-marker" | "prompt" | null {
+  // 1) CAN 连击检测：扫描连续 CAN 数
+  let maxCanRun = 0;
+  let curCanRun = 0;
+  for (const b of bytes) {
+    if (b === 0x18) {
+      curCanRun += 1;
+      if (curCanRun > maxCanRun) maxCanRun = curCanRun;
+    } else {
+      curCanRun = 0;
+    }
+  }
+  if (maxCanRun >= HANDSHAKE_CAN_THRESHOLD) return "abort";
+
+  // 2) 垃圾溢出：缓冲区已积满仍无 ZMODEM 头
+  if (bytes.length > HANDSHAKE_MAX_GARBAGE_BYTES) return "garbage";
+
+  // 3) 错误文本嗅探（解码为 ASCII，小写匹配）
+  //    握手期缓冲区很小，每次解码成本可忽略；用 latin1 保证 1B=1char
+  if (bytes.length >= 8) {
+    const text = Buffer.from(bytes).toString("latin1").toLowerCase();
+    for (const marker of DEVICE_CMD_ERROR_MARKERS) {
+      if (text.includes(marker)) return "error-marker";
+    }
+    // 4) shell 提示符：行尾是 # 或 $ 且前面是普通可见字符（排除 ZMODEM 二进制噪声）
+    //    实测 sz 退出后会留下 "root@xxx:~# "，命中即说明设备已回 shell
+    if (/(^|[\r\n])[^\r\n]*[#$]\s*$/.test(text) && !text.includes("zmodem")) {
+      return "prompt";
+    }
+  }
+
+  return null;
+}
+
 /** @brief 等 session_end 事件的超时（毫秒），ZFIN 握手通常很快，超时则不再阻塞 */
 const SESSION_END_TIMEOUT_MS = 5000;
 
@@ -197,6 +284,38 @@ function raceAbort<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
       }
     );
   });
+}
+
+/**
+ * @brief 启动心跳定时器（幂等），用于"门控心跳"模式
+ *
+ * 历史问题：心跳原本在会话一建好就启动，覆盖 send_offer / session.start→offer
+ * 等"握手阶段"。但握手期心跳会把 idle 计时器持续重置，使"对端在握手期就死了"
+ * （如 rz 拒绝 offer、sz 文件不存在报错退出）被误判为"协议还在推进"，
+ * 导致 idle_timeout 失效，只能靠 timeout=300s 兜底（实测一次卡死 2 分多钟）。
+ *
+ * 修复策略（门控心跳）：心跳不在握手期启动，而是推迟到**首个数据块到达/发出**
+ * 之后才启动。这样：
+ *   - 握手期（send_offer / 等 offer）：无心跳 → idle 计时器正常工作 →
+ *     对端拒绝/卡死会被 idle 在 idle_timeout 内抓到
+ *   - 数据期 + 后续 ZEOF/ZFIN 握手：有心跳 → 合法的协议间隙不被误杀
+ *
+ * 幂等：多次调用只启动一次（避免数据回调里重复启动）。返回停止函数，
+ * 由调用方在 finally 里调（或直接复用已声明的 heartbeatTimer 句柄）。
+ *
+ * @param onHeartbeat 上层传入的心跳回调（即 idle 计时器的 touch）
+ * @param timerHolder 持有定时器句柄的对象（{ timer: null }），便于外部清理
+ * @returns 启动了定时器返回 true；已存在或无回调返回 false
+ * @note 使用方需在 finally 里 `clearInterval(timerHolder.timer)`
+ */
+function startHeartbeat(
+  onHeartbeat: (() => void) | undefined,
+  timerHolder: { timer: ReturnType<typeof setInterval> | null }
+): boolean {
+  if (!onHeartbeat) return false;
+  if (timerHolder.timer) return false; // 幂等：已启动则不再启
+  timerHolder.timer = setInterval(onHeartbeat, HEARTBEAT_INTERVAL_MS);
+  return true;
 }
 
 /**
@@ -314,9 +433,19 @@ async function establishSession(
   }
 
   const deadline = Date.now() + timeoutMs;
+  // 失败原因（detectHandshakeFailure 命中时填充，用于抛错时给出有意义的上下文）
+  let failReason: ReturnType<typeof detectHandshakeFailure> = null;
   // 尝试用已有字节 parse；无果则轮询等待新字节到达后再试
   while (Date.now() < deadline) {
     if (preBuffer.length > 0) {
+      // 关键防御：在 parse 之前先检测握手期失败信号（CAN 连击 / 错误文本 / 提示符）。
+      // 实测 lrzsz 在文件不存在等错误场景会先发 ZRQINIT（合法首帧！）再报错退出，
+      // 因此单纯 parse 成功 ≠ 握手成功。这里捕获的是 parse 之前的早期失败：
+      // sz 启动即报 "cannot open" + CAN×10，根本不会发任何 ZMODEM 头。
+      failReason = detectHandshakeFailure(preBuffer);
+      if (failReason) {
+        break;
+      }
       // Session.parse → parse_hex 直接假设输入以 ZMODEM 头开头，不剥离前缀垃圾。
       // 但 rawReceiver 收到的字节含 "rz\r\n" / "rz waiting to receive." 等命令回显，
       // 必须先定位 ZMODEM 头起始标志 ZPAD ZPAD ZDLE (0x2a 0x2a 0x18)，从那里截取再 parse。
@@ -325,6 +454,20 @@ async function establishSession(
       if (headerStart >= 0) {
         const parsed = Zmodem.Session.parse(preBuffer.slice(headerStart));
         if (parsed) {
+          // 二次防御：parse 成功 ≠ 握手成功。sz 文件不存在时会先发合法 ZRQINIT
+          // 首帧（让 parse 成功），紧接着在同一批字节里打印 "cannot open" 并发
+          // CAN×10 退出。由于设备端时序极快（<1ms），ZRQINIT + 错误文本 + CAN
+          // 往往在第一次 100ms 轮询时就已经一起塞进 preBuffer。
+          // parse 只消费了首帧，preBuffer 里残留的 "cannot open" + CAN 仍在，
+          // 这里再检测一次，命中则判定握手失败（比纯 idle 兜底更快更准）。
+          // 安全性：preBuffer 此时只含首帧 + 紧随的少量设备输出，不含用户文件
+          // 数据（文件数据要等 offer/accept 之后才流入），不会误报。
+          failReason = detectHandshakeFailure(preBuffer);
+          if (failReason) {
+            // parse 出的 session 不再使用，置 null 让下方失败分支处理
+            session = null;
+            break;
+          }
           session = parsed;
           session.set_sender(onOutput);
           break;
@@ -336,10 +479,27 @@ async function establishSession(
 
   if (!session) {
     // 建链失败必须卸载旁路，避免泄漏
-    logger.warn(
-      `[zmodem] handshake timeout: no first frame from device within ${timeoutMs}ms, preBuffer=${preBuffer.length}B`
-    );
     detach();
+    const preview = Buffer.from(preBuffer.slice(0, 80)).toString("latin1");
+    if (failReason) {
+      // 握手期内对端非协议态退出：给出明确根因，便于上层/用户定位（如文件不存在）
+      const reasonText: Record<string, string> = {
+        abort: `device cancelled with CAN×${HANDSHAKE_CAN_THRESHOLD}+ during handshake`,
+        garbage: `no ZMODEM header within ${HANDSHAKE_MAX_GARBAGE_BYTES}B of device output`,
+        "error-marker": `device-side rz/sz reported an error (e.g. file not found)`,
+        prompt: `device returned to shell prompt without entering ZMODEM`,
+      };
+      const why = reasonText[failReason] ?? failReason;
+      logger.warn(
+        `[zmodem] handshake failed (${why}), preBuffer=${preBuffer.length}B, preview=${JSON.stringify(preview)}`
+      );
+      throw new Error(
+        `ZMODEM handshake failed: ${why}. Device output preview: ${JSON.stringify(preview)}`
+      );
+    }
+    logger.warn(
+      `[zmodem] handshake timeout: no first frame from device within ${timeoutMs}ms, preBuffer=${preBuffer.length}B, preview=${JSON.stringify(preview)}`
+    );
     throw new Error(
       `ZMODEM handshake timeout: no first frame from device within ${timeoutMs}ms`
     );
@@ -414,10 +574,11 @@ export async function zmodemSend(
       /* ignore abort errors */
     }
   };
-  // 心跳定时器：会话建立后按 HEARTBEAT_INTERVAL_MS 节拍触发 onHeartbeat，
-  // 让上层 idle 计时器在握手阶段（transfer.end / session.close，无数据帧）
-  // 也能被重置，避免误杀。声明在 try 外便于 finally 统一清理。
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  // 心跳定时器句柄（门控心跳：不在握手期启动，见 startHeartbeat 说明）。
+  // 声明在 try 外便于 finally 统一清理。
+  const heartbeatHolder: { timer: ReturnType<typeof setInterval> | null } = {
+    timer: null,
+  };
 
   try {
     // 建链：establishSession 挂完字节旁路后发出 recvCmd（rz），
@@ -431,12 +592,8 @@ export async function zmodemSend(
     session = established.session as SendSession;
     detach = established.detach;
     opts?.signal?.addEventListener("abort", onAbort, { once: true });
-    // 启动心跳：覆盖整个会话生命周期（数据发送 + transfer.end + session.close），
-    // 让握手阶段的无数据间隙也能被 idle 计时器感知。
-    const heartbeat = opts?.onHeartbeat;
-    if (heartbeat) {
-      heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
-    }
+    // 注意：此处不再立即启动心跳（门控心跳）。握手期（send_offer）无心跳保护，
+    // 让 idle 计时器能抓到 rz 拒绝 offer / 卡死等握手期失败。
 
     // offer 参数归一化（mtime/size/serial 等由库补全）
     const offer = Zmodem.Validation.offer_parameters({
@@ -467,6 +624,10 @@ export async function zmodemSend(
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       transfer.send(Array.from(buf.values()));
       sent += buf.length;
+      // 门控心跳：首个数据块发出后才启动心跳。后续 transfer.end / session.close
+      // 等 ZEOF/ZFIN 握手阶段无数据帧，需要心跳防止 idle 误杀；而握手期
+      // （send_offer）无心跳，让 idle 能抓到 rz 拒绝/卡死。
+      startHeartbeat(opts?.onHeartbeat, heartbeatHolder);
       opts?.onProgress?.({ bytes: sent, total: size });
     }
 
@@ -518,7 +679,7 @@ export async function zmodemSend(
       error: errMsg,
     };
   } finally {
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (heartbeatHolder.timer) clearInterval(heartbeatHolder.timer);
     opts?.signal?.removeEventListener("abort", onAbort);
     // 仅在会话未干净结束时（ZFIN/OO 未完成）发 abort：让卡在协议态的设备端 rz 退出。
     // 成功时 rz 已干净退出、shell 回到提示符，再发 CAN×5+BS×5 反而破坏终端模式。
@@ -575,10 +736,11 @@ export async function zmodemReceive(
   // 但 resolve 会让代码误入"成功"返回路径（带着部分字节返回 success:true）。
   // 故 await sessionEnd 后检查此标志，置位则抛错强制走 catch（删残缺文件 + 返回失败）。
   let aborted = false;
-  // 心跳定时器：会话建立后按 HEARTBEAT_INTERVAL_MS 节拍触发 onHeartbeat，
-  // 让上层 idle 计时器在 session.start→offer 的间隙、ZFIN 握手阶段也能被重置，
-  // 避免慢启动 / 大文件首帧延迟被误判为"链路挂了"。声明在 try 外便于 finally 清理。
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  // 心跳定时器句柄（门控心跳：不在握手期启动，见 startHeartbeat 说明）。
+  // 声明在 try 外便于 finally 统一清理。
+  const heartbeatHolder: { timer: ReturnType<typeof setInterval> | null } = {
+    timer: null,
+  };
 
   try {
     // 建链：establishSession 挂完字节旁路后发出 sendCmd（sz xxx），
@@ -592,12 +754,9 @@ export async function zmodemReceive(
     session = established.session;
     detach = established.detach;
 
-    // 启动心跳：覆盖整个接收生命周期（session.start→offer 的间隙、数据接收、ZFIN 握手），
-    // 让上层 idle 计时器在这些无数据帧的阶段也能被重置。
-    const heartbeat = opts?.onHeartbeat;
-    if (heartbeat) {
-      heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
-    }
+    // 注意：此处不再立即启动心跳（门控心跳）。握手期（session.start→offer）无心跳保护，
+    // 让 idle 计时器能抓到 sz 报错退出 / 文件不存在 / offer 永不到达等握手期失败。
+    // 心跳在下方 offer 事件的 on_input（首个数据块到达）里启动。
 
     // session_end：所有文件收完、ZFIN 握手后、对端发 OO 时触发。
     // 只有这条路径才是干净结束，置 cleanEnded 让 finally 不再发 abort。
@@ -619,6 +778,10 @@ export async function zmodemReceive(
           const buf = Buffer.from(payload);
           writeStream?.write(buf);
           received += buf.length;
+          // 门控心跳：首个数据块到达后才启动。后续 ZEOF/ZFIN 握手阶段无数据帧，
+          // 需要心跳防止 idle 误杀；而握手期（等 offer）无心跳，让 idle 能抓到
+          // sz 报错退出 / offer 永不到达等失败。
+          startHeartbeat(opts?.onHeartbeat, heartbeatHolder);
           opts?.onProgress?.({ bytes: received, total: offerSize });
         },
       });
@@ -700,7 +863,7 @@ export async function zmodemReceive(
       error: errMsg,
     };
   } finally {
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (heartbeatHolder.timer) clearInterval(heartbeatHolder.timer);
     // 仅在会话未干净结束时（OO 未收到）发 abort：让卡在协议态的设备端 sz 退出。
     // 成功时 sz 已通过 ZFIN/OO 干净退出、shell 回到提示符，再发 CAN×5+BS×5 反而
     // 破坏终端模式。用 cleanEnded 而非 session.has_ended()——后者会被本地
