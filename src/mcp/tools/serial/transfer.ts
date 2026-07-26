@@ -32,7 +32,27 @@ const DEFAULT_IDLE_TIMEOUT_SEC = 15;
 /** @brief 空闲超时下限（秒），防止误设过小把正常慢传输误杀 */
 const IDLE_TIMEOUT_MIN_SEC = 3;
 
-/** @brief 进度日志节流间隔（毫秒），避免长传输刷屏 */
+/**
+ * @brief 上传进度日志的字节增量阈值
+ *
+ * 上传侧本地文件流是突发读取，208KB 文件会在几百毫秒内把所有 8KiB 块通过
+ * transfer.send 塞进 OS 发送缓冲，时间节流（即便 200ms）会让绝大多数 onProgress
+ * 被吞掉，整段传输只打出 1 条日志，看起来像卡死。字节增量节流则保证每
+ * LOG_PROGRESS_BYTES 字节稳定打一条，让日志真实反映"数据在持续交付给串口"。
+ *
+ * 取值 32KiB：8KiB 的整数倍（对齐 ZMODEM_CHUNK_SIZE），常见文件大小（KB~MB 级）
+ * 下能打出 3~N 条进度，既不刷屏也不至于静默。
+ */
+const LOG_PROGRESS_BYTES = 32 * 1024;
+
+/**
+ * @brief 下载进度日志的时间节流间隔（毫秒）
+ *
+ * 下载侧 on_input 由设备 sz 的数据帧到达触发，频率受串口实际速率限制（平滑，
+ * 非突发），时间节流本就工作良好（115200 波特率下约每 700ms 一条 onProgress，
+ * 1s 节流能稳定打出多条）。故下载侧沿用时间节流，不用字节增量——否则小文件
+ * （如 50KB < 2×32KiB）会退化到只打 1 条。
+ */
 const PROGRESS_LOG_THROTTLE_MS = 1000;
 
 /** @brief 关闭设备端 TTY 软件流控的命令（ZMODEM 前置：ixon/ixoff 会拦截 0x11/0x13 破坏协议帧） */
@@ -425,8 +445,8 @@ export async function serialUploadHandler(args: {
     idleTimeoutSec
   );
 
-  // 进度节流：每 PROGRESS_LOG_THROTTLE_MS 毫秒最多一条 logger
-  let lastLogAt = 0;
+  // 进度节流：按字节增量打印，避免本地突发读取下时间节流吞掉绝大部分日志
+  let lastLoggedBytes = 0;
   try {
     // recvCmd 由 zmodemSend→establishSession 挂完字节旁路后发出，
     // 确保设备 rz 回的 ZRINIT 进预缓冲区而非文本态
@@ -437,12 +457,11 @@ export async function serialUploadHandler(args: {
       {
         onProgress: (p) => {
           guard.touch(p.bytes); // 每次数据流动重置空闲计时
-          const now = Date.now();
-          if (now - lastLogAt >= PROGRESS_LOG_THROTTLE_MS) {
+          if (p.bytes - lastLoggedBytes >= LOG_PROGRESS_BYTES) {
             logger.info(
               `[serial_upload] progress ${p.bytes}/${p.total ?? "?"} bytes`
             );
-            lastLogAt = now;
+            lastLoggedBytes = p.bytes;
           }
         },
         // 心跳：握手/关闭阶段（transfer.end / session.close）无数据帧，
@@ -604,6 +623,7 @@ export async function serialDownloadHandler(args: {
 
   // 记录 offer 携带的总大小（来自设备 sz），供 overall-proceeding 给建议值
   let offerTotalSize = 0;
+  // 进度节流：下载侧 on_input 受串口速率限制（平滑非突发），时间节流本就工作良好
   let lastLogAt = 0;
   try {
     // sendCmd 由 zmodemReceive→establishSession 挂完字节旁路后发出
