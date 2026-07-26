@@ -100,12 +100,18 @@ const SESSION_END_TIMEOUT_MS = 5000;
  * 兜底：对端异常不回 ZFIN 时，close() 的 Promise 可能悬挂，故用 timeout 兜底，
  * 超时后由调用方的 finally 里 abortDeviceSession 强制中止。
  *
+ * abort 感知：若调用方传入 signal 且已被 abort（如传输超时），则立即以
+ * cleanEnded=false 返回，不再干等 SESSION_END_TIMEOUT_MS，让上层尽快进入
+ * catch/finally 发设备 abort。
+ *
  * @param session Send 会话对象
+ * @param signal 可选中止信号；已 abort 时立即返回未干净结束
  * @returns cleanEnded=true 表示 close() 正常 resolve（ZFIN/OO 握手完成）；
- *          false 表示超时兜底或 close 抛错，对端 rz 可能仍在等待，需 abort。
+ *          false 表示超时兜底、close 抛错或被 abort，对端 rz 可能仍在等待，需 abort。
  */
 function closeSessionWithTimeout(
-  session: SendSession
+  session: SendSession,
+  signal?: AbortSignal
 ): Promise<{ cleanEnded: boolean }> {
   return new Promise((resolve) => {
     let done = false;
@@ -113,9 +119,19 @@ function closeSessionWithTimeout(
       if (done) return;
       done = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       resolve({ cleanEnded: clean });
     };
+    // 已 abort 则立即返回（如传输超时已在别处触发 controller.abort）
+    const onAbort = (): void => finish(false);
     const timer = setTimeout(() => finish(false), SESSION_END_TIMEOUT_MS);
+    if (signal) {
+      if (signal.aborted) {
+        finish(false);
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
     try {
       // close() resolve（非 reject）才算干净结束；reject 视为未完成
       session.close().then(
@@ -129,6 +145,41 @@ function closeSessionWithTimeout(
 }
 
 // ── 内部辅助 ────────────────────────────────────────────────
+
+/**
+ * @brief 用 abort 信号竞速一个 Promise，使其在 abort 时立即 reject
+ *
+ * 上传路径中 transfer.end([]) / session.send_offer 等 zmodem.js 的 Promise
+ * 在 session.abort() 后可能既不 resolve 也不 reject（悬挂），导致超时 abort 后
+ * 整个传输永久卡死。本工具给这类 await 加一个 abort 出口：signal 一旦 abort，
+ * 立即 reject 抛错，让上层 catch 接管。
+ *
+ * @param p       原始 Promise
+ * @param signal  中止信号
+ * @return 原 Promise 的结果；signal abort 时 reject "Transfer aborted by signal"
+ */
+function raceAbort<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return p;
+  if (signal.aborted) {
+    return Promise.reject(new Error("Transfer aborted by signal"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      reject(new Error("Transfer aborted by signal"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      }
+    );
+  });
+}
 
 /**
  * @brief 在字节缓冲区中定位 ZMODEM 头的起始位置
@@ -174,13 +225,20 @@ function findZmodemHeaderStart(bytes: number[]): number {
  * 协议规定的中止方式是 CAN(0x18)×5 + BS(0x08)×5，lrzsz 识别后退出。
  * 用 rawWrite 发送原始字节以绕过文本态追加换行（换行会破坏序列语义）。
  *
+ * 关键：写完必须 drain。serialport.write() 异步，字节先进 OS 发送缓冲；
+ * 若不 drain，中止字节可能滞留缓冲未上线，设备端 rz/sz 收不到而卡死、
+ * shell 无响应（实测 Windows 串口驱动此现象明显，关端口重开才补发）。
+ *
  * 失败静默忽略：本函数在 finally 中调用，不应抛出掩盖原始错误。
  *
  * @param shell 已建立的串口会话
  */
 async function abortDeviceSession(shell: SerialShell): Promise<void> {
   try {
+    logger.info("[zmodem] sending CAN×5+BS×5 to abort device-side rz/sz");
     shell.rawWrite(ZMODEM_ABORT_SEQUENCE);
+    // drainPort 确保中止字节真正发出去（而非滞留 OS 发送缓冲），再等设备处理
+    await shell.drainPort();
     await new Promise((r) => setTimeout(r, ABORT_SETTLE_MS));
   } catch {
     /* 串口可能已关闭，忽略 */
@@ -220,7 +278,13 @@ async function establishSession(
   // 挂字节旁路：parse 前攒进 preBuffer，parse 后喂给 session.consume
   const detach = shell.attachRawReceiver((buf: Buffer) => {
     if (session) {
-      session.consume(Array.from(buf.values()));
+      // abort 后 session.consume 会抛 already_aborted；该回调由串口 data 事件触发，
+      // 抛错会逃出事件循环导致进程崩溃。吞掉：abort 已让主流程走 catch/finally。
+      try {
+        session.consume(Array.from(buf.values()));
+      } catch {
+        /* session 已 abort，忽略后续到达的字节 */
+      }
     } else {
       for (const b of buf.values()) preBuffer.push(b);
     }
@@ -317,6 +381,21 @@ export async function zmodemSend(
   // 不能用 session.has_ended() 判断——本地 session.abort() 会置 _aborted，
   // 使 has_ended() 返回 true，从而漏发 abortDeviceSession 导致设备端 rz 卡死。
   let cleanEnded = false;
+  // 已发送字节数（声明在 try 外，便于 catch/失败结果中如实报告已传字节，
+  // 让上层 overall-proceeding 文案能基于实测速率给出合理的 timeout 建议值）
+  let sent = 0;
+  // 中止信号监听：超时/外部 abort 时让 zmodem.js 进入 aborted 态，使其内部
+  // await 的 Promise（send_offer / transfer.end）尽快 reject，从而让本函数的
+  // 对应 await 抛错进入 catch。否则 abort 信号会在这些长 await 期间被丢弃
+  // （仅循环顶部的同步轮询覆盖不到 await 挂起期），导致上传超时彻底失效。
+  // 声明在 try 外，便于 finally 统一注销。
+  const onAbort = (): void => {
+    try {
+      session?.abort?.();
+    } catch {
+      /* ignore abort errors */
+    }
+  };
 
   try {
     // 建链：establishSession 挂完字节旁路后发出 recvCmd（rz），
@@ -329,6 +408,7 @@ export async function zmodemSend(
     );
     session = established.session as SendSession;
     detach = established.detach;
+    opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
     // offer 参数归一化（mtime/size/serial 等由库补全）
     const offer = Zmodem.Validation.offer_parameters({
@@ -337,15 +417,16 @@ export async function zmodemSend(
     });
 
     // 发送 offer，得到 Transfer 对象（对端回 ZRPOS 表示准备接收）
-    const transfer = await session.send_offer(offer);
+    // 用 raceAbort 兜底：abort 时 zmodem.js 的 send_offer Promise 可能悬挂，
+    // 需要主动 reject 让上层 catch 接管（否则超时后永久卡死）。
+    const transfer = await raceAbort(session.send_offer(offer), opts?.signal);
 
     // 若对端回 ZSKIP（拒绝），transfer 为 undefined
     if (!transfer) {
       throw new Error("Device refused the file offer (ZSKIP received)");
     }
 
-    // 流式读本地文件，分块发送
-    let sent = 0;
+    // 流式读本地文件，分块发送（sent 已在 try 外声明）
     const stream = createReadStream(localPath, {
       highWaterMark: ZMODEM_CHUNK_SIZE,
     });
@@ -365,15 +446,21 @@ export async function zmodemSend(
     // transfer.end 只完成单文件结束（发 ZEOF、等对端 ZRINIT），
     // 它不会发 ZFIN——若就此结束，对端 rz 会一直等 ZFIN，超时后发 CAN 中止会话，
     // 破坏终端模式、导致后续 shell 命令无响应（实测根因）。
-    await transfer.end([]);
+    // 用 raceAbort 兜底：abort 时 zmodem.js 的 end Promise 可能悬挂，
+    // 需要主动 reject 让上层 catch 接管（否则超时后永久卡死）。
+    await raceAbort(transfer.end([]), opts?.signal);
 
     // 关键：调 session.close() 发 ZFIN 关闭握手。
     // close() 内部：发 ZFIN → 等对端回 ZFIN → 发 OO（Over and Out）→ 触发 session_end。
     // 这是 ZMODEM 发送端干净退出的唯一方式；不调则对端必超时 abort。
     // 用 timeout 兜底：对端异常不回 ZFIN 时不再无限阻塞。
     // cleanEnded 仅在 close() 正常 resolve 时为 true（ZFIN/OO 握手完成）。
-    const closeResult = await closeSessionWithTimeout(session);
+    const closeResult = await closeSessionWithTimeout(session, opts?.signal);
     cleanEnded = closeResult.cleanEnded;
+    // close 返回后再次检查 abort：abort 兜底返回的 cleanEnded=false 不可当作成功。
+    if (opts?.signal?.aborted) {
+      throw new Error("Transfer aborted by signal");
+    }
 
     return {
       direction: "upload",
@@ -384,7 +471,8 @@ export async function zmodemSend(
       success: true,
     };
   } catch (err) {
-    // 中止/失败时发 ZMODEM abort 序列通知设备
+    // 中止/失败时让本地 zmodem.js 会话进入 aborted 态（onAbort 通常已先调过一次，
+    // 重复调用会抛 already_aborted，忽略即可）
     try {
       session?.abort?.();
     } catch {
@@ -396,12 +484,13 @@ export async function zmodemSend(
       direction: "upload",
       localPath,
       remotePath: remoteName,
-      bytes: 0,
+      bytes: sent,
       durationMs: Date.now() - start,
       success: false,
       error: errMsg,
     };
   } finally {
+    opts?.signal?.removeEventListener("abort", onAbort);
     // 仅在会话未干净结束时（ZFIN/OO 未完成）发 abort：让卡在协议态的设备端 rz 退出。
     // 成功时 rz 已干净退出、shell 回到提示符，再发 CAN×5+BS×5 反而破坏终端模式。
     // 用 cleanEnded 而非 session.has_ended()——后者会被本地 session.abort() 置位，
@@ -453,6 +542,10 @@ export async function zmodemReceive(
   // 不能用 session.has_ended() 判断——本地 session.abort() 会置 _aborted，
   // 使 has_ended() 返回 true，从而漏发 abortDeviceSession 导致设备端 sz 卡死。
   let cleanEnded = false;
+  // 是否被 abort 信号中止。onAbort 只 resolveEnd() 解除 sessionEnd 阻塞，
+  // 但 resolve 会让代码误入"成功"返回路径（带着部分字节返回 success:true）。
+  // 故 await sessionEnd 后检查此标志，置位则抛错强制走 catch（删残缺文件 + 返回失败）。
+  let aborted = false;
 
   try {
     // 建链：establishSession 挂完字节旁路后发出 sendCmd（sz xxx），
@@ -494,7 +587,10 @@ export async function zmodemReceive(
     // 中止信号监听：超时/外部 abort 时让 zmodem.js 进入 aborted 态并解除 sessionEnd 等待。
     // 注意此处不置 cleanEnded——abort 不是干净结束，finally 仍需发 abortDeviceSession
     // 让设备端 sz 退出（尽管 session.has_ended() 因 _aborted 已变 true，但那不代表 sz 退出）。
+    // 置 aborted 标志：resolveEnd 只是解除 await 阻塞，会让代码误入成功返回路径，
+    // 故 await sessionEnd 后据此标志抛错，强制走 catch 删残缺文件并返回失败。
     const onAbort = (): void => {
+      aborted = true;
       try {
         session?.abort?.();
       } catch {
@@ -516,6 +612,12 @@ export async function zmodemReceive(
     // 无需在此再包一层 setTimeout。
     await sessionEnd;
     opts?.signal?.removeEventListener("abort", onAbort);
+
+    // 若是被 abort 信号解除的（非干净结束），抛错走 catch：删除半写文件、
+    // 返回 success:false，避免拿着残缺文件误报 Download succeeded。
+    if (aborted) {
+      throw new Error("Transfer aborted by signal");
+    }
 
     // 等写入流刷盘
     if (writeStream) {
@@ -552,7 +654,7 @@ export async function zmodemReceive(
       direction: "download",
       localPath,
       remotePath: "(via sz)",
-      bytes: 0,
+      bytes: received,
       durationMs: Date.now() - start,
       success: false,
       error: errMsg,
@@ -562,7 +664,12 @@ export async function zmodemReceive(
     // 成功时 sz 已通过 ZFIN/OO 干净退出、shell 回到提示符，再发 CAN×5+BS×5 反而
     // 破坏终端模式。用 cleanEnded 而非 session.has_ended()——后者会被本地
     // session.abort() 置位，超时场景下会误判为"已结束"而漏发设备 abort。
-    if (!cleanEnded) {
+    //
+    // 注意：abort 时 zmodem.js 的 session.abort() 可能同步触发 session_end 事件，
+    // 导致 cleanEnded 被错误置为 true，故需额外检查 aborted 标志：
+    //   - aborted=true  → 即使是 abort 触发的 session_end，也强制发 abort
+    //   - aborted=false → 按 cleanEnded 判断
+    if (!cleanEnded || aborted) {
       await abortDeviceSession(shell);
     }
     detach?.();

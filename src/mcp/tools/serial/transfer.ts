@@ -23,8 +23,14 @@ import { zmodemSend, zmodemReceive } from "../../../services/zmodem/index.js";
 
 // ── 常量 ────────────────────────────────────────────────────
 
-/** @brief 默认传输超时（秒），覆盖大多数中等文件传输 */
+/** @brief 默认总时长超时（秒），作为防无限挂起的兜底，与文件大小无关 */
 const DEFAULT_TIMEOUT_SEC = 300;
+
+/** @brief 默认空闲超时（秒）：无数据流动超过此值即判定为真故障（链路/对端挂了），与文件大小无关 */
+const DEFAULT_IDLE_TIMEOUT_SEC = 15;
+
+/** @brief 空闲超时下限（秒），防止误设过小把正常慢传输误杀 */
+const IDLE_TIMEOUT_MIN_SEC = 3;
 
 /** @brief 进度日志节流间隔（毫秒），避免长传输刷屏 */
 const PROGRESS_LOG_THROTTLE_MS = 1000;
@@ -90,6 +96,189 @@ async function recoverShell(shell: {
   }
 }
 
+// ── 超时控制辅助 ────────────────────────────────────────────
+
+/**
+ * @brief 中止原因，决定最终返回给用户的文案语义
+ *
+ *   - idle                : 空闲超时触发（无数据流动）→ 判定为真故障，终止并报错
+ *   - overall-proceeding  : 总时长到点但传输仍在推进（idle 未触发）→ timeout 设得过小，给建议值
+ *   - overall-stalled      : 总时长到点且传输已停滞（兜底，正常应由 idle 先触发）
+ */
+type AbortReason = "idle" | "overall-proceeding" | "overall-stalled";
+
+/**
+ * @brief 传输超时守卫：同时管理空闲超时与总时长超时
+ *
+ * 两个超时共用同一个 AbortController：无论哪个先到点都调 controller.abort()
+ * 中止底层 zmodem 传输；用 abortReason 区分语义，供 handler 翻译成不同的返回文案。
+ *
+ *   - idleTimer：每收到一次进度（onProgress）就 reset()；超过 idleTimeoutSec 未重置
+ *                则判定真故障，置 abortReason="idle" 后 abort。
+ *   - overallTimer：从启动到 timeoutSec 到点。触发时看最近一次进度时间戳判断
+ *                传输是否仍在推进：仍在推进 → "overall-proceeding"（timeout 过小）；
+ *                否则 → "overall-stalled"。
+ *
+ * 调用方在 onProgress 里调 touch(bytes)；在 finally 里调 clear() 注销两个 timer。
+ *
+ * @param controller    共享的 AbortController
+ * @param timeoutSec    总时长秒数（overall）
+ * @param idleTimeoutSec 空闲秒数（idle）
+ * @return 守卫对象：reason() 取中止原因；touch(bytes) 进度时调用；
+ *         lastBytes() 取最后一次进度字节数；clear() 注销
+ */
+function createTransferTimeoutGuard(
+  controller: AbortController,
+  timeoutSec: number,
+  idleTimeoutSec: number
+): {
+  reason: () => AbortReason | null;
+  touch: (bytes: number) => void;
+  lastBytes: () => number;
+  clear: () => void;
+} {
+  let reason: AbortReason | null = null;
+  let lastProgressAt = Date.now();
+  let lastBytes = 0;
+
+  // 空闲定时器：可重置。到期 → 真故障
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const armIdle = (): void => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (!controller.signal.aborted) {
+        reason = "idle";
+        controller.abort();
+      }
+    }, idleTimeoutSec * 1000);
+  };
+
+  // 总时长定时器：到点看是否仍在推进
+  const overallTimer = setTimeout(() => {
+    if (controller.signal.aborted) return;
+    // 最近 idleTimeoutSec 内还有进度 → 仍在推进（timeout 设小了）
+    const proceeding = Date.now() - lastProgressAt < idleTimeoutSec * 1000;
+    reason = proceeding ? "overall-proceeding" : "overall-stalled";
+    controller.abort();
+  }, timeoutSec * 1000);
+
+  return {
+    reason: () => reason,
+    touch: (bytes: number): void => {
+      lastProgressAt = Date.now();
+      lastBytes = bytes;
+      armIdle();
+    },
+    lastBytes: () => lastBytes,
+    clear: (): void => {
+      clearTimeout(overallTimer);
+      if (idleTimer) clearTimeout(idleTimer);
+    },
+  };
+}
+
+/**
+ * @brief 规范化空闲超时秒数，强制不低于下限
+ *
+ * @param idle 用户传入的 idle_timeout
+ * @return 不小于 IDLE_TIMEOUT_MIN_SEC 的秒数
+ */
+function resolveIdleTimeoutSec(idle: number | undefined): number {
+  const v = idle ?? DEFAULT_IDLE_TIMEOUT_SEC;
+  return v < IDLE_TIMEOUT_MIN_SEC ? IDLE_TIMEOUT_MIN_SEC : v;
+}
+
+/**
+ * @brief 根据已传字节/耗时/总大小反推建议的总超时秒数
+ *
+ * overall-proceeding 场景下，用实测速率外推完整传输所需总时长，并留 30% 余量。
+ *
+ * @param bytes     已传输字节数
+ * @param durationMs 已耗时（毫秒）
+ * @param totalSize 文件总大小（字节）
+ * @return 建议的总超时秒数（向上取整，至少 DEFAULT_TIMEOUT_SEC 兜底）
+ */
+function suggestTimeoutSec(
+  bytes: number,
+  durationMs: number,
+  totalSize: number
+): number {
+  if (bytes <= 0 || durationMs <= 0 || totalSize <= 0) {
+    return DEFAULT_TIMEOUT_SEC;
+  }
+  const ratePerMs = bytes / durationMs;
+  if (ratePerMs <= 0) return DEFAULT_TIMEOUT_SEC;
+  // 完整传输预估耗时（毫秒）= 总大小 / 速率，留 30% 余量
+  const fullMs = (totalSize / ratePerMs) * 1.3;
+  return Math.max(Math.ceil(fullMs / 1000), 1);
+}
+
+/**
+ * @brief 根据中止原因生成面向用户的传输结果文本
+ *
+ *   - idle / overall-stalled：判定为真故障（链路/对端挂了），明确告知已终止、
+ *     设备端 rz/sz 已被中止序列退出、shell 已恢复。
+ *   - overall-proceeding：总时长到点但传输仍在推进，说明 timeout 设得过小；
+ *     基于实测速率给出建议值，提示用户调大 timeout 重试。
+ *
+ * @param reason       中止原因
+ * @param verb         "Upload" | "Download"
+ * @param localPath    本地路径
+ * @param remotePath   远端路径
+ * @param result       底层返回的传输结果（取 bytes/durationMs）
+ * @param timeoutSec   实际生效的总时长秒数
+ * @param idleTimeoutSec 实际生效的空闲秒数
+ * @param totalSize    文件总大小（字节）
+ * @return 多行文本摘要
+ */
+function formatAbortedSummary(
+  reason: AbortReason,
+  verb: "Upload" | "Download",
+  localPath: string,
+  remotePath: string,
+  result: { bytes: number; durationMs: number },
+  timeoutSec: number,
+  idleTimeoutSec: number,
+  totalSize: number
+): string {
+  const lines = [`${verb} failed`];
+  lines.push(`  local : ${localPath}`);
+  lines.push(`  remote: ${remotePath}`);
+
+  if (reason === "overall-proceeding") {
+    const suggested = suggestTimeoutSec(
+      result.bytes,
+      result.durationMs,
+      totalSize
+    );
+    const rate =
+      result.durationMs > 0
+        ? `${(((result.bytes / result.durationMs) * 1000) / 1024).toFixed(2)} KB/s`
+        : "N/A";
+    lines.push(
+      `  error : Reached overall timeout (${timeoutSec}s) while transfer was still progressing (~${rate}).`
+    );
+    lines.push(
+      `         The file is incomplete (${result.bytes}/${totalSize} bytes).`
+    );
+    lines.push(
+      `         Retry with timeout >= ${suggested}s (or rely on the default ${DEFAULT_TIMEOUT_SEC}s).`
+    );
+    lines.push(
+      `         Device-side rz/sz has been stopped and shell recovered.`
+    );
+  } else {
+    // idle 或 overall-stalled：真故障
+    lines.push(
+      `  error : No data flow for ${idleTimeoutSec}s — likely a link or device failure.`
+    );
+    lines.push(
+      `         Transfer aborted. Device-side rz/sz has been stopped and shell recovered.`
+    );
+  }
+  return lines.join("\n");
+}
+
 // ── serial_upload ───────────────────────────────────────────
 
 /**
@@ -98,24 +287,28 @@ async function recoverShell(shell: {
  * 将本地二进制文件上传到设备端，复用已有串口会话。
  * 设备端需安装 lrzsz（rz 命令）。
  *
- * @param session_id  由 serial_open 返回的会话 ID
- * @param local_path  本地源文件路径
- * @param remote_name 远端文件名（默认取 local_path basename）
- * @param remote_dir  远端目录提示（仅提示用，rz 默认写当前目录）
- * @param recv_cmd    设备端接收命令（默认 "rz"，可传 "rz -e" 等）
- * @param timeout     超时秒数（默认 300）
+ * @param session_id    由 serial_open 返回的会话 ID
+ * @param local_path    本地源文件路径
+ * @param remote_name   远端文件名（默认取 local_path basename）
+ * @param remote_dir    远端目录提示（仅提示用，rz 默认写当前目录）
+ * @param recv_cmd      设备端接收命令（默认 "rz"，可传 "rz -e" 等）
+ * @param idle_timeout  空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15）
+ * @param timeout       总时长超时秒数，兜底防无限挂起（默认 300）
  */
 export const serialUploadConfig = {
   description:
     "Upload a binary file to the device over ZMODEM via an existing serial session. " +
     "The device must have lrzsz installed (rz command). " +
-    "Blocks until transfer completes, fails, or times out; progress is logged to stderr.",
+    "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
+    "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
+    "timeout caps total duration and reports a suggested value if still progressing.",
   inputSchema: fromJsonSchema<{
     session_id: string;
     local_path: string;
     remote_name?: string;
     remote_dir?: string;
     recv_cmd?: string;
+    idle_timeout?: number;
     timeout?: number;
   }>({
     type: "object",
@@ -143,9 +336,18 @@ export const serialUploadConfig = {
         description:
           "Device receive command (default: 'rz'). e.g. 'rz -e' to escape control chars",
       },
+      idle_timeout: {
+        type: "number",
+        description:
+          "Idle timeout in seconds: if no data flows for this long, the transfer is treated as a real failure " +
+          "(link/device stalled) and aborted. Independent of file size (default: 15, min: 3).",
+      },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 300)",
+        description:
+          "Overall timeout in seconds as a safety cap against indefinite hangs (default: 300). " +
+          "If reached while the transfer is still progressing (no idle), reports the timeout as too small " +
+          "with a suggested value instead of silently truncating.",
       },
     },
     required: ["session_id", "local_path"],
@@ -172,10 +374,13 @@ export async function serialUploadHandler(args: {
   remote_name?: string;
   remote_dir?: string;
   recv_cmd?: string;
+  idle_timeout?: number;
   timeout?: number;
 }): Promise<{ content: { type: "text"; text: string }[] }> {
+  const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
+  const idleTimeoutSec = resolveIdleTimeoutSec(args.idle_timeout);
   logger.info(
-    `[serial_upload] session_id=${args.session_id} local=${args.local_path} remote_name=${args.remote_name ?? "(auto)"} recv_cmd=${args.recv_cmd ?? "(default rz)"} timeout=${args.timeout ?? DEFAULT_TIMEOUT_SEC}`
+    `[serial_upload] session_id=${args.session_id} local=${args.local_path} remote_name=${args.remote_name ?? "(auto)"} recv_cmd=${args.recv_cmd ?? "(default rz)"} timeout=${timeoutSec} idle_timeout=${idleTimeoutSec}`
   );
 
   const lookup = serialStore.getOrNotFound(args.session_id);
@@ -184,9 +389,10 @@ export async function serialUploadHandler(args: {
   }
   const shell = lookup.shell;
 
-  // 本地文件存在性校验
+  // 本地文件存在性校验（同时取总大小，供 overall-proceeding 给建议值）
+  let totalSize: number;
   try {
-    await stat(args.local_path);
+    totalSize = (await stat(args.local_path)).size;
   } catch (err) {
     const msg = `Local file not found: ${args.local_path} (${err instanceof Error ? err.message : String(err)})`;
     logger.warn(`[serial_upload] ${msg}`);
@@ -199,10 +405,13 @@ export async function serialUploadHandler(args: {
   // ZMODEM 前置：关闭设备端软件流控，避免 XON/XOFF 拦截协议字节
   await disableFlowControl(shell);
 
-  // 超时控制：timeout 秒后 abort
+  // 超时控制：空闲超时（真故障）+ 总时长超时（兜底），共用 AbortController
   const controller = new AbortController();
-  const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
-  const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  const guard = createTransferTimeoutGuard(
+    controller,
+    timeoutSec,
+    idleTimeoutSec
+  );
 
   // 进度节流：每 PROGRESS_LOG_THROTTLE_MS 毫秒最多一条 logger
   let lastLogAt = 0;
@@ -215,6 +424,7 @@ export async function serialUploadHandler(args: {
       remoteName,
       {
         onProgress: (p) => {
+          guard.touch(p.bytes); // 每次数据流动重置空闲计时
           const now = Date.now();
           if (now - lastLogAt >= PROGRESS_LOG_THROTTLE_MS) {
             logger.info(
@@ -231,10 +441,32 @@ export async function serialUploadHandler(args: {
     logger.info(
       `[serial_upload] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
     );
+
+    // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）
+    const reason = guard.reason();
+    if (!result.success && reason) {
+      return {
+        content: [
+          text(
+            formatAbortedSummary(
+              reason,
+              "Upload",
+              args.local_path,
+              remoteName,
+              { bytes: result.bytes, durationMs: result.durationMs },
+              timeoutSec,
+              idleTimeoutSec,
+              totalSize
+            )
+          ),
+        ],
+      };
+    }
     return { content: [text(formatTransferSummary(result))] };
   } finally {
-    clearTimeout(timer);
-    // ZMODEM 结束后恢复 shell 到正常提示符状态（rz 退出后 shell 可能停在异常终端态）
+    guard.clear();
+    // ZMODEM 结束后恢复 shell 到正常提示符状态（rz 退出后 shell 可能停在异常终端态）。
+    // 超时/异常时底层 finally 已发 CAN×5+BS×5 让设备端 rz 退出，此处排空缓冲恢复提示符。
     await recoverShell(shell);
   }
 }
@@ -247,22 +479,26 @@ export async function serialUploadHandler(args: {
  * 将远端文件从设备下载到本地，复用已有串口会话。
  * 设备端需安装 lrzsz（sz 命令）。
  *
- * @param session_id  由 serial_open 返回的会话 ID
- * @param remote_path 远端源文件路径
- * @param local_path  本地目标文件路径
- * @param send_cmd    设备端发送命令模板（默认 "sz {remote}"，{remote} 替换为 remote_path）
- * @param timeout     超时秒数（默认 300）
+ * @param session_id    由 serial_open 返回的会话 ID
+ * @param remote_path   远端源文件路径
+ * @param local_path    本地目标文件路径
+ * @param send_cmd      设备端发送命令模板（默认 "sz {remote}"，{remote} 替换为 remote_path）
+ * @param idle_timeout  空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15）
+ * @param timeout       总时长超时秒数，兜底防无限挂起（默认 300）
  */
 export const serialDownloadConfig = {
   description:
     "Download a binary file from the device over ZMODEM via an existing serial session. " +
     "The device must have lrzsz installed (sz command). " +
-    "Blocks until transfer completes, fails, or times out; progress is logged to stderr.",
+    "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
+    "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
+    "timeout caps total duration and reports a suggested value if still progressing.",
   inputSchema: fromJsonSchema<{
     session_id: string;
     remote_path: string;
     local_path: string;
     send_cmd?: string;
+    idle_timeout?: number;
     timeout?: number;
   }>({
     type: "object",
@@ -284,9 +520,18 @@ export const serialDownloadConfig = {
         description:
           "Device send command template (default: 'sz {remote}'). {remote} is replaced by remote_path",
       },
+      idle_timeout: {
+        type: "number",
+        description:
+          "Idle timeout in seconds: if no data flows for this long, the transfer is treated as a real failure " +
+          "(link/device stalled) and aborted. Independent of file size (default: 15, min: 3).",
+      },
       timeout: {
         type: "number",
-        description: "Timeout in seconds (default: 300)",
+        description:
+          "Overall timeout in seconds as a safety cap against indefinite hangs (default: 300). " +
+          "If reached while the transfer is still progressing (no idle), reports the timeout as too small " +
+          "with a suggested value instead of silently truncating.",
       },
     },
     required: ["session_id", "remote_path", "local_path"],
@@ -310,10 +555,13 @@ export async function serialDownloadHandler(args: {
   remote_path: string;
   local_path: string;
   send_cmd?: string;
+  idle_timeout?: number;
   timeout?: number;
 }): Promise<{ content: { type: "text"; text: string }[] }> {
+  const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
+  const idleTimeoutSec = resolveIdleTimeoutSec(args.idle_timeout);
   logger.info(
-    `[serial_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path} send_cmd=${args.send_cmd ?? "(default sz)"} timeout=${args.timeout ?? DEFAULT_TIMEOUT_SEC}`
+    `[serial_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path} send_cmd=${args.send_cmd ?? "(default sz)"} timeout=${timeoutSec} idle_timeout=${idleTimeoutSec}`
   );
 
   const lookup = serialStore.getOrNotFound(args.session_id);
@@ -331,10 +579,16 @@ export async function serialDownloadHandler(args: {
   // ZMODEM 前置：关闭设备端软件流控，避免 XON/XOFF 拦截协议字节
   await disableFlowControl(shell);
 
+  // 超时控制：空闲超时（真故障）+ 总时长超时（兜底），共用 AbortController
   const controller = new AbortController();
-  const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
-  const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  const guard = createTransferTimeoutGuard(
+    controller,
+    timeoutSec,
+    idleTimeoutSec
+  );
 
+  // 记录 offer 携带的总大小（来自设备 sz），供 overall-proceeding 给建议值
+  let offerTotalSize = 0;
   let lastLogAt = 0;
   try {
     // sendCmd 由 zmodemReceive→establishSession 挂完字节旁路后发出
@@ -343,6 +597,10 @@ export async function serialDownloadHandler(args: {
       args.local_path,
       {
         onProgress: (p) => {
+          if (typeof p.total === "number" && p.total > 0) {
+            offerTotalSize = p.total;
+          }
+          guard.touch(p.bytes); // 每次数据流动重置空闲计时
           const now = Date.now();
           if (now - lastLogAt >= PROGRESS_LOG_THROTTLE_MS) {
             logger.info(
@@ -359,10 +617,33 @@ export async function serialDownloadHandler(args: {
     logger.info(
       `[serial_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
     );
+
+    // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）。
+    // 注意：底层 zmodemReceive 在 abort 时已删除残缺本地文件，此处只负责文案。
+    const reason = guard.reason();
+    if (!result.success && reason) {
+      return {
+        content: [
+          text(
+            formatAbortedSummary(
+              reason,
+              "Download",
+              args.local_path,
+              args.remote_path,
+              { bytes: result.bytes, durationMs: result.durationMs },
+              timeoutSec,
+              idleTimeoutSec,
+              offerTotalSize
+            )
+          ),
+        ],
+      };
+    }
     return { content: [text(formatTransferSummary(result))] };
   } finally {
-    clearTimeout(timer);
-    // ZMODEM 结束后恢复 shell 到正常提示符状态
+    guard.clear();
+    // ZMODEM 结束后恢复 shell 到正常提示符状态。
+    // 超时/异常时底层 finally 已发 CAN×5+BS×5 让设备端 sz 退出，此处排空缓冲恢复提示符。
     await recoverShell(shell);
   }
 }

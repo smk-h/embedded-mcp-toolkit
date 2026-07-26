@@ -105,6 +105,32 @@ export class SerialShell extends BaseShell {
   }
 
   /**
+   * @brief 等待串口发送缓冲区排空（OS 层 drain）
+   *
+   * 与基类 drain()（排空文本态 OutputBuffer，返回 string）不同，本方法操作
+   * 底层 serialport 的 OS 发送缓冲。serialport.write() 是异步的：字节先进 OS
+   * 发送缓冲，未必立即上线。ZMODEM 中止序列（CAN×5+BS×5）必须在设备还活着
+   * 时尽快送达，否则设备端 rz/sz 卡死、shell 无响应。本方法确保字节真正发出。
+   *
+   * @return Promise，resolve 表示发送缓冲已排空（或串口已关/不支持 drain）
+   */
+  drainPort(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.#serialPort || !this.#serialPort.isOpen) {
+        resolve();
+        return;
+      }
+      this.#serialPort.drain((err) => {
+        // drain 失败不阻断中止流程（finally 里调用，不应抛错）
+        if (err) {
+          /* 忽略 drain 错误 */
+        }
+        resolve();
+      });
+    });
+  }
+
+  /**
    * @brief 挂载 / 卸载原始字节接收回调
    *
    * 挂载后（cb 非空），串口 data 事件改为"双写"：
