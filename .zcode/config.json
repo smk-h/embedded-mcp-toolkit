@@ -4,9 +4,8 @@
       "embedded-board": {
         "type": "stdio",
         "command": "node",
-        "args": [
-          "./bin/embedded-mcp-toolkit-cli.js"
-        ],
+        "args": ["./bin/embedded-mcp-toolkit-cli.js"],
+        "timeoutMs": 600000,
         "env": {
           "DEVICE": "board-b",
           "BOARD_CONFIG_PATH": "./.embedded/configs/config.yaml",
