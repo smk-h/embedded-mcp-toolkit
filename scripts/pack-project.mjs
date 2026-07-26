@@ -41,6 +41,9 @@ const PKG_DIR = `embedded-mcp-toolkit-${VERSION}-offline`;
 /** 临时目录（项目内 .embedded/tmp） */
 const TMP_DIR = path.join(PROJECT_ROOT, '.embedded', 'tmp');
 
+/** 离线包中需要排除的文件（相对于项目根目录） */
+const EXCLUDE_FILES = ['.claude/ccstatusline-settings.json', 'LICENSE', 'package-lock.json'];
+
 /** 输出 zip 路径 */
 const OUTPUT_FILE = path.join(PROJECT_ROOT, `${PKG_DIR}.zip`);
 
@@ -53,6 +56,55 @@ const SKIP_DIRS = new Set(['node_modules', '.git']);
 function isGeneratedArchive(name) {
   return name.endsWith('.tgz') || name.endsWith('.zip');
 }
+
+/** 清理 MCP 配置文件中的指定服务器 */
+function stripMcpServerConfig(bundleDir, relPaths, names) {
+  for (const relPath of relPaths) {
+    const filePath = path.join(bundleDir, relPath);
+    if (!fs.existsSync(filePath)) continue;
+
+    const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    let modified = false;
+
+    /* 从 mcpServers 中移除 */
+    if (content.mcpServers) {
+      for (const name of names) {
+        if (content.mcpServers[name]) {
+          delete content.mcpServers[name];
+          modified = true;
+        }
+      }
+    }
+
+    /* 从 enabledMcpjsonServers 数组中移除 */
+    if (content.enabledMcpjsonServers) {
+      const orig = content.enabledMcpjsonServers;
+      content.enabledMcpjsonServers = orig.filter(s => !names.includes(s));
+      if (content.enabledMcpjsonServers.length !== orig.length) modified = true;
+    }
+
+    /* 移除顶层 statusLine */
+    if (content.statusLine && names.includes('statusLine')) {
+      delete content.statusLine;
+      modified = true;
+    }
+
+    if (modified) {
+      fs.writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n');
+      console.log(`  已清理 ${relPath}`);
+    }
+  }
+}
+
+/** 需要从 MCP 配置中移除的服务器名称 */
+const STRIP_MCP_SERVERS = ['file_utils_remote', 'statusLine'];
+
+/** 需要搜索的 MCP 配置文件 */
+const MCP_CONFIG_FILES = [
+  '.claude/settings.local.json',
+  '.opencode/opencode.json',
+  '.mcp.json',
+];
 
 /* ────────── 主流程 ────────── */
 function main() {
@@ -73,6 +125,8 @@ function main() {
   const packFiles = new Set(
     packInfo[0].files.map(f => f.path)
   );
+  /* 排除离线包不需要的文件 */
+  for (const f of EXCLUDE_FILES) packFiles.delete(f);
 
   /* 3. 在系统临时目录搭建离线包 */
   fs.mkdirSync(TMP_DIR, { recursive: true });
@@ -102,6 +156,16 @@ function main() {
     /* 3d. 清理 devDependencies，只保留生产依赖 */
     console.log('\n清理 devDependencies...');
     execSync('npm prune --omit=dev', { cwd: bundleDir, stdio: 'inherit' });
+
+    /* 3e. 清理离线包不需要的文件（prune 用完后删除 package-lock.json） */
+    const lockDst = path.join(bundleDir, 'package-lock.json');
+    if (fs.existsSync(lockDst)) {
+      fs.rmSync(lockDst);
+    }
+
+    /* 3f. 清理 MCP 配置中的敏感服务器 */
+    console.log('\n清理 MCP 配置...');
+    stripMcpServerConfig(bundleDir, MCP_CONFIG_FILES, STRIP_MCP_SERVERS);
 
     /* 4. 打包为 zip */
     console.log('\n创建 zip 压缩包...');
