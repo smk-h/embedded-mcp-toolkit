@@ -62,8 +62,16 @@ export interface ZmodemProgress {
  * @brief ZMODEM 传输的可选参数
  */
 export interface ZmodemTransferOptions {
-  /** 进度回调，传输过程中按块频率触发 */
+  /** 进度回调，传输过程中按块频率触发（仅数据帧到达/发出时） */
   onProgress?: (p: ZmodemProgress) => void;
+  /**
+   * 心跳回调，整个传输生命周期内按固定节拍触发（含数据发送、握手、关闭阶段）。
+   *
+   * 用途：让上层 idle 计时器在"无数据但协议正在推进"的阶段（如
+   * transfer.end 等 ZEOF/ZRINIT、session.close 等 ZFIN/OO）也能感知活动，
+   * 避免握手阶段被 idle 超时误杀。仅刷新时间戳，不增加字节数。
+   */
+  onHeartbeat?: () => void;
   /** 中止信号；abort 后立即停止 ZMODEM 会话并返回失败结果 */
   signal?: AbortSignal;
 }
@@ -78,6 +86,16 @@ const HANDSHAKE_POLL_MS = 100;
 
 /** @brief 等待设备端首帧的总超时（rz/sz 启动后应很快发首帧） */
 const HANDSHAKE_TIMEOUT_MS = 5000;
+
+/**
+ * @brief 心跳节拍（毫秒），用于驱动上层 idle 计时器的握手阶段刷新
+ *
+ * 数据帧到达/发出会触发 onProgress（touch 字节）；但 transfer.end / session.close
+ * 等握手阶段无数据帧，onProgress 不触发，idle 计时器持续运行会被误判为"链路挂了"。
+ * 故在会话建立后按此节拍触发 onHeartbeat，让上层 idle 重置时间戳（不增加字节）。
+ * 节拍需明显小于 idle 超时窗口（默认 15s），500ms 足以覆盖最长握手间隙。
+ */
+const HEARTBEAT_INTERVAL_MS = 500;
 
 /** @brief ZMODEM 标准中止序列：CAN(0x18)×5 + BS(0x08)×5，lrzsz 收到后会退出接收/发送态 */
 const ZMODEM_ABORT_SEQUENCE = Buffer.from([
@@ -396,6 +414,10 @@ export async function zmodemSend(
       /* ignore abort errors */
     }
   };
+  // 心跳定时器：会话建立后按 HEARTBEAT_INTERVAL_MS 节拍触发 onHeartbeat，
+  // 让上层 idle 计时器在握手阶段（transfer.end / session.close，无数据帧）
+  // 也能被重置，避免误杀。声明在 try 外便于 finally 统一清理。
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   try {
     // 建链：establishSession 挂完字节旁路后发出 recvCmd（rz），
@@ -409,6 +431,12 @@ export async function zmodemSend(
     session = established.session as SendSession;
     detach = established.detach;
     opts?.signal?.addEventListener("abort", onAbort, { once: true });
+    // 启动心跳：覆盖整个会话生命周期（数据发送 + transfer.end + session.close），
+    // 让握手阶段的无数据间隙也能被 idle 计时器感知。
+    const heartbeat = opts?.onHeartbeat;
+    if (heartbeat) {
+      heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
+    }
 
     // offer 参数归一化（mtime/size/serial 等由库补全）
     const offer = Zmodem.Validation.offer_parameters({
@@ -490,6 +518,7 @@ export async function zmodemSend(
       error: errMsg,
     };
   } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     opts?.signal?.removeEventListener("abort", onAbort);
     // 仅在会话未干净结束时（ZFIN/OO 未完成）发 abort：让卡在协议态的设备端 rz 退出。
     // 成功时 rz 已干净退出、shell 回到提示符，再发 CAN×5+BS×5 反而破坏终端模式。
@@ -546,6 +575,10 @@ export async function zmodemReceive(
   // 但 resolve 会让代码误入"成功"返回路径（带着部分字节返回 success:true）。
   // 故 await sessionEnd 后检查此标志，置位则抛错强制走 catch（删残缺文件 + 返回失败）。
   let aborted = false;
+  // 心跳定时器：会话建立后按 HEARTBEAT_INTERVAL_MS 节拍触发 onHeartbeat，
+  // 让上层 idle 计时器在 session.start→offer 的间隙、ZFIN 握手阶段也能被重置，
+  // 避免慢启动 / 大文件首帧延迟被误判为"链路挂了"。声明在 try 外便于 finally 清理。
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   try {
     // 建链：establishSession 挂完字节旁路后发出 sendCmd（sz xxx），
@@ -558,6 +591,13 @@ export async function zmodemReceive(
     );
     session = established.session;
     detach = established.detach;
+
+    // 启动心跳：覆盖整个接收生命周期（session.start→offer 的间隙、数据接收、ZFIN 握手），
+    // 让上层 idle 计时器在这些无数据帧的阶段也能被重置。
+    const heartbeat = opts?.onHeartbeat;
+    if (heartbeat) {
+      heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
+    }
 
     // session_end：所有文件收完、ZFIN 握手后、对端发 OO 时触发。
     // 只有这条路径才是干净结束，置 cleanEnded 让 finally 不再发 abort。
@@ -660,6 +700,7 @@ export async function zmodemReceive(
       error: errMsg,
     };
   } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     // 仅在会话未干净结束时（OO 未收到）发 abort：让卡在协议态的设备端 sz 退出。
     // 成功时 sz 已通过 ZFIN/OO 干净退出、shell 回到提示符，再发 CAN×5+BS×5 反而
     // 破坏终端模式。用 cleanEnded 而非 session.has_ended()——后者会被本地

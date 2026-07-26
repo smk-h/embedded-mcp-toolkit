@@ -113,18 +113,20 @@ type AbortReason = "idle" | "overall-proceeding" | "overall-stalled";
  * 两个超时共用同一个 AbortController：无论哪个先到点都调 controller.abort()
  * 中止底层 zmodem 传输；用 abortReason 区分语义，供 handler 翻译成不同的返回文案。
  *
- *   - idleTimer：每收到一次进度（onProgress）就 reset()；超过 idleTimeoutSec 未重置
- *                则判定真故障，置 abortReason="idle" 后 abort。
+ *   - idleTimer：每收到一次进度（onProgress）或心跳（onHeartbeat）就 reset()；
+ *                超过 idleTimeoutSec 未重置则判定真故障，置 abortReason="idle" 后 abort。
  *   - overallTimer：从启动到 timeoutSec 到点。触发时看最近一次进度时间戳判断
  *                传输是否仍在推进：仍在推进 → "overall-proceeding"（timeout 过小）；
  *                否则 → "overall-stalled"。
  *
- * 调用方在 onProgress 里调 touch(bytes)；在 finally 里调 clear() 注销两个 timer。
+ * 调用方在 onProgress 里调 touch(bytes)（数据帧）；在 onHeartbeat 里调 heartbeat()
+ * （握手/关闭阶段，只刷新时间戳不增字节，避免 ZEOF/ZFIN 握手被误判为链路挂了）；
+ * 在 finally 里调 clear() 注销定时器。
  *
  * @param controller    共享的 AbortController
  * @param timeoutSec    总时长秒数（overall）
  * @param idleTimeoutSec 空闲秒数（idle）
- * @return 守卫对象：reason() 取中止原因；touch(bytes) 进度时调用；
+ * @return 守卫对象：reason() 取中止原因；touch(bytes) / heartbeat() 活动时调用；
  *         lastBytes() 取最后一次进度字节数；clear() 注销
  */
 function createTransferTimeoutGuard(
@@ -134,6 +136,7 @@ function createTransferTimeoutGuard(
 ): {
   reason: () => AbortReason | null;
   touch: (bytes: number) => void;
+  heartbeat: () => void;
   lastBytes: () => number;
   clear: () => void;
 } {
@@ -141,7 +144,7 @@ function createTransferTimeoutGuard(
   let lastProgressAt = Date.now();
   let lastBytes = 0;
 
-  // 空闲定时器：可重置。到期 → 真故障
+  // 空闲定时器：可重置。touch / heartbeat 都会重置它；到期 → 真故障
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
   const armIdle = (): void => {
     if (idleTimer) clearTimeout(idleTimer);
@@ -162,11 +165,20 @@ function createTransferTimeoutGuard(
     controller.abort();
   }, timeoutSec * 1000);
 
+  // 启动时空闲计时器先 arm 一次，覆盖到首个数据/心跳之前的窗口
+  armIdle();
+
   return {
     reason: () => reason,
     touch: (bytes: number): void => {
       lastProgressAt = Date.now();
       lastBytes = bytes;
+      armIdle();
+    },
+    heartbeat: (): void => {
+      // 仅刷新时间戳（重置 idle + 为 overall-proceeding 判定提供"仍在推进"依据），
+      // 不增加字节数——握手/关闭阶段本就无数据帧，但协议确实在推进。
+      lastProgressAt = Date.now();
       armIdle();
     },
     lastBytes: () => lastBytes,
@@ -433,6 +445,9 @@ export async function serialUploadHandler(args: {
             lastLogAt = now;
           }
         },
+        // 心跳：握手/关闭阶段（transfer.end / session.close）无数据帧，
+        // 但协议在推进，靠此回调刷新 idle 时间戳，避免被误判为链路挂了。
+        onHeartbeat: () => guard.heartbeat(),
         signal: controller.signal,
       },
       recvCmd
@@ -609,6 +624,9 @@ export async function serialDownloadHandler(args: {
             lastLogAt = now;
           }
         },
+        // 心跳：握手/关闭阶段（session.start→offer 间隙、ZFIN 握手）无数据帧，
+        // 但协议在推进，靠此回调刷新 idle 时间戳，避免被误判为链路挂了。
+        onHeartbeat: () => guard.heartbeat(),
         signal: controller.signal,
       },
       sendCmd
