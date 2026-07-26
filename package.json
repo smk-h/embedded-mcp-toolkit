@@ -8,7 +8,7 @@
     "embedded-mcp-toolkit": "./bin/embedded-mcp-toolkit-cli.js"
   },
   "scripts": {
-    "build": "tsc && node scripts/minify.mjs",
+    "build": "tsc",
     "build:minify": "node scripts/minify.mjs",
     "clean": "rimraf out",
     "clean-log": "rimraf --glob ./.embedded/log/**/*.log",
@@ -26,7 +26,7 @@
     "pack:dry-run": "npm pack --dry-run",
     "pack:tgz": "npm pack",
     "pack:list": "tar -tzf smai-kit-embedded-mcp-toolkit-%npm_package_version%.tgz",
-    "pack:project": "node scripts/pack-project.cjs",
+    "pack:project": "node scripts/pack-project.mjs",
     "ccstatusline": "ccstatusline setup --config .claude/ccstatusline-settings.json",
     "win:node-list": "tasklist | findstr node.exe",
     "win:node-kill": "taskkill /f /im node.exe",

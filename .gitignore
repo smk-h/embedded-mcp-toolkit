@@ -34,6 +34,9 @@ out
 # ---- SSH 依赖与本地密钥 ----
 .embedded/ssh
 
+# ---- 项目打包的临时目录 ----
+.embedded/tmp
+
 # ---- Claude 本地设置（保留，纳入版本控制）----
 !.claude/settings.local.json
 
