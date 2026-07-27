@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="490" y="28" text-anchor="middle" font-size="17" font-weight="700" fill="#1F2933">MCP 三大角色与连接关系</text>
+
+  <!-- ===== MCP Host ===== -->
+  <rect x="40" y="50" width="900" height="230" rx="12" fill="#DCE9FB" stroke="#5B7CBA" stroke-width="1.5"/>
+  <text x="60" y="74" font-size="13" font-weight="700" fill="#2A4365">MCP Host — AI 应用（Claude Code / OpenCode / ZCode）</text>
+
+  <!-- LLM / Agent -->
+  <rect x="370" y="92" width="240" height="64" rx="8" fill="#C9DCF7" stroke="#5B7CBA"/>
+  <text x="490" y="116" text-anchor="middle" font-size="14" font-weight="700" fill="#1F2933">LLM / Agent</text>
+  <text x="490" y="138" text-anchor="middle" font-size="11" fill="#333">决定调用哪个工具、传什么参数</text>
+
+  <!-- Client 1 -->
+  <rect x="180" y="200" width="220" height="60" rx="8" fill="#FFFFFF" stroke="#5B7CBA"/>
+  <text x="290" y="224" text-anchor="middle" font-size="13" font-weight="700" fill="#1F2933">MCP Client</text>
+  <text x="290" y="244" text-anchor="middle" font-size="11" fill="#555">1:1 连接 Server · 收发 JSON-RPC</text>
+
+  <!-- Client 2 -->
+  <rect x="580" y="200" width="220" height="60" rx="8" fill="#FFFFFF" stroke="#5B7CBA"/>
+  <text x="690" y="224" text-anchor="middle" font-size="13" font-weight="700" fill="#1F2933">MCP Client</text>
+  <text x="690" y="244" text-anchor="middle" font-size="11" fill="#555">1:1 连接 Server · 收发 JSON-RPC</text>
+
+  <!-- ===== Curved connectors: Agent -> Clients ===== -->
+  <path d="M 430 156 Q 355 172 322 200" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M 550 156 Q 625 172 658 200" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="350" y="182" font-size="10" fill="#555">tools/call</text>
+  <text x="578" y="182" font-size="10" fill="#555">tools/call</text>
+
+  <!-- ===== Straight connectors: Client -> Server ===== -->
+  <line x1="290" y1="260" x2="290" y2="400" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="690" y1="260" x2="690" y2="400" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- stdio label (right of the left line) -->
+  <rect x="315" y="312" width="120" height="40" rx="6" fill="#FFFBE6" stroke="#E0B400"/>
+  <text x="375" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#5C4A00">stdio</text>
+  <text x="375" y="346" text-anchor="middle" font-size="10" fill="#5C4A00">本地子进程</text>
+
+  <!-- Streamable HTTP label (left of the right line) -->
+  <rect x="545" y="312" width="120" height="40" rx="6" fill="#FFFBE6" stroke="#E0B400"/>
+  <text x="605" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#5C4A00">Streamable HTTP</text>
+  <text x="605" y="346" text-anchor="middle" font-size="10" fill="#5C4A00">远程 · 流式回传</text>
+
+  <!-- JSON-RPC center note -->
+  <text x="490" y="335" text-anchor="middle" font-size="12" font-weight="700" fill="#7A5C00">JSON-RPC 2.0</text>
+  <text x="490" y="352" text-anchor="middle" font-size="10" fill="#7A5C00">数据层 · 与传输无关</text>
+
+  <!-- ===== Servers ===== -->
+  <!-- embedded (highlight) -->
+  <rect x="160" y="400" width="260" height="120" rx="10" fill="#FFE6A8" stroke="#D9A300" stroke-width="1.8"/>
+  <text x="290" y="426" text-anchor="middle" font-size="14" font-weight="700" fill="#5C3D00">embedded-mcp-toolkit</text>
+  <text x="290" y="446" text-anchor="middle" font-size="11" fill="#7A5C00">（本项目 · MCP Server）</text>
+  <line x1="180" y1="456" x2="400" y2="456" stroke="#D9A300" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="290" y="476" text-anchor="middle" font-size="11" fill="#5C3D00">串口 · SSH · ADB · PowerShell</text>
+  <text x="290" y="496" text-anchor="middle" font-size="10" fill="#7A5C00">实现 tools，响应 tools/call</text>
+
+  <!-- other server -->
+  <rect x="560" y="400" width="260" height="120" rx="10" fill="#DDF3E4" stroke="#6BAF7E" stroke-width="1.5"/>
+  <text x="690" y="426" text-anchor="middle" font-size="14" font-weight="700" fill="#1F4D2E">其他 MCP Server</text>
+  <text x="690" y="446" text-anchor="middle" font-size="11" fill="#3A6B4A">（独立进程）</text>
+  <line x1="580" y1="456" x2="800" y2="456" stroke="#6BAF7E" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="690" y="476" text-anchor="middle" font-size="11" fill="#1F4D2E">文件系统 · 数据库 · …</text>
+  <text x="690" y="496" text-anchor="middle" font-size="10" fill="#3A6B4A">同样以 tools 形式对外暴露</text>
+
+  <!-- bottom note -->
+  <text x="490" y="560" text-anchor="middle" font-size="12" fill="#333">每个 MCP Client 与一个 MCP Server 一一对应（1:1）；Host 内可同时管理多个 Client。</text>
+</svg>

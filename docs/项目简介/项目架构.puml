@@ -1,0 +1,94 @@
+@startuml 项目架构
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title Runtime Deployment Topology
+
+' ============================================================
+' Development Host (Windows PC) — Host process
+' ============================================================
+rectangle "**Development Host  (Windows PC)**" as PC {
+
+  rectangle "MCP Host  (Claude Code / OpenCode / ZCode)" as host #DCE9FB {
+    rectangle "LLM (Agent)\nedits source · runs tools" as llm
+    rectangle "MCP Client\n(1:1 per server)" as client
+    llm -right-> client : tools/call
+  }
+
+  rectangle "Z:\\ mounted share\n(file edit only — NOT via MCP)" as zdrive #FFFFFF
+  llm -down-> zdrive : read / write source tree
+
+  ' ----- stdio transport (官方术语：本地子进程通信) -----
+  rectangle "<b>stdio transport</b>   JSON-RPC 2.0\nhost spawns child + injects env (DEVICE, CONFIG_PATH, LOG_*)" as proc #FAFAFA;line:Dashed {
+  }
+
+  rectangle "embedded-mcp-toolkit\n(Node.js · MCP Server)\nChannels:  serial · ssh · adb · powershell" as server #DDF3E4
+
+  ' ----- 本机 ↔ 外部设备 -----
+  rectangle "本机 ↔ 外部设备   native libs / system calls" as osb #FAFAFA;line:Dashed {
+  }
+}
+
+client -down-> proc : spawn child
+proc -down-> server
+server -down-> osb
+
+' ============================================================
+' External targets — each channel controls concrete devices
+' (device names in parentheses match keys in config.yaml / devices/*.yaml)
+' ============================================================
+rectangle "Build Server\n(device: build-srv)" as build #FFF3D6 {
+  rectangle "① source code\n(edited via Z:\\ mount)" as buildsrc
+  rectangle "② cross-build\n(make / gcc ... via ssh)" as buildmake
+}
+
+rectangle "Embedded Linux Board\n(device: board-a / board-b)\naarch64 · sshd :22" as board
+rectangle "Serial Console\n(device: board-a / board-b)\nUART / U-Boot" as serial
+rectangle "Android device\n(device: android-1 / android-2)\nadb bridge" as android
+rectangle "Windows host OS\n(device: local)\nPowerShell" as winhost
+
+' ---- MCP server channels cross HOST OS boundary ----
+' Each channel connects to its own type of device
+osb -down-> buildmake : ssh :22 (run make)
+osb -down-> board     : ssh channel
+osb -down-> serial    : serial channel (COM)
+osb -down-> android   : adb channel (USB)
+osb -down-> winhost   : powershell channel (local)
+
+' ---- Z drive file sync: bypasses MCP, crosses HOST OS boundary only ----
+zdrive .down.> buildsrc : SMB / NFS sync
+
+' ---- deploy loop: build output flashed to the board ----
+build .down.> board : deploy / flash binary\n(via ssh / serial / adb channels)
+
+note right of board
+  <b>Channel vs Device are orthogonal</b>
+  Each transport (ssh / serial / adb)
+  connects its own type of target:
+    ssh   → Linux board (sshd)
+    serial→ UART / U-Boot console
+    adb   → Android device
+  A single board may expose several
+  channels simultaneously.
+end note
+
+@enduml
