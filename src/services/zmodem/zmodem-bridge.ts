@@ -808,7 +808,13 @@ export async function zmodemReceive(
     // offer 事件永不触发，对端 sz 收不到 ZRINIT 会超时发 CAN 中止（实测根因）。
     // 必须在 offer handler 注册之后调：start 发的 ZRINIT 会引来 sz 回 ZFILE，
     // ZFILE 触发 offer，handler 必须先就位。
-    await session.start();
+    // 用 raceAbort 兜底：abort 时 zmodem.js 的 start() Promise
+    // （_make_promise_for_between_files，只在 ZFILE/ZFIN 时 resolve）
+    // 既不 resolve 也不 reject——session.abort() 只置 _aborted 并触发 session_end
+    // 事件，不 reject 该 Promise。不兜底则 start() 永久悬挂，代码到不了
+    // await sessionEnd，idle/overall 两道超时全部失效（与 send_offer/transfer.end
+    // 同理；否则握手期失败会卡到 ~150s 才由上层兜底返回）。
+    await raceAbort(session.start(), opts?.signal);
 
     // 等 session_end：所有文件收完、ZFIN 握手后触发。
     // 超时由调用方传的 AbortSignal 兜底（超时 → onAbort → resolveEnd），
