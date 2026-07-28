@@ -196,33 +196,59 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `power_shell_list` | 列出所有活跃的 PowerShell 会话 | `列出 PowerShell 会话` / `当前有哪些 ps 会话` |
 | `power_shell_exec` | 向 PowerShell 发送命令并等待输出（write + delay + read） | `PowerShell 执行 ipconfig` / `用 ps 运行 xxx` |
 
-#### <a id="section_exec_timeout">5.6 重要机制：exec 的提示符检测与超时熔断</a>
+#### <a id="section_exec_timeout">5.6 重要机制：exec 的常驻命令识别与双超时策略</a>
 
-`serial_exec` / `ssh_shell_exec` / `adb_shell_exec` 这三个交互式 exec 工具，采用了**提示符检测 + 超时熔断**机制，用于解决 `logcat`、`top`、`ping` 等前台常驻命令执行后无法自行退出、污染后续操作的问题。
+`serial_exec` / `ssh_shell_exec` / `adb_shell_exec` 这三个交互式 exec 工具，采用了**提示符检测 + 分类超时**机制。核心思路：**普通命令靠提示符检测自然结束，常驻命令（ping/logcat/top 等永不返回提示符的）才默认套用短超时熔断**。
+
+【**常驻命令识别**】
+
+命令是否常驻按**首 token**（第一个空白/管道/重定向之前的命令名）判定。内置白名单（`config.yaml` 的 `execTimeout.residentCommands` 可扩展）：
+
+- A 类（首 token 命中即常驻）：`ping`、`ping6`、`logcat`、`top`、`htop`、`watch`、`strace`、`tcpdump`
+- B 类（首 token 命中且带 follow 参数才常驻）：`dmesg -w` / `--follow`、`journalctl -f` / `--follow`、`tail -f` / `-F` / `--follow`
+
+不在白名单中的命令按普通命令处理。
+
+【**两种超时策略**】
+
+| 命令类型 | 默认超时 | 超时动作 | 超时类型 | 语义 |
+|----------|---------|---------|---------|------|
+| 普通命令（瞬时/长命令） | 5 分钟（兜底） | ❌ **不发 Ctrl+C** | `fallback`（兜底超时） | 异常——提示符未匹配的安全阀，调用方应确认/手动终止 |
+| 常驻命令（ping/logcat/top...） | 10 秒（采样） | ✅ **发 Ctrl+C** | `sampling`（采样超时） | 中性——预期采样行为，输出已收集 |
 
 【**机制流程**】
 
-每条命令进入 exec 后：（1）**前置冲刷**清空缓冲区残留；（2）在 `maxDuration`（默认 10000ms）内**发送命令并轮询**读取输出；（3）**结束判定**——检测到 shell 提示符（Android `:/ $` / `:/ #`、Linux `$` / `#` / `>`、U-Boot `=>`，支持 `promptPattern` 覆盖）→ 立即返回；到 `maxDuration` 仍未检测到 → **自动发一次 Ctrl+C**（`\x03`）并返回 `[timed-out: collected Xms of output, Ctrl+C sent]`。
+每条命令进入 exec 后：（0）**常驻分类**——按白名单判定命令类型，选定超时时长与动作；（1）**前置冲刷**清空缓冲区残留；（2）在有效时长内**发送命令并轮询**读取输出；（3）**结束判定**——检测到 shell 提示符（Android `:/ $` / `:/ #`、Linux `$` / `#` / `>`、U-Boot `=>`，支持 `promptPattern` 覆盖）→ 立即返回 `timeoutKind=none`；超时未检测到 → 按命令类型分支：
 
-【**什么时候会发 Ctrl+C**】
+- **常驻命令**：发 Ctrl+C 终止（避免 ping/logcat 后台持续运行污染后续会话），返回 `timeoutKind=sampling`，末尾追加 `[采样超时: 已收集 Xms 输出，已发送 Ctrl+C 终止常驻命令]`
+- **普通命令**：不发 Ctrl+C（避免误杀可能已完成只是提示符没匹配的命令），返回 `timeoutKind=fallback`，末尾追加 `[兜底超时: 已收集 Xms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`
 
-| 命令类型 | 示例 | 是否发 Ctrl+C |
-|----------|------|---------------|
-| 瞬时命令 / 可完成的长命令 | `ls`、`getprop`、`sleep 5; echo done` | ❌ 不发（检测到提示符即返回） |
-| 前台常驻命令 | `logcat`、`top`、`ping` | ✅ 发（预期行为，取 N 秒采样） |
-| **对 Ctrl+C 敏感的长启动命令** | **`reboot`、烧写/刷机、固件升级** | ⚠️ **会发，可能破坏启动流程** |
+【**`maxDuration` 的作用范围**】
 
-> 熔断发 Ctrl+C 是**无条件的**——只要到时间没看到提示符就发。对 `logcat` 是好事（自动停），对 `reboot` 等长启动命令是灾难。**这类命令的正确用法见 [常见问题 3. 重启被中断？](#section_reboot_interrupted)。**
+`maxDuration` 参数只覆盖「执行时长」，**不改变超时后的动作**（是否发 Ctrl+C 始终由命令常驻性决定）：
 
-【**默认参数参考**】
+| 调用方式 | 命令类型 | 效果 |
+|---------|---------|------|
+| 不传 `maxDuration` | 常驻命令（ping） | 默认 10s 采样超时，发 Ctrl+C |
+| 不传 `maxDuration` | 普通命令（make） | 默认 5min 兜底超时，不发 Ctrl+C |
+| `maxDuration: 30000` | 常驻命令（ping） | 30s 采样超时，发 Ctrl+C（时长覆盖，动作不变） |
+| `maxDuration: 5000` | 普通命令（sleep） | 5s 兜底超时，不发 Ctrl+C（时长覆盖，动作不变） |
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `maxDuration` | 10000 (ms) | 最大执行时长，超过未检测到提示符则发 Ctrl+C |
-| `delay` | 1000 (ms) | 最小轮询持续时长（兼容旧语义，保证短命令也有输出） |
-| `pollInterval` | 200 (ms) | 轮询间隔（内部用，不暴露） |
+【**全局默认值（config.yaml 根层 `execTimeout`）**】
 
-> `[timed-out: ...]` 是**中性采样结果，不是异常**——对 `logcat` 取样、`top` 采样就是预期行为，AI 不应视为命令出错。
+```yaml
+# .embedded/configs/config.yaml
+execTimeout:
+  residentCommands:          # 常驻命令扩展名单（与内置白名单并集），留空仅用内置
+    - my_log_streamer
+  samplingTimeoutMs: 10000   # 常驻命令采样超时（ms），留空默认 10000
+  fallbackTimeoutMs: 300000  # 普通命令兜底超时（ms），留空默认 300000（5 分钟）
+```
+
+三项均为全局级，所有设备共享。设备级可覆盖（详见 [配置说明 execTimeout 段](#section_exec_config)）。
+
+> `[采样超时: ...]` 是**中性采样结果，不是异常**——对 `logcat` 取样、`top` 采样就是预期行为，AI 不应视为命令出错。`[兜底超时: ...]` 则提示调用方注意命令可能仍在运行。
+
 
 ## 二、配置说明
 
@@ -483,11 +509,27 @@ ssh:
   username: "root"        # 设备的用户名
   password: "root"        # 设备用户的登录密码
 serial:
-  port: "COM3"            # 串口的端号
-  baudRate: 115200        # 波特率
+	  port: "COM3"            # 串口的端号
+	  baudRate: 115200        # 波特率
 ```
 
-【**通道启用/禁用约定**】
+	【**全局 execTimeout 配置**】<a id="section_exec_config"></a>
+	
+	常驻命令识别、采样超时、兜底超时的**全局默认值**写在 `config.yaml` 根层的 `execTimeout` 子段，所有设备共享（设备级同名字段可覆盖）：
+	
+	```yaml
+	# config.yaml
+	default: board-b
+	execTimeout:
+	  residentCommands:          # 常驻命令扩展名单（首 token 精确匹配），与内置白名单并集；留空仅用内置
+	    - my_log_streamer
+	  samplingTimeoutMs: 10000   # 常驻命令采样超时（ms），留空默认 10000
+	  fallbackTimeoutMs: 300000  # 普通命令兜底超时（ms），留空默认 300000（5 分钟）
+	```
+	
+	> 设备级覆盖（写在 `devices/<设备名>.yaml` 根层，与 `adb`/`ssh`/`serial` 平级）：`samplingTimeoutMs` / `fallbackTimeoutMs` 设备级优先（覆盖全局），`residentCommands` 全局 ∪ 设备级并集。详见 [exec 超时机制](#section_exec_timeout)。
+	
+	【**通道启用/禁用约定**】
 
 | 通道 | 禁用取值 | 说明 |
 |------|---------|------|
@@ -651,3 +693,6 @@ serial_exec(session_id, command="reboot", maxDuration=120000)   ← 120 秒，�
 **如何提醒 AI**：在对话里直接说清楚，例如「执行 reboot 重启设备，**用 write 发送、用 read 轮询读取，不要用 exec**」，或「执行 reboot，**等待时间至少 120 秒**」。否则 AI 容易直接用 exec 的默认 10 秒超时，结果启动到一半被 Ctrl+C 中断。
 
 > 完整机制说明见 [5.6 重要机制：exec 的提示符检测与超时熔断](#section_exec_timeout)。
+
+> [!NOTE]
+> 在提交 [6066447](https://github.com/smk-h/embedded-mcp-toolkit/commit/6066447daad275a1e1bc5128d20018d8f0a224b3) 后，普通命令（包括 `reboot`）默认走 5 分钟兜底超时且**不再自动发 Ctrl+C**，旧版描述的超时被中断问题已修复。详见 [5.6 重要机制：exec 的常驻命令识别与双超时策略](#section_exec_timeout)。
