@@ -7,6 +7,11 @@ export function fail(name, detail) {
   if (detail) console.log(`    → ${detail}`);
 }
 
+export function skip(name, reason) {
+  console.log(`  ⊘ ${name}`);
+  if (reason) console.log(`    → ${reason}`);
+}
+
 export function assert(condition, name, detail) {
   if (condition) {
     pass(name);
