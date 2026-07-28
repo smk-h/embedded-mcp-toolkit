@@ -28,6 +28,73 @@ import { resolveAdbDeviceName } from "./device-resolver.js";
 const ADB_EXEC_TIMEOUT = 15000;
 
 /**
+ * @brief 将命令字符串按 shell 规则分词（识别引号，剥除包裹引号）
+ *
+ * 替代 command.split(/\s+/)。split(/\s+/) 不识别引号，会把带引号参数首尾的
+ * 字面双引号一并塞进 token，导致 spawnSync 把 '"X:\\...\\foo.so"' 作为单个
+ * argv 传给 adb —— adb 去找一个文件名带引号的文件，在 Windows 上报：
+ *   cannot stat '"X:\\...\\foo.so"': No such file or directory
+ *
+ * 规则（针对 ADB 场景裁剪，刻意不把反斜杠当转义符，以保留 Windows 路径）：
+ *   - 双引号/单引号成对包裹一段，作为一个 token，包裹引号被剥除；
+ *   - 引号外的空白为分隔符；连续空白、首尾空白被忽略；
+ *   - 反斜杠一律作为字面字符保留（Windows 路径如 X:\workspace 不被破坏）；
+ *   - 未闭合的引号：从该引号到字符串末尾整体作为一个 token 并保留该开引号，
+ *     不静默吞字符，便于从日志发现输入问题。
+ *
+ * @example
+ *   tokenizeCommand('push "X:\\workspace\\foo.so" /system/lib64/')
+ *     → ["push", "X:\\workspace\\foo.so", "/system/lib64/"]
+ *   tokenizeCommand("shell ls 'my dir'") → ["shell", "ls", "my dir"]
+ */
+function tokenizeCommand(command: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inQuote: '"' | "'" | null = null;
+  let hasToken = false; // current 是否已绑定到某个 token（区分连续空白与未开始）
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+
+    if (inQuote) {
+      if (ch === inQuote) {
+        inQuote = null; // 闭合：引号字符本身不入 token
+      } else {
+        current += ch; // 引号内一切照原样（含空格、反斜杠）
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inQuote = ch;
+      hasToken = true; // 即使引号内为空，也算开始了一个 token（支持空串参数）
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (hasToken) {
+        tokens.push(current);
+        current = "";
+        hasToken = false;
+      }
+      continue;
+    }
+
+    current += ch;
+    hasToken = true;
+  }
+
+  if (inQuote) {
+    // 未闭合：补回开引号，避免静默丢失字符
+    tokens.push(inQuote + current);
+  } else if (hasToken) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+/**
  * @brief 执行一次性 ADB 命令并返回合并后的输出
  *
  * 直接调用 adb 可执行文件，不依赖 PowerShell 或持久化 shell 会话。
@@ -246,7 +313,7 @@ export async function adbExecHandler(args: {
   if (serialNo) {
     cmdArgs.push("-s", serialNo);
   }
-  cmdArgs.push(...args.command.split(/\s+/));
+  cmdArgs.push(...tokenizeCommand(args.command));
 
   // 确定 finalDeviceName（仅用于日志归档与 deviceName 归位，不影响 execAdb 的 serialNo）
   // 三分支：显式传参用 args.device；config 绑定用 serialNo；自动发现现场扫一次 adb devices
