@@ -4,6 +4,7 @@ import { logger } from "../../../shared/logger.js";
 import { SSHShell, type SSHShellConfig } from "../../../transports/ssh.js";
 import {
   getPromptPattern,
+  getExecTimeoutConfig,
   getSSHConfig,
   getKeyProviderConfig,
   resolveDeviceName,
@@ -321,7 +322,7 @@ export const sshShellExecConfig = {
       maxDuration: {
         type: "number",
         description:
-          "Max execution time in ms before auto-interrupting with Ctrl+C (default: 10000)",
+          "Override execution duration in ms. Default varies by command type: resident commands (ping/logcat/top/...) 10000 (sampling, Ctrl+C sent on timeout), normal commands 300000 (5min fallback, no interrupt sent). Action on timeout still follows resident classification regardless of this value.",
       },
     },
     required: ["session_id", "command"],
@@ -332,10 +333,11 @@ export const sshShellExecConfig = {
  * @brief ssh_shell_exec 处理函数
  *
  * 通过 runExec 统一编排完成命令发送、轮询、提示符检测、超时熔断。
- * 常驻命令（top/ping）超过 maxDuration 自动熔断，返回中性 timed-out 标注。
+ * 常驻命令（top/ping）超时自动采样（发 Ctrl+C，返回采样超时标注）；
+ * 普通命令靠提示符检测返回，仅提示符未匹配时走兜底超时（不发 Ctrl+C，返回兜底超时标注）。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 delay、clear、maxDuration
- * @return MCP 响应，包含命令执行后的输出内容（熔断时追加 timed-out 标注）
+ * @return MCP 响应，包含命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
  */
 export async function sshShellExecHandler(args: {
   session_id: string;
@@ -360,6 +362,8 @@ export async function sshShellExecHandler(args: {
 
   const promptDetector = new PromptDetector(getPromptPattern(deviceName));
 
+  const execTimeoutConfig = getExecTimeoutConfig(deviceName);
+
   const sendCtrl = (key: ControlChar): void => {
     shell.write(CONTROL_CHAR_MAP[key], 1, false);
   };
@@ -373,13 +377,18 @@ export async function sshShellExecHandler(args: {
     promptDetector,
     sendCtrl,
     logPrefix: "[ssh_shell_exec]",
+    execTimeoutConfig,
   });
 
   let output = execResult.output;
-  if (execResult.timedOut) {
+  if (execResult.timeoutKind === "sampling") {
     output =
       (output ? output + "\n" : "") +
-      `[timed-out: collected ${execResult.elapsedMs}ms of output, Ctrl+C sent]`;
+      `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
+  } else if (execResult.timeoutKind === "fallback") {
+    output =
+      (output ? output + "\n" : "") +
+      `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
   }
 
   return { content: [text(output || "(no output)")] };

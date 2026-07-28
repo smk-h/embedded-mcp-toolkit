@@ -5,6 +5,7 @@ import { logger } from "./logger.js";
 import type { SSHShellConfig } from "../transports/ssh.js";
 import type { SerialShellConfig } from "../transports/serial.js";
 import type { KeyProviderConfig } from "../services/key-provider.js";
+import type { ExecTimeoutConfig } from "../mcp/shared/exec-runner.js";
 
 /** KeyProvider 配置片段（YAML 中可选项） */
 interface KeyProviderYaml {
@@ -30,6 +31,9 @@ export interface UbootYaml {
 
 interface DeviceConfig {
   promptPattern?: string; // exec 提示符检测正则，覆盖默认正则；留空用 PromptDetector.DEFAULT_PATTERN
+  residentCommands?: readonly string[]; // 常驻命令扩展名单（首 token 精确匹配），三通道共享，与内置白名单并集；留空仅用内置白名单
+  samplingTimeoutMs?: number; // 采样超时（毫秒），常驻命令用，留空默认 10000
+  fallbackTimeoutMs?: number; // 兜底超时（毫秒），普通命令用，留空默认 300000（5 分钟）
   adb?: {
     serialNo?: string; // ADB 设备序列号，留空则自动发现
   };
@@ -56,8 +60,21 @@ interface DeviceConfig {
   };
 }
 
+/**
+ * @brief 全局级 exec 超时配置（config.yaml 根层 execTimeout 子段）
+ *
+ * 所有设备共享的常驻命令分类与超时参数。设备级 DeviceConfig 同名字段可覆盖
+ * （samplingTimeoutMs/fallbackTimeoutMs 设备级优先；residentCommands 全局∪设备级并集）。
+ */
+interface GlobalExecTimeoutConfig {
+  residentCommands?: readonly string[]; // 常驻命令扩展名单（首 token 精确匹配），与内置白名单并集
+  samplingTimeoutMs?: number; // 采样超时（毫秒），常驻命令用
+  fallbackTimeoutMs?: number; // 兜底超时（毫秒），普通命令用
+}
+
 interface RootConfig {
   default?: string; // 默认设备名
+  execTimeout?: GlobalExecTimeoutConfig; // 全局 exec 超时配置（所有设备共享，设备级可覆盖）
   devices?: Record<string, DeviceConfig>; // 设备配置字典，key 为设备名
 }
 
@@ -255,6 +272,42 @@ export function getAdbConfig(name?: string): AdbDeviceConfig {
 export function getPromptPattern(name?: string): string | undefined {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   return device.promptPattern;
+}
+
+/**
+ * @brief 获取设备的 exec 超时配置（全局基准 + 设备级覆盖）
+ *
+ * 用于交互式 shell exec（adb_shell_exec / ssh_shell_exec / serial_exec）的常驻命令
+ * 分类扩展与超时时长。三个通道共享同一组配置项。
+ *
+ * 配置合并优先级（全局在 config.yaml 根层 execTimeout，设备级在 devices.<name>）：
+ *   - residentCommands：全局 ∪ 设备级（并集去重，白名单是累加语义）
+ *   - samplingTimeoutMs / fallbackTimeoutMs：设备级 > 全局（覆盖语义）
+ *   - 三者最终都可选；未配置时由 runExec 用默认值兜底（常驻采样 10s / 普通兜底 5min）
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ * @returns exec 超时配置片段，未配置时各字段为 undefined
+ */
+export function getExecTimeoutConfig(name?: string): ExecTimeoutConfig {
+  const globalCfg = loadConfig().execTimeout ?? {};
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+
+  // residentCommands：全局 ∪ 设备级（并集去重，保持首次出现顺序）
+  const mergedResident = Array.from(
+    new Set([
+      ...(globalCfg.residentCommands ?? []),
+      ...(device.residentCommands ?? []),
+    ])
+  );
+
+  return {
+    residentCommands: mergedResident.length > 0 ? mergedResident : undefined,
+    // 时长：设备级优先于全局
+    samplingTimeoutMs:
+      device.samplingTimeoutMs ?? globalCfg.samplingTimeoutMs,
+    fallbackTimeoutMs:
+      device.fallbackTimeoutMs ?? globalCfg.fallbackTimeoutMs,
+  };
 }
 
 /**

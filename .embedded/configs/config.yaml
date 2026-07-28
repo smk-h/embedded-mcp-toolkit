@@ -5,3 +5,23 @@
 
 # 默认使用的设备（对应 devices 下的 key）
 default: board-a
+
+# ============================================
+# 全局 exec 超时配置（所有设备共享，设备级可覆盖）
+# ============================================
+# 用于交互式 shell exec（adb/ssh/serial 三通道共享）的常驻命令分类与超时时长。
+# 设备级 devices.<name> 下同名字段可覆盖（时长：设备级优先；residentCommands：全局∪设备级并集）。
+execTimeout:
+  # 常驻命令扩展名单（首 token 精确匹配），与内置白名单(ping/ping6/logcat/top/htop/strace/tcpdump/watch，
+  # 以及 dmesg -w / journalctl -f / tail -f 等带 follow 参数的命令)并集。
+  # 留空则仅用内置白名单。用于适配项目特有的持续输出命令。
+  # residentCommands:
+  #   - my_log_streamer
+
+  # 常驻命令采样超时（毫秒）：ping/logcat/top 等的默认执行时长，到点发 Ctrl+C 采样。
+  # 留空默认 10000（10 秒）。
+  # samplingTimeoutMs: 10000
+
+  # 普通命令兜底超时（毫秒）：提示符正则未匹配时的安全阀，到点不发 Ctrl+C。
+  # 留空默认 300000（5 分钟）。
+  # fallbackTimeoutMs: 300000

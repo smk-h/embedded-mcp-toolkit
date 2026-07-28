@@ -20,6 +20,7 @@ import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
 import {
   getPromptPattern,
+  getExecTimeoutConfig,
   resolveAdbSerial,
   resolveDeviceName,
 } from "../../../shared/config.js";
@@ -347,7 +348,7 @@ export function adbShellReadHandler(args: {
  * @param command      要执行的命令字符串
  * @param delay        最小轮询持续时长（毫秒，默认 1000），兼容旧语义
  * @param clear        缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
- * @param maxDuration  最大执行时长（毫秒，默认 10000），超时熔断发 Ctrl+C
+ * @param maxDuration  执行时长覆盖（毫秒）。默认按命令类型分流：常驻命令(ping/logcat/top)10000ms 采样超时(发Ctrl+C)，普通命令 300000ms 兜底超时(不发Ctrl+C)。超时动作仍按常驻性判定
  */
 export const adbShellExecConfig = {
   description:
@@ -382,7 +383,7 @@ export const adbShellExecConfig = {
       maxDuration: {
         type: "number",
         description:
-          "Max execution time in ms before auto-interrupting with Ctrl+C (default: 10000)",
+          "Override execution duration in ms. Default varies by command type: resident commands (ping/logcat/top/...) 10000 (sampling, Ctrl+C sent on timeout), normal commands 300000 (5min fallback, no interrupt sent). Action on timeout still follows resident classification regardless of this value.",
       },
     },
     required: ["session_id", "command"],
@@ -393,10 +394,11 @@ export const adbShellExecConfig = {
  * @brief adb_shell_exec 处理函数
  *
  * 通过 runExec 统一编排完成命令发送、轮询、提示符检测、超时熔断。
- * 常驻命令（logcat/top/ping）超过 maxDuration 自动熔断，返回中性 timed-out 标注。
+ * 常驻命令（logcat/top/ping）超时自动采样（发 Ctrl+C，返回采样超时标注）；
+ * 普通命令靠提示符检测返回，仅提示符未匹配时走兜底超时（不发 Ctrl+C，返回兜底超时标注）。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 delay、clear、maxDuration
- * @returns MCP 响应，包含命令执行后的输出内容（熔断时追加 timed-out 标注）
+ * @returns MCP 响应，包含命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
  */
 export async function adbShellExecHandler(args: {
   session_id: string;
@@ -422,6 +424,9 @@ export async function adbShellExecHandler(args: {
   // 提示符检测器：设备配置覆盖优先，无配置用默认正则
   const promptDetector = new PromptDetector(getPromptPattern(deviceName));
 
+  // exec 超时配置：常驻命令扩展名单 + 采样/兜底时长，设备级三通道共享
+  const execTimeoutConfig = getExecTimeoutConfig(deviceName);
+
   // sendCtrl 闭包：只写字节，runExec 内部已自行 sleep 等待
   const sendCtrl = (key: ControlChar): void => {
     shell.write(CONTROL_CHAR_MAP[key], 1, false);
@@ -436,14 +441,19 @@ export async function adbShellExecHandler(args: {
     promptDetector,
     sendCtrl,
     logPrefix: "[adb_shell_exec]",
+    execTimeoutConfig,
   });
 
-  // 三态格式化：正常完成原样返回；超时熔断追加中性 timed-out 标注
+  // 三态格式化：正常完成原样返回；采样超时（常驻）与兜底超时（普通）追加不同标注
   let output = execResult.output;
-  if (execResult.timedOut) {
+  if (execResult.timeoutKind === "sampling") {
     output =
       (output ? output + "\n" : "") +
-      `[timed-out: collected ${execResult.elapsedMs}ms of output, Ctrl+C sent]`;
+      `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
+  } else if (execResult.timeoutKind === "fallback") {
+    output =
+      (output ? output + "\n" : "") +
+      `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
   }
 
   return { content: [text(output || "(no output)")] };
