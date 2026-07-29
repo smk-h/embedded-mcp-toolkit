@@ -163,14 +163,17 @@ export async function serialOpenHandler(args: {
     };
   }
 
-  const sessionId = serialStore.create(shell, {
+  // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
+  const sessionId = serialStore.peekNextId();
+  const logPath = shell.fileLogger.enableFromEnv(sessionId, deviceName);
+  serialStore.create(shell, {
     type: "serial",
     deviceName,
     connectionInfo: `${config.port} @ ${config.baudRate ?? 115200}`,
+    logPath,
   });
   portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
-  shell.fileLogger.enableFromEnv(sessionId, deviceName);
 
   return {
     content: [
@@ -662,14 +665,17 @@ export async function serialShellLoginHandler(args: {
       };
     }
     // open 成功后立即注册会话并启用日志，确保解锁/探测过程的串口数据被保存
-    const newId = serialStore.create(shell, {
+    // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
+    const newId = serialStore.peekNextId();
+    const logPath = shell.fileLogger.enableFromEnv(newId, deviceName);
+    serialStore.create(shell, {
       type: "serial",
       deviceName,
       connectionInfo: `${baseConfig.port} @ ${baseConfig.baudRate ?? 115200}`,
+      logPath,
     });
     newSessionId = newId;
     portToSession.set(baseConfig.port, newId);
-    shell.fileLogger.enableFromEnv(newId, deviceName);
   }
 
   // ===== 状态机驱动 profile 匹配 + 状态检测 =====
@@ -1066,14 +1072,17 @@ function registerSession(
       ],
     };
   }
-  const sessionId = serialStore.create(shell, {
+  // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
+  const sessionId = serialStore.peekNextId();
+  const logPath = shell.fileLogger.enableFromEnv(sessionId, deviceName);
+  serialStore.create(shell, {
     type: "serial",
     deviceName,
     connectionInfo: `${port} @ ${shell.getPort()}`,
+    logPath,
   });
   portToSession.set(port, sessionId);
   logger.info(`[serial_shell_login] session opened: ${sessionId} port=${port}`);
-  shell.fileLogger.enableFromEnv(sessionId, deviceName);
   return {
     content: [text(`Session ${sessionId} opened on ${port} ${detail}`)],
   };

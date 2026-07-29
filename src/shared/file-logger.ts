@@ -65,10 +65,11 @@ export class FileLogger {
    *
    * @param sessionId 会话 ID（如 serial_1）
    * @param deviceName 设备名（如 board-lubancat）；可选，缺失时降级写入根目录
+   * @returns 实际创建的日志文件完整路径；文件日志未启用时返回 undefined
    */
-  enableFromEnv(sessionId: string, deviceName?: string): void {
+  enableFromEnv(sessionId: string, deviceName?: string): string | undefined {
     const savePath = process.env.SAVE2FILE_PATH;
-    if (!savePath || savePath === "none") return;
+    if (!savePath || savePath === "none") return undefined;
     const absDir = resolve(savePath);
     const fileName = `${sessionId}_${fileTimestamp()}.log`;
     // deviceName 真值检查：空串/undefined 均视为缺失，降级到根目录，保证日志不丢
@@ -77,6 +78,7 @@ export class FileLogger {
       : resolve(absDir, fileName);
     this.enable(logPath);
     logger.info(`[file-logger] file logging enabled: ${logPath}`);
+    return logPath;
   }
 
   /**

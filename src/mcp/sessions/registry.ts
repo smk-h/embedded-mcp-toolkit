@@ -35,6 +35,7 @@ export interface SessionMeta {
   deviceName: string; // 设备别名，如 "board-a"；PowerShell 为 "local"
   connectionInfo: string; // 人可读的连接细节，如 "192.168.16.103:22"、"COM3@115200"
   createdAt: string; // ISO 时间戳，创建时刻
+  logPath?: string; // 该会话对应的日志文件完整路径；文件日志未启用时为 undefined
 }
 
 // ── SessionRegistry ────────────────────────────────────────

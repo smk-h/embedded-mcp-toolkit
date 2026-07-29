@@ -96,13 +96,16 @@ export async function sshShellOpenHandler(args: {
     };
   }
 
-  const sessionId = sshStore.create(shell, {
+  // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
+  const sessionId = sshStore.peekNextId();
+  const logPath = shell.fileLogger.enableFromEnv(sessionId, deviceName);
+  sshStore.create(shell, {
     type: "ssh",
     deviceName,
     connectionInfo: `${config.host}:${config.port ?? 22}`,
+    logPath,
   });
   logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
-  shell.fileLogger.enableFromEnv(sessionId, deviceName);
 
   return {
     content: [text(`Session ${sessionId} opened.\n${banner || "(no banner)"}`)],
@@ -624,13 +627,16 @@ export async function sshShellLoginHandler(args: {
   }
 
   // open 成功后立即注册会话，确保后续解锁/探测过程可被其他工具访问
-  const sessionId = sshStore.create(shell, {
+  // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
+  const sessionId = sshStore.peekNextId();
+  const logPath = shell.fileLogger.enableFromEnv(sessionId, deviceName);
+  sshStore.create(shell, {
     type: "ssh",
     deviceName,
     connectionInfo: `${config.host}:${config.port ?? 22}`,
+    logPath,
   });
   logger.info(`[ssh_shell_login] session opened: ${sessionId}`);
-  shell.fileLogger.enableFromEnv(sessionId, deviceName);
 
   // ===== 步骤 2~3：状态机驱动 profile 匹配 + 状态检测 =====
   const sm = new PshStateMachine("ssh");

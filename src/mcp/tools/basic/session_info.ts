@@ -33,7 +33,9 @@ import { formatBeijingTime } from "../../../utils/timestamp.js";
  */
 export const sessionInfoConfig = {
   description:
-    "Query session information: pass session_id to get metadata for one session, pass device to list all sessions for a device, or omit both to list all active sessions across all connection types.",
+    "Query active session metadata. Pass session_id for one session, device for all sessions of a device, or neither for all active sessions. " +
+    "Each session returns: session id, connection type (serial/ssh/adb), device name, connection info (e.g. COM3@115200), creation time, " +
+    "and the raw session log file path (serial/ssh/adb traffic recorded continuously by the server, including full boot logs after reset/reboot).",
   inputSchema: fromJsonSchema<{
     session_id?: string;
     device?: string;
@@ -67,6 +69,7 @@ function formatSessionMeta(s: SessionMeta): string[] {
     `  Device:       ${s.deviceName}`,
     `  Connection:   ${s.connectionInfo}`,
     `  Created:      ${formatBeijingTime(s.createdAt)}`,
+    `  Log:          ${s.logPath ?? "(file logging disabled)"}`,
     "",
   ];
 }

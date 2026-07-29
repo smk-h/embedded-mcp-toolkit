@@ -149,13 +149,16 @@ export async function adbShellOpenHandler(args: { device?: string }) {
     realSerialNo,
     deviceName
   );
-  const sessionId = adbStore.create(shell, {
+  // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
+  const sessionId = adbStore.peekNextId();
+  const logPath = shell.fileLogger.enableFromEnv(sessionId, finalDeviceName);
+  adbStore.create(shell, {
     type: "adb",
     deviceName: finalDeviceName,
     connectionInfo: realSerialNo,
+    logPath,
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
-  shell.fileLogger.enableFromEnv(sessionId, finalDeviceName);
 
   return {
     content: [

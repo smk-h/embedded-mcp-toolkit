@@ -39,6 +39,7 @@ export interface CreateSessionMeta {
   type: SessionType; // 连接类型（ssh / serial / adb / powershell）
   deviceName: string; // 设备别名，如 "board-a"；PowerShell 为 "local"
   connectionInfo: string; // 人可读的连接细节，如 "192.168.16.103:22"、"COM3@115200"
+  logPath?: string; // 日志文件完整路径，来自 enableFromEnv 的返回值；未启用时为 undefined
 }
 
 /**
@@ -98,8 +99,25 @@ export class ShellSessionStore<T extends BaseShell> {
       deviceName: meta.deviceName,
       connectionInfo: meta.connectionInfo,
       createdAt: new Date().toISOString(), // UTC
+      logPath: meta.logPath,
     });
     return sessionId;
+  }
+
+  /**
+   * @brief 预览下一个将分配的 session_id
+   *
+   * 返回 `${prefix}_${counter+1}`，但不递增计数器、不写实例表、不调 registry。
+   * 供调用方在 create() 之前先用该预览 ID 调用 enableFromEnv 建日志文件，
+   * 拿到日志路径后再由 create() 一次性写入会话元数据。
+   *
+   * 并发安全：单线程事件循环下，peekNextId → enableFromEnv → create 三步
+   * 之间无 await（均为同步调用），在同一微任务内完成，不存在另一个调用抢占计数器的窗口。
+   *
+   * @returns 下一个将分配的 session_id（如 "ssh_1"）
+   */
+  peekNextId(): string {
+    return `${this.#prefix}_${this.#counter + 1}`;
   }
 
   /**
