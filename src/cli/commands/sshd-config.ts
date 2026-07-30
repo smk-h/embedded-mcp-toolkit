@@ -12,8 +12,10 @@
  * [4] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
  * [5] 检查 sshd 配置状态（只读诊断）
  *
- * SSH 操作基于 ssh2 库在本文件内独立实现（sshConnect / sshExec / sshDownload /
- * sshDisconnect），不复用 src/transports/ssh.ts 的 SSHShell（后者绑定 MCP 会话注册、
+ * SSH 操作基于 ssh2 库实现，传输层（sshConnect / sshExec / sshDownload /
+ * sshUpload / sshDisconnect）与终端交互辅助（prompt / clearScreen / askPassword 等）
+ * 已抽取至 src/cli/shared/ssh.ts 与 src/cli/shared/cli-helpers.ts，本文件直接 import
+ * 复用，不复用 src/transports/ssh.ts 的 SSHShell（后者绑定 MCP 会话注册、
  * PSH 解锁等业务机制，不适合一次性运维命令）。
  */
 
@@ -29,11 +31,10 @@ import {
   unlinkSync,
 } from "fs";
 import { resolve, join, dirname } from "path";
-import { homedir, userInfo, networkInterfaces } from "os";
-import { createInterface } from "readline";
+import { homedir } from "os";
 import { get as httpsGet } from "https";
 
-import { Client, type ConnectConfig } from "ssh2";
+import { Client } from "ssh2";
 import {
   select,
   isCancel,
@@ -43,6 +44,21 @@ import {
   password,
   confirm,
 } from "@clack/prompts";
+
+import {
+  parseServerAddress,
+  sshConnect,
+  sshExec,
+  sshDownload,
+  sshDisconnect,
+  type LinuxServerInfo,
+} from "../shared/ssh.js";
+import {
+  prompt,
+  clearScreen,
+  pauseForMenu,
+  collectConnectionInfo,
+} from "../shared/cli-helpers.js";
 
 // ============================================================
 // 类型与常量
@@ -55,18 +71,6 @@ import {
  *          具名 interface 即可。
  */
 export type SshdConfigOptions = Record<string, never>;
-
-/**
- * @brief Linux 编译服务器连接信息（仅内存，不落盘）
- * @details 第 [3] 步交互式收集，用于 SSH 登录 Linux 生成密钥对。
- *          password 仅存在于进程内存，不写入日志或磁盘。
- */
-interface LinuxServerInfo {
-  host: string;
-  port: number; // SSH 端口，默认 22
-  username: string;
-  password: string; // 仅内存，不落盘
-}
 
 /**
  * @brief 外部命令执行结果
@@ -251,180 +255,6 @@ function relaunchAsAdmin(): void {
 }
 
 // ============================================================
-// 交互输入
-// ============================================================
-
-/**
- * @brief 同步询问用户输入（明文）
- * @details 基于 readline 的单次问答，问完即关闭 rl。与 init.ts 的 prompt 一致。
- * @param questionText 提示文本
- * @returns 用户输入的字符串（已 trim）
- */
-function prompt(questionText: string): Promise<string> {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  return new Promise((resolve) => {
-    rl.question(questionText, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-/**
- * @brief 清空终端屏幕
- * @details 使用 ANSI 转义序列 \x1Bc（全屏重置）清屏并将光标移到左上角。
- *          非 TTY 环境（管道/重定向）跳过，避免向非终端输出写入控制字符。
- */
-function clearScreen(): void {
-  if (process.stdout.isTTY) {
-    process.stdout.write("\x1Bc");
-  }
-}
-
-/**
- * @brief step 执行完毕后的暂停等待
- * @details 提示"按 Enter 回到菜单，按 q 退出"，阻塞等待用户按键：
- *          - Enter（空输入）→ 返回 false，调用方清屏并重新显示菜单
- *          - q / Q          → 返回 true，调用方退出主循环
- *          - 其它输入       → 继续等待，不响应（避免误触退出）
- * @returns 用户是否选择退出（q → true，Enter → false）
- */
-async function pauseForMenu(): Promise<boolean> {
-  while (true) {
-    const input = await prompt("\n按 Enter 回到菜单，按 q 退出: ");
-    if (input.toLowerCase() === "q") {
-      return true;
-    }
-    if (input === "") {
-      return false;
-    }
-    // 其它输入忽略，循环重新提示
-  }
-}
-
-/**
- * @brief 安全地读取密码（不回显明文）
- * @details 通过 stdin raw mode 逐字符读取，终端显示 `*` 占位。
- *          非 TTY 环境（如管道输入）回退为 readline 直接读取，此时密码可见，
- *          属已知限制。支持 Backspace 删除、Ctrl+C 退出。
- * @param questionText 提示文本
- * @returns 用户输入的密码字符串
- */
-async function askPassword(questionText: string): Promise<string> {
-  process.stdout.write(questionText);
-
-  // stdin 的类型断言：TTY 模式下拥有 setRawMode 方法
-  type TtyStdin = NodeJS.ReadStream & {
-    isTTY?: boolean;
-    setRawMode?(mode: boolean): void;
-  };
-  const stdin = process.stdin as TtyStdin;
-  let password = "";
-  let rawModeEnabled = false;
-
-  // 尝试启用 raw mode（关闭回显）
-  if (stdin.isTTY && stdin.setRawMode) {
-    stdin.setRawMode(true);
-    rawModeEnabled = true;
-  }
-  stdin.resume();
-
-  return new Promise<string>((resolve) => {
-    /**
-     * @brief 清理监听器并恢复终端状态
-     */
-    function cleanup(): void {
-      stdin.removeListener("data", onData);
-      stdin.pause();
-      if (rawModeEnabled && stdin.setRawMode) {
-        stdin.setRawMode(false);
-      }
-    }
-
-    /**
-     * @brief 逐字符处理回调
-     * @param ch 读到的字节
-     */
-    function onData(ch: Buffer): void {
-      const char = ch.toString("utf8");
-
-      // 回车（CR / LF）— 结束输入
-      if (char === "\r" || char === "\n") {
-        cleanup();
-        process.stdout.write("\n");
-        resolve(password);
-        return;
-      }
-
-      // Ctrl+C — 中止程序
-      if (char === "\u0003") {
-        cleanup();
-        process.stdout.write("\n");
-        process.exit(0);
-      }
-
-      // Backspace / Delete — 删除最后一个字符
-      if (char === "\u007f" || char === "\b") {
-        if (password.length > 0) {
-          password = password.slice(0, -1);
-          process.stdout.write("\b \b");
-        }
-        return;
-      }
-
-      // 普通字符 — 追加并显示占位符
-      password += char;
-      process.stdout.write("*");
-    }
-
-    stdin.on("data", onData);
-  });
-}
-
-/**
- * @brief 解析紧凑格式的服务器地址
- * @details 支持 `user@host[:port]` 格式，例如：
- *          - `cnb-dso-xxx@cnb.space`
- *          - `root@1.2.3.4:2222`
- *          - `user@host.example.com`
- *          未带端口时默认 22。user、host 均不能为空。
- * @param input 用户输入的地址字符串
- * @returns 解析结果；格式非法返回 null
- */
-function parseServerAddress(
-  input: string
-): { host: string; port: number; username: string } | null {
-  const trimmed = input.trim();
-  // 必须包含 @ 分隔用户名与主机
-  const atIdx = trimmed.lastIndexOf("@");
-  if (atIdx <= 0) return null;
-
-  const username = trimmed.slice(0, atIdx);
-  const rest = trimmed.slice(atIdx + 1);
-  if (!username || !rest) return null;
-
-  // 可选 :port（取最后一个冒号，避免 IPv6 地址干扰；本场景主要为域名/IPv4）
-  let host = rest;
-  let port = 22;
-  const colonIdx = rest.lastIndexOf(":");
-  if (colonIdx > 0) {
-    const portPart = rest.slice(colonIdx + 1);
-    const parsedPort = parseInt(portPart, 10);
-    // 端口必须是纯数字且在合法范围
-    if (/^\d+$/.test(portPart) && parsedPort > 0 && parsedPort <= 65535) {
-      host = rest.slice(0, colonIdx);
-      port = parsedPort;
-    }
-  }
-
-  if (!host) return null;
-  return { host, port, username };
-}
-
-// ============================================================
 // 命令执行封装
 // ============================================================
 
@@ -515,93 +345,9 @@ async function runCmd(
 }
 
 // ============================================================
-// SSH 最小封装（基于 ssh2，不复用 SSHShell）
+// SSH 传输能力（连接 / 执行 / 上传下载 / 断开）已迁至 src/cli/shared/ssh.ts，
+// 本文件直接 import 复用，不再保留本地实现。
 // ============================================================
-
-/**
- * @brief 建立到 Linux 的 SSH 连接
- * @details 基于 ssh2 Client 直接连接，不经过 SSHShell。
- * @param info Linux 服务器连接信息
- * @returns 已连接的 ssh2 Client 实例
- * @throws 连接失败时抛出
- */
-function sshConnect(info: LinuxServerInfo): Promise<Client> {
-  const client = new Client();
-  return new Promise<Client>((resolve, reject) => {
-    client.on("ready", () => resolve(client));
-    client.on("error", reject);
-    client.connect({
-      host: info.host,
-      port: info.port,
-      username: info.username,
-      password: info.password,
-      readyTimeout: 10000,
-    } as ConnectConfig);
-  });
-}
-
-/**
- * @brief 在已建立的 SSH 连接上执行一条命令
- * @details 收集 stdout 与 stderr，命令结束后返回完整 stdout（trim 尾部空白）。
- * @param client  已连接的 ssh2 Client
- * @param command 要执行的 shell 命令
- * @returns 命令的 stdout 输出（已 trim）
- * @throws 执行失败时抛出
- */
-function sshExec(client: Client, command: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    client.exec(command, (err, stream) => {
-      if (err) return reject(err);
-      let stdout = "";
-      stream.on("data", (data: Buffer) => {
-        stdout += data.toString("utf8");
-      });
-      // stderr 仅作调试参考，不阻断流程，此处显式消费避免 unhandled 事件告警
-      stream.stderr.on("data", () => {
-        /* 忽略远端 stderr */
-      });
-      stream.on("close", () => {
-        resolve(stdout.trim());
-      });
-    });
-  });
-}
-
-/**
- * @brief 从远端 SFTP 下载文件到本地
- * @details 基于 ssh2 的 sftp 子系统，使用 fastGet 流式下载。
- * @param client    已连接的 ssh2 Client
- * @param remotePath 远端文件绝对路径（SFTP 不识别 ~，需先展开）
- * @param localPath  本地目标文件路径
- * @throws SFTP 不可用或下载失败时抛出
- */
-function sshDownload(
-  client: Client,
-  remotePath: string,
-  localPath: string
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    client.sftp((err, sftp) => {
-      if (err) return reject(err);
-      sftp.fastGet(remotePath, localPath, (err2) => {
-        if (err2) return reject(err2);
-        resolve();
-      });
-    });
-  });
-}
-
-/**
- * @brief 关闭 SSH 连接
- * @param client ssh2 Client 实例
- */
-function sshDisconnect(client: Client): void {
-  try {
-    client.end();
-  } catch {
-    // 忽略关闭时的异常
-  }
-}
 
 // ============================================================
 // HTTP 下载（MSI 离线安装包）
@@ -1825,58 +1571,8 @@ async function doUninstallSsh(): Promise<void> {
 // step6: 查看本机连接信息
 // ============================================================
 
-/**
- * @brief 单个可用 IPv4 地址及其所属网卡
- * @param ip    IPv4 地址
- * @param iface 网卡名（os.networkInterfaces() 的 key）
- */
-interface IpEntry {
-  ip: string;
-  iface: string;
-}
-
-/**
- * @brief 本机连接信息采集结果
- * @param sshUser  ssh 登录用户名（已剥离 DOMAIN\ 前缀）
- * @param ipList   可用 IPv4 地址列表（已过滤回环 / 链路本地 / 虚拟网卡），每项含网卡名
- */
-interface ConnectionInfo {
-  sshUser: string;
-  ipList: IpEntry[];
-}
-
-/**
- * @brief 采集本机连接信息（用户名 + 可用 IPv4 地址）
- * @details 统一 doShowConnectionInfo 与 doGenerateTemplate 的信息采集逻辑：
- *          (a) 当前 Windows 登录用户名（os.userInfo().username），剥离 DOMAIN\ 前缀
- *          (b) 本机所有 IPv4 地址，过滤回环（127.x）、链路本地（169.254）、虚拟网卡
- * @returns 连接信息对象
- */
-function collectConnectionInfo(): ConnectionInfo {
-  // (a) 当前登录用户名（剥离 DOMAIN\ 前缀，ssh 只取反斜杠后的部分）
-  const rawUser = userInfo().username;
-  const sshUser = rawUser.includes("\\")
-    ? rawUser.slice(rawUser.indexOf("\\") + 1)
-    : rawUser;
-
-  // (b) 枚举所有 IPv4 地址（排除回环 127.x、链路本地 169.254、虚拟网卡）
-  const interfaces = networkInterfaces();
-  const ipList: IpEntry[] = [];
-  for (const [ifName, addrs] of Object.entries(interfaces)) {
-    if (!addrs) continue;
-    // 跳过常见虚拟网卡（VirtualBox / VMware / Hyper-V / WSL），减少干扰
-    if (/virtual|vmware|hyper-v|vethernet|wsl|docker/i.test(ifName)) continue;
-    for (const addr of addrs) {
-      if (addr.family === "IPv4" && !addr.internal) {
-        // 跳过 169.254 链路本地地址（未正确获取 DHCP 时出现）
-        if (addr.address.startsWith("169.254")) continue;
-        ipList.push({ ip: addr.address, iface: ifName });
-      }
-    }
-  }
-
-  return { sshUser, ipList };
-}
+// 本机连接信息采集（用户名 + IPv4 列表）已迁至 src/cli/shared/cli-helpers.ts，
+// 本文件直接 import collectConnectionInfo 复用。
 
 /**
  * @brief 查看本机 Windows 的连接信息（用户名 / IP），供 Linux 端 ssh 连接参考

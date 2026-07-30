@@ -17,6 +17,7 @@ import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
 import { runSshdConfig } from "./commands/sshd-config.js";
+import { runRemoteMcpConfig } from "./commands/remote-mcp-config.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
 
 // 读取 package.json（与 server.ts/version.ts 一致用 readFileSync，
@@ -36,6 +37,8 @@ const pkg = JSON.parse(
  * ├── uninstall                  ← 清理 init 生成的文件（.action()）
  * ├── split                      ← 拆分 config.yaml 为 devices/*.yaml（.action()）
  * ├── regex-verify               ← 自测设备 yaml 的 U-Boot 正则配置（.action()）
+ * ├── sshd-config                ← 配置 Windows OpenSSH 免密登录环境（.action()）
+ * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode 的 MCP 桥接（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
  * │   ├── ssh                    ←   SSH 演示二级父命令
@@ -246,6 +249,30 @@ program
   .description("配置 Windows OpenSSH 免密登录环境（交互式菜单）")
   .action(() => {
     runSshdConfig({});
+  });
+
+// =============================================================================
+// remote-mcp-config 命令 —— 登录远程 Linux 配置 claude/zcode 的 MCP 桥接
+// =============================================================================
+
+/**
+ * @brief 远程 MCP 桥接配置命令
+ * @details 与 sshd-config 对偶：从本机 SSH 登录远程 Linux 服务器，交互式地在远端
+ *          配置 claude/zcode 的 MCP 桥接 server（ssh 转发到本机的 remote-start-mcp.bat）。
+ *          覆盖三类落点：Claude 全局（~/.claude.json）、Claude 项目（.mcp.json +
+ *          settings.local.json）、ZCode 项目（.zcode/config.json）。配置前先读取展示
+ *          状态，支持配置/查看/删除。所有文件操作通过 SFTP 完成，远端无需预装 node。
+ *
+ * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit remote-mcp-config
+ */
+program
+  .command("remote-mcp-config")
+  .description("登录远程 Linux 配置 claude/zcode 的 MCP 桥接（交互式菜单）")
+  .action(() => {
+    runRemoteMcpConfig({});
   });
 
 // =============================================================================
