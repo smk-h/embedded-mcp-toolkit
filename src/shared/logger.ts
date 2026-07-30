@@ -56,6 +56,18 @@ class Logger {
     }
   }
 
+  /**
+   * 安全写入 stderr：管道已断（MCP 客户端掉线）时写操作会抛 EPIPE，
+   * 进而再次触发 uncaughtException，形成日志死循环。这里静默吞掉。
+   */
+  private safeStderr(msg: string): void {
+    try {
+      process.stderr.write(msg);
+    } catch {
+      /* stderr 管道断开，忽略 */
+    }
+  }
+
   /** 写入一行到日志文件 */
   private write(level: string, message: string): void {
     this.ensureInit();
@@ -80,21 +92,21 @@ class Logger {
   info(...args: unknown[]): void {
     const msg = this.format(args);
     this.write("INFO", msg);
-    process.stderr.write(`${msg}\n`);
+    this.safeStderr(`${msg}\n`);
   }
 
   /** 错误日志 */
   error(...args: unknown[]): void {
     const msg = this.format(args);
     this.write("ERROR", msg);
-    console.error(...args);
+    this.safeStderr(`${msg}\n`);
   }
 
   /** 警告日志 */
   warn(...args: unknown[]): void {
     const msg = this.format(args);
     this.write("WARN", msg);
-    console.warn(...args);
+    this.safeStderr(`${msg}\n`);
   }
 
   /**
@@ -155,7 +167,7 @@ class Logger {
       .split("\n")
       .map((line) => `    ${line}`)
       .join("\n");
-    process.stderr.write(
+    this.safeStderr(
       `${description}:\n----------------------------\n${indented}\n----------------------------\n`
     );
   }

@@ -81,6 +81,20 @@ async function cleanupAllSessions() {
   logger.info("[mcp] all sessions disposed");
 }
 
+/**
+ * @brief 判断错误是否为管道断开（EPIPE / EOF）
+ *
+ * EPIPE 表示对端已关闭管道：MCP stdio 传输中即客户端掉线。
+ * 这类错误不可恢复，继续写只会反复抛错，必须退出进程。
+ */
+function isBrokenPipe(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === "EPIPE") return true;
+  // 兼容部分 Windows/SDK 包装：消息里带 broken pipe 或 write EPIPE
+  return /EPIPE|broken pipe/i.test(err.message);
+}
+
 let cleanupRunning = false;
 
 async function doCleanupAndExit(reason: string) {
@@ -111,15 +125,25 @@ function registerCleanupHooks() {
   }
 
   // unhandledRejection / uncaughtException 兜底：
-  // zmodem.js 等第三方库内部 Promise 链可能 reject 无人接听，
+  // zmodem.js 等第三方库内部 Promise 链可能 reject 无人接答，
   // Node 默认会终止进程（导致 MCP 连接崩溃）。这里只记录日志、吞掉异常，
   // 让工具层的 try-catch 能正常返回错误结果，不杀进程。
+  //
+  // 但 EPIPE 例外：它意味着 MCP 客户端已断开、stdio 管道写端关闭。
+  // SDK 仍会持续往 stdout 写响应，每次写都再次抛 EPIPE → uncaughtException
+  // → 写日志 → 死循环（曾刷出 16MB 日志）。因此检测到管道断开必须退出进程。
   process.on("unhandledRejection", (reason) => {
     const msg = reason instanceof Error ? reason.message : String(reason);
     logger.warn(`[mcp] unhandledRejection swallowed: ${msg}`);
   });
   process.on("uncaughtException", (err) => {
-    logger.warn(`[mcp] uncaughtException swallowed: ${err.message}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isBrokenPipe(err)) {
+      // 管道已断 → 客户端掉线，直接走清理退出，避免 SDK 反复写 stdout 形成死循环
+      doCleanupAndExit(`uncaughtException: ${msg} (pipe broken)`);
+      return;
+    }
+    logger.warn(`[mcp] uncaughtException swallowed: ${msg}`);
   });
 }
 
