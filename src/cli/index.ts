@@ -16,8 +16,8 @@ import {
 import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
-import { runSshdConfig } from "./commands/sshd-config.js";
-import { runRemoteMcpConfig } from "./commands/remote-mcp-config.js";
+import { runSshdConfig } from "./commands/sshd-config/index.js";
+import { runRemoteMcpConfig } from "./commands/remote-mcp-config/index.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
 
 // 读取 package.json（与 server.ts/version.ts 一致用 readFileSync，
