@@ -1,8 +1,10 @@
-// MCP Server — 创建 McpServer 实例、注册所有工具、提供启动入口
+﻿// MCP Server — 创建 McpServer 实例、注册所有工具、提供启动入口
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { readFileSync } from "fs";
+import * as os from "os";
+import { resolveHostEndpoint } from "./shared/host-endpoint.js";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 
@@ -23,9 +25,28 @@ const pkg = JSON.parse(
 
 // ── server 实例 ────────────────────────────────────────────
 
+// ── 远程 SSH 启动时的宿主端点提示 ────────────────────
+
+// 解析宿主端点(username@ip)。仅远程 SSH 启动(存在 SSH_CONNECTION)时产出端点;
+// 本地启动返回 local 场景,不注入端点相关内容,保持原有行为不变。
+const hostEndpoint = resolveHostEndpoint();
+// 远程 SSH 启动:把宿主端点通过 instructions 告知对端 AI 客户端,
+// 供其构造跨机文件传输(scp)命令。本地启动:instructions 为 undefined。
+const instructions =
+  hostEndpoint.scenario === "remote-ssh" && hostEndpoint.endpoint
+    ? [
+        "This MCP server runs on Windows and is invoked over SSH from a remote AI client running on Linux.",
+        `You (the AI client) are on Linux; the MCP host (Windows) endpoint is ${hostEndpoint.endpoint}.`,
+        "To transfer files between your Linux machine and the Windows MCP host, run scp in your own Linux shell always passing the passwordless key -i ~/.ssh/id_mcp_server",
+        "(NOT via the power_shell_* tools, which execute on the Windows host and would only scp Windows to itself).",
+        `To pull a file from Windows: scp -i ~/.ssh/id_mcp_server ${hostEndpoint.endpoint}:"E:/path" ~/local/.`,
+        `To push to Windows: scp -i ~/.ssh/id_mcp_server ~/local/file ${hostEndpoint.endpoint}:"E:/path/".`,
+      ].join(" ")
+    : undefined;
+
 export const server = new McpServer(
   { name: pkg.name, version: pkg.version },
-  { capabilities: { logging: {} } }
+  { capabilities: { logging: {} }, instructions }
 );
 
 // ── 工具批量注册 ───────────────────────────────────────────
@@ -159,7 +180,27 @@ export async function startMcpServer() {
   };
   logger.info(`MCP server starting... cwd: ${process.cwd()}`);
   logger.info(`MCP server env: ${JSON.stringify(envVars)}`);
+
+  // SSH 会话环境变量（仅当本进程经由 ssh 远程启动时由 sshd 注入）。
+  // 字段语义（OpenSSH 约定，空格分隔）：
+  //   SSH_CONNECTION = <client-ip> <client-port> <server-ip> <server-port>
+  //   SSH_CLIENT     = <client-ip> <client-port> <server-port>
+  //   SSH_TTY        = 分配的伪终端设备名
+  // 缺失表示非 ssh 会话启动（如本地直启）；显式记录 "(unset)" 以区分"未设置"与"空值"。
+  const sshEnv = {
+    // 登录用户名：优先 os.userInfo()（跨平台可靠），回退到环境变量
+    USER: os.userInfo().username || process.env.USERNAME || process.env.USER || process.env.LOGNAME || "(unknown)",
+    SSH_CONNECTION: process.env.SSH_CONNECTION ?? "(unset)",
+    SSH_CLIENT: process.env.SSH_CLIENT ?? "(unset)",
+    SSH_TTY: process.env.SSH_TTY ?? "(unset)",
+  };
+  logger.info(`MCP server ssh: ${JSON.stringify(sshEnv)}`);
+  logger.info(`MCP server endpoint: ${JSON.stringify(hostEndpoint)}`);
   registerCleanupHooks();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
+
+
+
+
