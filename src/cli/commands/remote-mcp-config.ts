@@ -784,20 +784,40 @@ async function askTarget(client: Client): Promise<Target | null> {
 
 /**
  * @brief 计算本次桥接定义所需的 Windows 端参数
- * @details 采集本机连接信息，取首个 IP 作为主 IP，bat 路径取 cwd/remote-start-mcp.bat
- *          （转正斜杠，与 sshd-config 模板一致）。无可用 IP 时返回 null（调用方中止）。
- * @returns {sshUser, primaryIp, batPath} 或 null（无可用 IP）
+ * @details 采集本机连接信息并确定主 IP：
+ *          - 无可用 IP  → 返回 null（配置场景中止；诊断场景用占位端点）
+ *          - 仅 1 个 IP → 直接采用，无需用户介入
+ *          - 多个 IP    → 交互式让用户选择（多网卡时取首个不可靠，需用户确认）
+ *          bat 路径取 cwd/remote-start-mcp.bat（转正斜杠，与 sshd-config 模板一致）。
+ * @returns {sshUser, primaryIp, batPath} 或 null（无可用 IP / 多 IP 时用户取消选择）
  */
-function resolveLocalEndpoint(): {
+async function resolveLocalEndpoint(): Promise<{
   sshUser: string;
   primaryIp: string;
   batPath: string;
-} | null {
+} | null> {
   const { sshUser, ipList } = collectConnectionInfo();
   if (ipList.length === 0) {
     return null;
   }
-  const primaryIp = ipList[0].ip;
+  // 单个 IP 直接采用；多个 IP 让用户选择（多网卡场景无法可靠自动判定，取首个可能
+  // 选到 Linux 路由不可达的网段，导致反向 SSH 连接失败）
+  let primaryIp: string;
+  if (ipList.length === 1) {
+    primaryIp = ipList[0].ip;
+  } else {
+    const choice = await select<string>({
+      message: "选择 Windows 主 IP（远程反连地址）",
+      options: ipList.map((entry) => ({
+        value: entry.ip,
+        label: `${entry.ip}  (${entry.iface})`,
+      })),
+    });
+    if (isCancel(choice)) {
+      return null;
+    }
+    primaryIp = choice;
+  }
   // cwd/remote-start-mcp.bat 转正斜杠（JSON 无需转义反斜杠，且 node/ssh 支持正斜杠）
   const batPath = (
     process.cwd().replace(/\\/g, "/") + "/remote-start-mcp.bat"
@@ -881,8 +901,8 @@ async function mutateFile(
 async function doConfigure(client: Client, sftp: SFTPWrapper): Promise<void> {
   log.info("配置 MCP 桥接 ...");
 
-  // 采集本机端点（无可用 IP 则中止）
-  const endpoint = resolveLocalEndpoint();
+  // 采集本机端点（无可用 IP 或多 IP 用户取消则中止）
+  const endpoint = await resolveLocalEndpoint();
   if (!endpoint) {
     log.message("    未检测到本机可用 IPv4 地址，无法生成桥接配置");
     log.message("    请确认网络连接正常后重试");
@@ -1087,7 +1107,7 @@ async function doRemove(client: Client, sftp: SFTPWrapper): Promise<void> {
 async function doCheckStatus(client: Client, sftp: SFTPWrapper): Promise<void> {
   log.info("查看远端 MCP 配置状态（只读诊断）");
 
-  const endpoint = resolveLocalEndpoint();
+  const endpoint = await resolveLocalEndpoint();
   // 诊断允许无可用 IP（仅展示，不写入），用占位端点做比对
   const sshUser = endpoint?.sshUser ?? "(unknown)";
   const primaryIp = endpoint?.primaryIp ?? "(unknown)";
