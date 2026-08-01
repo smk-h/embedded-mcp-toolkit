@@ -20,18 +20,18 @@
  *   若需继续操作设备，需重新 login。
  *
  *   运行前置：已 build（out/ 存在）；目标设备串口可用
- *   运行：node test/client/test_enter_uboot.mjs
+ *   运行：node test/client/serial/test_enter_uboot.mjs
  * ======================================================
  */
 
-import { connect } from "./client.mjs";
-import { pass, fail, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, printResult } from "../common.mjs";
 import {
   extractSessionId,
   splitOutputAndAnnotation,
   callExec,
   callClose,
-} from "./common-exec.mjs";
+} from "../common-exec.mjs";
 
 /** Serial 通道工具名映射 */
 const SERIAL_TOOLS = {

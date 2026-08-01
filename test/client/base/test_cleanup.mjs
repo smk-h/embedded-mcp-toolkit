@@ -1,5 +1,5 @@
-import { connect } from "./client.mjs";
-import { pass, fail, assert, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, assert, printResult } from "../common.mjs";
 import { readdirSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -7,7 +7,7 @@ import { dirname } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const logDir = resolve(__dirname, "../log");
+const logDir = resolve(__dirname, "../../log");
 
 // ── 日志工具 ──────────────────────────────────────────────
 

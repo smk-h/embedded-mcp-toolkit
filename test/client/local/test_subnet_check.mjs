@@ -1,5 +1,5 @@
-import { connect } from "./client.mjs";
-import { pass, fail, assert, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, assert, printResult } from "../common.mjs";
 
 /**
  * 测试 1: 使用有效的目标 IP 调用 subnet_check_tool

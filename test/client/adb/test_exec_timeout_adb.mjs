@@ -17,12 +17,12 @@
  *   换设备时改下方 DEVICE 常量即可。
  *
  *   运行前置：已 build（out/ 存在）；adb 已连接设备
- *   运行：node test/client/test_exec_timeout_adb.mjs
+ *   运行：node test/client/adb/test_exec_timeout_adb.mjs
  * ======================================================
  */
 
-import { connect } from "./client.mjs";
-import { pass, fail, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, printResult } from "../common.mjs";
 import {
   extractSessionId,
   splitOutputAndAnnotation,
@@ -30,7 +30,7 @@ import {
   runExecTestCases,
   callClose,
   callExec,
-} from "./common-exec.mjs";
+} from "../common-exec.mjs";
 
 /** ADB 通道工具名映射 */
 const ADB_TOOLS = {

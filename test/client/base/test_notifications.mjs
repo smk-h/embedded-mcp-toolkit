@@ -1,5 +1,5 @@
-import { connect } from "./client.mjs";
-import { pass, fail, assert, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, assert, printResult } from "../common.mjs";
 import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 
 async function main() {

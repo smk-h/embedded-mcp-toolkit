@@ -1,11 +1,11 @@
-import { connect } from "./client.mjs";
-import { pass, fail, assert, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, assert, printResult } from "../common.mjs";
 
-async function testPortScan(client) {
-  console.log("\n── 测试 1: 扫描端口 ──");
+async function testNetworkScan(client) {
+  console.log("\n── 测试 1: 扫描网络适配器 ──");
 
   const result = await client.callTool({
-    name: "port_scan_tool",
+    name: "network_scan_tool",
     arguments: {},
   });
 
@@ -14,34 +14,39 @@ async function testPortScan(client) {
   const text = result.content.map((c) => c.text).join("");
   assert(!result.isError, "调用未返回错误");
 
-  // 应该包含 COM 或 LPT 或 "No" 关键字（无端口时）
-  const hasPorts =
-    text.includes("COM") ||
-    text.includes("LPT") ||
-    text.includes("No COM/LPT ports");
-  assert(hasPorts, "返回包含端口信息或无端口提示");
+  const hasAdapters =
+    text.includes("Network Adapters") || text.includes("No network adapters");
+  assert(hasAdapters, "返回包含适配器信息或无适配器提示");
 }
 
-async function testPortScanNoArgs(client) {
-  console.log("\n── 测试 2: 无参数调用 ──");
+async function testNetworkScanDetail(client) {
+  console.log("\n── 测试 2: 验证返回字段 ──");
 
   const result = await client.callTool({
-    name: "port_scan_tool",
+    name: "network_scan_tool",
     arguments: {},
   });
 
   const text = result.content.map((c) => c.text).join("");
-  assert(text.length > 0, "返回非空内容");
+  if (text.includes("No network adapters")) {
+    pass("无适配器，跳过字段验证");
+    return;
+  }
+
+  assert(text.includes("DeviceID:"), "包含 DeviceID 字段");
+  assert(text.includes("Status:"), "包含 Status 字段");
+  assert(text.includes("Speed:"), "包含 Speed 字段");
+  assert(text.includes("MAC Address:"), "包含 MAC Address 字段");
 }
 
 async function main() {
   console.log("╔══════════════════════════════════════════╗");
-  console.log("║   port_scan_tool MCP test                ║");
+  console.log("║   network_scan_tool MCP test             ║");
   console.log("╚══════════════════════════════════════════╝");
 
   let client;
   try {
-    const conn = await connect({ name: "test-port-scan" });
+    const conn = await connect({ name: "test-network-scan" });
     client = conn.client;
     pass("MCP 服务器连接成功");
   } catch (err) {
@@ -49,7 +54,7 @@ async function main() {
     process.exit(1);
   }
 
-  const tests = [testPortScan, testPortScanNoArgs];
+  const tests = [testNetworkScan, testNetworkScanDetail];
 
   for (const test of tests) {
     try {

@@ -24,13 +24,13 @@
  *     BUILD_MAXWAIT = 300000（5 分钟）
  *
  *   运行前置：已 build（out/ 存在）；board-ubuntu SSH 可达
- *   运行：node test/client/test_ssh_build.mjs
+ *   运行：node test/client/ssh/test_ssh_build.mjs
  * ======================================================
  */
 
-import { connect } from "./client.mjs";
-import { pass, fail, printResult } from "./common.mjs";
-import { extractSessionId, callClose } from "./common-exec.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, printResult } from "../common.mjs";
+import { extractSessionId, callClose } from "../common-exec.mjs";
 
 /** 运行配置（换设备/换工程时改此处常量） */
 const cfg = {

@@ -1,5 +1,5 @@
-import { connect } from "./client.mjs";
-import { pass, fail, assert, printResult } from "./common.mjs";
+import { connect } from "../client.mjs";
+import { pass, fail, assert, printResult } from "../common.mjs";
 
 async function testDefaultDevice(client) {
   console.log("\n── 测试 1: 获取默认设备信息 ──");
