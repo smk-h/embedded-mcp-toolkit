@@ -10,6 +10,7 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
+import { sanitize } from "../../../utils/terminal-sanitizer.js";
 import { sshStore } from "./sessions.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
@@ -403,6 +404,10 @@ export async function sshBuildHandler(args: {
   // ── 步骤 6：超时/完成，统一格式化输出 ──
   // exitCode 为 null 表示超时（未检测到完成标记），否则为实际退出码
   const timedOut = exitCode === null;
+  // 剥离 ANSI 控制序列（gcc 在 PTY 下输出的彩色 warning:/error: 前缀会破坏
+  // 分类正则，如 "\x1b[0;32mwarning:\x1b[0m" 中 warning 后是 ESC 而非冒号）。
+  // 在标记剥离之后统一清洗，避免破坏 ___MCP_BUILD_DONE___ 检测。
+  allOutput = sanitize(allOutput);
   // 超时时用 -1 作为退出码占位符，统一为 number 类型便于下游使用
   // exitCode! 是 TypeScript 非空断言运算符（Non-null Assertion Operator）：
   //   - exitCode 的类型是 number | null，TS 编译器无法从 timedOut===false 推断出此处 exitCode 非 null
