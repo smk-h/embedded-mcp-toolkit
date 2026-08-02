@@ -1,0 +1,99 @@
+@startuml 用法二-跨机远程
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+' ============================================================
+' Linux 机器：AI 客户端在此，文件编辑也在此
+' ============================================================
+rectangle "**Linux 机器**" as LX {
+
+  rectangle "AI 编程助手（Claude Code / ZCode）" as host #DCE9FB {
+    rectangle "LLM (Agent)" as llm
+    rectangle "MCP Client" as client
+    llm -right-> client : tools/call
+  }
+
+  ' Linux 端 .mcp.json 写的是 ssh 命令（桥接 server）
+  ' 宽一些、两行：第一行 command，第二行完整 args
+  rectangle ".mcp.json（桥接 server）  command: ssh\nargs: -i ~/.ssh/id_mcp_server <winuser>@<winip> remote-start-mcp.bat" as cfg #FAFAFA;line:Dashed
+
+  rectangle "文件编辑通路\n（AI 自带 read / write，本机完成）" as filesrc #FFFFFF
+}
+
+client -down-> cfg : 读取
+llm -right-> filesrc : 本地编辑源码
+
+' ============================================================
+' Windows 工位机：MCP Server 留守，握着物理设备
+' ============================================================
+rectangle "**Windows 工位机**" as PC {
+
+  rectangle "remote-start-mcp.bat（锚定 cwd + 5 个 env，本地/远程共用）" as bat #FAFAFA;line:Dashed
+
+  rectangle "embedded-mcp-toolkit（MCP Server · Node.js） · Channels: serial · ssh · adb · powershell" as server #DDF3E4
+
+  ' ----- MCP → 外部设备 边界（与 usage1-local 的 osb 框对齐）-----
+  rectangle "MCP → 外部设备   native libs / system calls" as phys #FAFAFA;line:Dashed {
+  }
+}
+
+bat -down-> server : node bin\\... · stdio transport
+server -down-> phys : 本机直调
+
+' ============================================================
+' SSH 隧道：把 stdio 从 Linux 延长到 Windows（跨 TCP :22）
+' ============================================================
+cfg -down-> bat : <b>SSH 隧道转发 stdio</b>\n（JSON-RPC over TCP :22）\n免密：Linux id_mcp_server → Windows authorized_keys
+
+' ============================================================
+' 跨机文件搬运：AI 在 Linux 跑 scp 拉取 Windows 文件
+' ============================================================
+rectangle "宿主端点提示\n（instructions + host_info 工具）\n传达 username@ip，不含凭据" as endpoint #FFFBE6;line:Dashed
+server .up.> endpoint : 解析 SSH_CONNECTION\n区分远程/本地场景
+endpoint .up.> llm : AI 据此构造 scp\n（用 Linux 自己的 shell）
+
+' ============================================================
+' 外部目标设备（连在 Windows 工位机上）
+' 每种通道连接各自类型的设备，与 usage1-local 一致
+' 三个设备横向错开分布，phys 扇形发散出三条曲线
+' ============================================================
+rectangle "串口控制台\n（serial 通道 · UART / U-Boot）" as serial
+rectangle "嵌入式 Linux 开发板\n（ssh 通道 · sshd :22）" as board
+rectangle "Android 设备\n（adb 通道 · USB）" as android
+
+' hidden 横向连接：把三者摆成左(serial) - 中(board) - 右(android)
+serial -[hidden]right-> board
+board -[hidden]right-> android
+
+phys -down~> serial  : serial : COM 口
+phys -down~> board   : ssh : TCP :22
+phys -down~> android : adb : USB
+
+note right of server
+  <b>为什么必须这种拓扑</b>
+  物理串口 / USB / PowerShell 绑定 Windows
+  Linux 够不到工位机的 COM3、USB
+  故 MCP 守在设备旁，由 Linux 远程连它
+  （ch02 称之为 C3 镜像部署）
+end note
+
+@enduml

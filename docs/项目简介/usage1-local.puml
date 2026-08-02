@@ -29,19 +29,19 @@ title Runtime Deployment Topology
 rectangle "**Development Host  (Windows PC)**" as PC {
 
   rectangle "MCP Host  (Claude Code / OpenCode / ZCode)" as host #DCE9FB {
-    rectangle "LLM (Agent)\nedits source · runs tools" as llm
-    rectangle "MCP Client\n(1:1 per server)" as client
+    rectangle "LLM (Agent)" as llm
+    rectangle "MCP Client (1:1 per server)" as client
     llm -right-> client : tools/call
   }
 
-  rectangle "Z:\\ mounted share\n(file edit only — NOT via MCP)" as zdrive #FFFFFF
+  rectangle "Z:\\ mounted share (file edit only — NOT via MCP)" as zdrive #FFFFFF
   llm -down-> zdrive : read / write source tree
 
   ' ----- stdio transport (官方术语：本地子进程通信) -----
   rectangle "<b>stdio transport</b>   JSON-RPC 2.0\nhost spawns child + injects env (DEVICE, CONFIG_PATH, LOG_*)" as proc #FAFAFA;line:Dashed {
   }
 
-  rectangle "embedded-mcp-toolkit\n(Node.js · MCP Server)\nChannels:  serial · ssh · adb · powershell" as server #DDF3E4
+  rectangle "embedded-mcp-toolkit (Node.js · MCP Server) · Channels: serial · ssh · adb · powershell" as server #DDF3E4
 
   ' ----- 本机 ↔ 外部设备 -----
   rectangle "本机 ↔ 外部设备   native libs / system calls" as osb #FAFAFA;line:Dashed {
