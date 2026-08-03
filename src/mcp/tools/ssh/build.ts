@@ -12,6 +12,8 @@ import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
 import { sanitize } from "../../../utils/terminal-sanitizer.js";
 import { sshStore } from "./sessions.js";
+import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
+import { buildRoutingHint } from "../../shared/build-routing.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
 const BUILD_MARKER = "___MCP_BUILD_DONE___";
@@ -323,6 +325,14 @@ export async function sshBuildHandler(args: {
   const pollInterval: number = args.pollInterval ?? 2000; // 每 2 秒轮询一次
   const doClassify: boolean = args.classify ?? true; // 默认开启输出分类
 
+  // 软拦截：远程 SSH 启动（方式二）下，编译本应由 AI 在 Linux 本机用 cmdsift 完成。
+  // 若 AI 仍调用了 ssh_build，在返回结果前缀追加提示，但照常执行（不硬阻断）。
+  // 本地启动（方式一）scenario === "local"，routingHint 为空串，返回内容与改动前逐字一致。
+  const routingHint: string =
+    resolveHostEndpoint().scenario === "remote-ssh"
+      ? buildRoutingHint() + "\n\n"
+      : "";
+
   logger.info(
     `[ssh_build] session_id=${args.session_id} cwd=${args.cwd ?? "(none)"} command=${args.command} maxWait=${maxWait} pollInterval=${pollInterval} classify=${doClassify}`
   );
@@ -455,14 +465,14 @@ export async function sshBuildHandler(args: {
       ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
       : "";
     return {
-      content: [text(prefix + formatted)],
+      content: [text(routingHint + prefix + formatted)],
     };
   }
 
   return {
     content: [
       text(
-        `${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`
+        `${routingHint}${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`
       ),
     ],
   };

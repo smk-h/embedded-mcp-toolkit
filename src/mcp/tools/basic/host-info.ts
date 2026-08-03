@@ -20,6 +20,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
 import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
+import { buildRoutingHint } from "../../shared/build-routing.js";
 
 // ── 声明 ────────────────────────────────────────────────────
 
@@ -63,6 +64,8 @@ function formatHostEndpoint(ep: ReturnType<typeof resolveHostEndpoint>): string[
       "Host:       remote-ssh started",
       "Endpoint:   (unavailable)",
       "Source:     unavailable",
+      "",
+      buildRoutingHint(),
     ];
   }
 
@@ -78,6 +81,8 @@ function formatHostEndpoint(ep: ReturnType<typeof resolveHostEndpoint>): string[
     `  - Linux <- Windows (pull):  scp -i ~/.ssh/id_mcp_server ${ep.endpoint}:"E:/path/to/file" ~/local/path`,
     `  - Linux -> Windows (push):  scp -i ~/.ssh/id_mcp_server ~/local/file ${ep.endpoint}:"E:/path/"`,
     "Do NOT use power_shell_* tools for cross-machine transfers — those run on Windows and would scp Windows to itself.",
+    "",
+    buildRoutingHint(),
   ];
 }
 

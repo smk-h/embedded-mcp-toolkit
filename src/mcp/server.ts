@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { readFileSync } from "fs";
 import * as os from "os";
 import { resolveHostEndpoint } from "./shared/host-endpoint.js";
+import { buildRoutingInstructions } from "./shared/build-routing.js";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 
@@ -41,6 +42,7 @@ const instructions =
         "(NOT via the power_shell_* tools, which execute on the Windows host and would only scp Windows to itself).",
         `To pull a file from Windows: scp -i ~/.ssh/id_mcp_server ${hostEndpoint.endpoint}:"E:/path" ~/local/.`,
         `To push to Windows: scp -i ~/.ssh/id_mcp_server ~/local/file ${hostEndpoint.endpoint}:"E:/path/".`,
+        buildRoutingInstructions(),
       ].join(" ")
     : undefined;
 
