@@ -1,0 +1,53 @@
+@startuml MRTR 交互中途崩溃:无状态的从容
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowparam false
+skinparam shadow false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title MRTR 中途崩溃:Instance A 返回后崩溃,第二轮自动落到 B
+
+participant "Claude Code" as CC
+participant "Instance A" as A
+participant "Instance B" as B
+
+== 第一轮:工具调用发起 ==
+CC -> A  : tools/call "deploy" {params}
+A --> CC : resultType: input_required\n{ "部署到 prod 还是 staging?" }
+
+note right of A #DDF3E4
+  返回后,连接已关闭
+  A 不持有任何中间状态
+end note
+
+== A 崩溃(但此时已无所谓)==
+A -> CC : 💥 Instance A 崩溃被摘除
+note right of CC : 用户正在思考输入...\nA 的死活已无关紧要
+
+== 第二轮:带答案重试,自动路由到 B ==
+CC -> B  : tools/call "deploy" {params,\n   inputResponses: { env: "prod" }}
+note right of B #DDF3E4
+  B 从未见过此客户端
+  但从请求里的 inputResponses
+  照样能继续执行
+end note
+B --> CC : result(部署成功)
+
+note over CC, B
+  <b>关键:答案在客户端持有的请求里,不在服务器内存里</b>
+  所以 A 的崩溃不会丢失任何交互上下文
+end note
+
+@enduml

@@ -1,0 +1,54 @@
+@startuml 无状态服务完美支持负载均衡
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowparam false
+skinparam shadow false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam node {
+  BackgroundColor #FFFFFF
+  BorderColor #AAAAAA
+  FontColor #555555
+  FontSize 11
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title 无状态:任意实例处理任意请求,负载真正均摊
+
+node "客户端请求\n(自包含,无 session_id)" as client
+
+rectangle "Load Balancer\nround-robin 轮询\n无需 sticky session" as lb #FFF3D6
+
+rectangle "Instance A\n无状态" as a #DDF3E4
+rectangle "Instance B\n无状态" as b #DDF3E4
+rectangle "Instance C\n无状态" as c #DDF3E4
+
+client -down-> lb
+
+lb -down-> a : 请求 1
+lb -down-> b : 请求 2
+lb -down-> c : 请求 3
+
+note bottom of lb
+  <b>对比有状态痛点</b>
+  - 有状态:请求必须粘在原实例(sticky session)
+  - 无状态:请求扔给任意实例都能处理
+  - 实例宕机,后续请求自动落到其它实例
+end note
+
+@enduml

@@ -1,0 +1,59 @@
+@startuml Header 路由:网关无需解析 body
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowparam false
+skinparam shadow false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title Header 路由:网关只看 header,不解析 body
+
+' ===== 旧:必须解析 body 才能路由 =====
+rectangle "**有状态(旧):网关必须深度解析**" as old #FFE8E8;line:Dashed {
+  rectangle "Gateway" as g1 #FFFFFF
+  note right of g1
+    1. 读完整 HTTP body
+    2. JSON 解析
+    3. 提取 session_id
+    4. 按 session_id 路由
+    —— 慢、重、易出错
+  end note
+}
+
+' ===== 新:只看 header 即可路由 =====
+rectangle "**无状态(新):只看 Header**" as new #DDF3E4;line:Dashed {
+  rectangle "Gateway" as g2 #FFFFFF
+  note right of g2
+    Mcp-Method: tools/call
+    Mcp-Name: search
+    —— 直接用 header 路由
+    body 原封不动转发
+  end note
+}
+
+old -[hidden]right-> new
+
+note bottom of new
+  <b>收益</b>
+  - WAF / 限流器 / 鉴权层零成本接入
+  - 无需定制 JSON 解析中间件
+  - 网关性能:微秒级路由,无需反序列化
+end note
+
+@enduml

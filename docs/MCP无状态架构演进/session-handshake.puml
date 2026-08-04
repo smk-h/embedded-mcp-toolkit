@@ -1,0 +1,51 @@
+@startuml 会话握手时序图
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 有状态 MCP 会话:握手 → 工具调用 → 反向请求
+
+participant "Client (Host)" as C
+participant "Server" as S
+
+== 握手阶段(协商能力 + 建立会话) ==
+
+C -> S  : ① initialize {protocolVersion, capabilities}
+S --> C : ② initialize result {protocolVersion, capabilities, Mcp-Session-Id: abc123}
+C -> S  : ③ initialized (notification)
+
+note over C, S
+  服务器在内存中创建会话对象,绑定 session_id
+  双方记住对方的能力(后续请求不再重复声明)
+end note
+
+== 握手结束,会话建立 ==
+
+C -> S  : ④ tools/call  (Header: Mcp-Session-Id: abc123)
+S --> C : ⑤ result
+
+== 服务器可主动发起反向请求(依赖长连接保持开放) ==
+
+S -> C  : ⑥ sampling / createRequest (elicitation 追问 / 采样)
+C -> S  : ⑦ sampling result
+
+note right of S
+  反向请求要求底层连接
+  全程保持开放(held-open stream)
+  → 这是水平扩展的核心障碍之一
+end note
+
+@enduml

@@ -1,0 +1,80 @@
+@startuml 垂直扩展与水平扩展对比
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam node {
+  BackgroundColor #FFFFFF
+  BorderColor #AAAAAA
+  FontColor #555555
+  FontSize 11
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title 扩展的两种模式:垂直扩展 vs 水平扩展
+
+' @inject:divider between=vertical,horizontal label="VS"
+
+' ========================================
+'  用 rectangle 包裹两个独立的"栏",
+'  中间用一个矩形画一条垂直虚线作为分界,
+'  再用 [hidden] 连接保证左右等高对齐
+' ========================================
+
+' ----- 左栏:垂直扩展 -----
+together {
+  package "垂直扩展 (Scale Up)\n把一台机器变强" as vertical #FFE8E8;line:Dashed {
+    rectangle "超级机\n64 核 / 512G 内存" as super #FFD6D6
+  }
+  note bottom of super #FFFBE6
+    <b>特点</b>
+    - 实现简单(换配置)
+    - 有物理天花板
+    - 越往上成本指数级增长
+  end note
+}
+
+' ----- 右栏:水平扩展 -----
+together {
+  package "水平扩展 (Scale Out)\n增加机器数量分担负载" as horizontal #DDF3E4;line:Dashed {
+    node "客户端请求" as client #FFFFFF
+    rectangle "Load Balancer\n负载均衡器" as lb #FFF3D6
+    rectangle "机1\n4核/8G" as m1 #C8EBD0
+    rectangle "机2\n4核/8G" as m2 #C8EBD0
+    rectangle "机3\n4核/8G" as m3 #C8EBD0
+
+    client -down-> lb
+    lb -down-> m1 : 请求
+    lb -down-> m2 : 请求
+    lb -down-> m3 : 请求
+  }
+  note bottom of lb #FFFBE6
+    <b>特点</b>
+    - 理论上无上限
+    - 成本随规模线性增长
+    - 前提:服务必须无状态
+    - 云原生 / K8s / Serverless 核心
+  end note
+}
+
+' 关键:横向并排布局
+' 中间的垂直虚线分界由 render.cjs 后处理注入(见 SVG 分隔符注入)
+vertical -[hidden]right-> horizontal
+
+@enduml

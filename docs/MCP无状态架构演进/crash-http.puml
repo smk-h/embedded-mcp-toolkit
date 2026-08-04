@@ -1,0 +1,68 @@
+@startuml HTTP 多实例崩溃:有状态 vs 无状态
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowparam false
+skinparam shadow false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+' @inject:divider between=left,right
+
+title HTTP 多实例:崩溃后,有状态要重新握手,无状态透明重试
+
+' ===== 左:有状态 =====
+together {
+  rectangle "**有状态(旧)**\nsession abc123 绑定在 A 上" as left #FFE8E8;line:Dashed {
+    rectangle "Claude Code" as cc1 #FFFFFF
+    rectangle "LB" as lb1 #FFF3D6
+    rectangle "A ✗ 崩溃" as a1 #FFD6D6
+    rectangle "B ✓" as b1 #DDF3E4
+    cc1 -down-> lb1 : tools/call\nsession:abc123
+    lb1 -down-> a1 : 路由到 A
+    a1 -down-> b1 : A 崩溃被摘除
+    lb1 .down.> b1 : 重试 → B
+    note bottom of b1 #FFD6D6
+      B: "我不认识 abc123!"
+      → 必须重新 initialize
+    end note
+  }
+}
+
+' ===== 右:无状态 =====
+together {
+  rectangle "**无状态(新)**\n请求自包含,实例对等" as right #DDF3E4;line:Dashed {
+    rectangle "Claude Code" as cc2 #FFFFFF
+    rectangle "LB" as lb2 #FFF3D6
+    rectangle "A ✗ 崩溃" as a2 #FFD6D6
+    rectangle "B ✓" as b2 #DDF3E4
+    cc2 -down-> lb2 : tools/call\n_meta:{version, client_id, caps}
+    lb2 -down-> a2 : 路由到 A
+    a2 -down-> b2 : A 崩溃被摘除
+    lb2 -down-> b2 : 重试 → B(自动绕过 A)
+    note bottom of b2 #DDF3E4
+      B 收到 _meta,直接处理
+      从未见过此客户端也无妨
+      → 对 Claude Code 几乎透明
+    end note
+  }
+}
+
+left -[hidden]right-> right
+
+@enduml

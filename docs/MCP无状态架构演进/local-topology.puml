@@ -1,0 +1,50 @@
+@startuml 本地集成拓扑
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title MCP 原始定位:本地 IDE 集成(单机 1:1 长连接)
+
+rectangle "MCP Host\n(Claude Desktop / IDE)" as host #DCE9FB {
+  rectangle "LLM (Agent)" as llm
+  rectangle "MCP Client" as client
+  llm -right-> client : tools/call
+}
+
+rectangle "本地 MCP Server\nstdio 子进程" as server #DDF3E4
+
+rectangle "本地资源 / 工具" as res #FFFFFF {
+  rectangle "本地文件" as f
+  rectangle "Git 仓库" as git
+  rectangle "数据库工具" as db
+}
+
+host <-> server : stdio / 本地\n双向 1:1 长连接
+server -down-> res
+
+note right of server
+  <b>有状态模型在本地场景完全合理</b>
+  - 进程间通信,连接几乎免费
+  - 客户端能力在进程生命周期内不变
+  - 单实例内存 = 天然的会话存储
+end note
+
+@enduml

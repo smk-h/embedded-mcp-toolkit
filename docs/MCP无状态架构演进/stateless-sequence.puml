@@ -1,0 +1,52 @@
+@startuml 无状态会话时序
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowparam false
+skinparam shadow false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 无状态 MCP:无握手,每次请求独立处理
+
+participant "Client (Host)" as C
+participant "Instance A" as A
+participant "Instance B" as B
+
+== 无握手:请求直达任意实例 ==
+
+C -> A  : tools/call {_meta:{version, client_id, capabilities}, params}
+A --> C : result
+note right of A
+  请求自带能力声明
+  无需事先握手
+  无 Mcp-Session-Id
+end note
+
+== 下一次请求,可落到不同实例 ==
+
+C -> B  : tools/call {_meta:{...}}
+B --> C : result
+note right of B
+  Instance B 从未见过此客户端
+  但照样能处理
+  因为信息全在请求里
+end note
+
+== Serverless 友好:实例即起即灭 ==
+
+note over C, B
+  每次请求都是独立的"一次性交易"
+  无需保持连接、无需维持会话
+  → 天然适配 Lambda / Cloudflare Workers
+end note
+
+@enduml

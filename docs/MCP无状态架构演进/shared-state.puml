@@ -1,0 +1,64 @@
+@startuml 共享状态层(水平扩展的代价)
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam database {
+  BackgroundColor #FFE8E8
+  BorderColor #C05050
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam cloud {
+  BackgroundColor #FAFAFA
+  BorderColor #AAAAAA
+  FontColor #555555
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title 有状态协议水平扩展的唯一出路:引入共享状态层
+
+cloud "客户端请求" as req #FAFAFA
+rectangle "Load Balancer" as lb #FFF3D6
+
+rectangle "Instance A\n(持有 session 状态)" as a #DCE9FB
+rectangle "Instance B\n(持有 session 状态)" as b #DCE9FB
+rectangle "Instance C\n(持有 session 状态)" as c #DCE9FB
+
+database "Redis / 共享 DB\n(存所有 session 状态)" as redis #FFE8E8
+
+req -> lb
+lb -down-> a
+lb -down-> b
+lb -down-> c
+
+a -down-> redis : 读 / 写会话
+b -down-> redis : 读 / 写会话
+c -down-> redis : 读 / 写会话
+
+note right of redis
+  <b>架构复杂度暴增</b>
+  - 要部署、运维 Redis 集群
+  - 每个请求多一次网络往返
+  - 引入新的故障点(Redis 挂了全完)
+  - 本来几行代码的服务器
+    变成"分布式状态管理系统"
+end note
+
+@enduml

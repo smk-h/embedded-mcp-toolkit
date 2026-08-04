@@ -1,0 +1,46 @@
+@startuml 无状态 MCP 请求结构
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title 无状态核心:每个请求自包含,无需握手
+
+' ===== 对比:有状态(需要握手建立会话)=====
+rectangle "**有状态(旧)**" as old #FFE8E8;line:Dashed {
+  rectangle "Client" as oc #FFFFFF
+  rectangle "Server" as os #FFFFFF
+  oc -> os : ① initialize
+  os --> oc : ② result + Mcp-Session-Id
+  oc -> os : ③ initialized
+  note right of os : 服务器记住会话\n后续请求靠 session_id
+}
+
+' ===== 对比:无状态(请求自描述)=====
+rectangle "**无状态(新)**" as new #DDF3E4;line:Dashed {
+  rectangle "Client" as nc #FFFFFF
+  rectangle "任意 Server\n实例" as ns #DDF3E4
+  nc -> ns : 直接 tools/call\n_meta 携带 {version,\n client_id, capabilities}
+  note right of ns : 不记忆任何会话\n请求带什么就处理什么
+}
+
+old -[hidden]right-> new
+
+@enduml
