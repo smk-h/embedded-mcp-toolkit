@@ -1,0 +1,86 @@
+@startuml 建链流程图
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam ActivityBackgroundColor #F7F9FC
+skinparam ActivityBorderColor #7A93BE
+skinparam ActivityFontColor #1F2933
+skinparam ActivityDiamondBackgroundColor #FFF3D6
+skinparam ActivityDiamondBorderColor #E0B400
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+skinparam LegendBackgroundColor #FFFBE6
+skinparam LegendBorderColor #E0B400
+
+title establishSession 建链流程:先挂旁路再发命令, 轮询解析 + 双重失败检测
+
+start
+
+:preBuffer = [];
+:detach = attachRawReceiver(cb)
+  cb: session 已建 → consume; 未建 → push preBuffer;
+:shell.write(startCmd)
+  **挂旁路后再发**;
+
+note right
+  若先发命令再挂旁路,
+  设备首帧会进文本态被污染,
+  协议层永远收不到
+end note
+
+repeat
+
+  if (detectHandshakeFailure(preBuffer)\nparse 前检测) then (命中)
+    :记 failReason;
+  elseif (findZmodemHeaderStart(preBuffer)\n定位真头 < 0) then (找不到头)
+  else (找到头)
+    :Session.parse(preBuffer.slice(headerStart));
+    if (parse 成功?) then (否)
+    else (是)
+      if (detectHandshakeFailure(preBuffer)\nparse 后再检一次) then (命中)
+        :session = null;
+        note right
+          sz 文件不存在时会先发合法首帧
+          让 parse 成功, 紧接着报错 + CAN×10
+          preBuffer 残留的错误信息在此命中
+        end note
+      else (未命中)
+        :session.set_sender(onOutput);
+        :成功, 退出循环;
+      endif
+    endif
+  endif
+
+  :sleep 100ms;
+
+repeat while (未超时 5s?) is (否, 继续轮询) not (是, 超时退出)
+
+if (session 为空?) then (是)
+  if (failReason 非空?) then (是)
+    :detach()
+    throw "handshake failed: <原因> <预览>";
+  else (否)
+    :detach()
+    throw "handshake timeout";
+  endif
+else (否)
+  :返回 { session, detach };
+endif
+
+stop
+
+legend right
+  <b>图例</b>
+  |= 形状 |= 含义 |
+  | <color:#FFF3D5>████</color> 带文字菱形 | 判断节点 (if / while 条件) |
+  | <color:#FFF3D6>▄▄</color> 空白小菱形 | 分支汇合点 (无判断语义, 仅收束多分支) |
+  | <color:#F7F9FC>▆▆</color> 矩形 | 处理动作 |
+endlegend
+
+@enduml

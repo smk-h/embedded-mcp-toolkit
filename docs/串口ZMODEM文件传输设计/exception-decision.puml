@@ -1,0 +1,78 @@
+@startuml 异常处理决策流
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam ActivityBackgroundColor #F7F9FC
+skinparam ActivityBorderColor #7A93BE
+skinparam ActivityFontColor #1F2933
+skinparam ActivityDiamondBackgroundColor #FFF3D6
+skinparam ActivityDiamondBorderColor #E0B400
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 异常处理决策流:统一走 catch → finally 双层 abort
+
+start
+
+:传输过程中出现异常;
+
+fork
+  :建链超时
+  (5s 无首帧);
+  :throw;
+fork again
+  :握手期失败检测命中
+  (detectHandshakeFailure);
+  :throw "handshake failed: <原因>";
+fork again
+  :空闲超时
+  (reason="idle");
+  :controller.abort()
+  → signal abort
+  → raceAbort reject
+  / onAbort 调 session.abort();
+fork again
+  :总时长到点
+  (overall 触发);
+  if (是否仍在推进?) then (是)
+    :reason="overall-proceeding";
+  else (否)
+    :reason="overall-stalled";
+  endif
+  :controller.abort() → signal abort;
+fork again
+  :对端拒绝
+  (ZSKIP);
+  :throw;
+fork again
+  :ZFIN 握手失败;
+  :closeSessionWithTimeout 超时
+  → cleanEnded=false;
+end fork
+
+:catch: session.abort()
+**(协议层 abort)**;
+
+note right
+  <b>双层 abort 缺一不可</b>
+  - 协议层: 让本地 zmodem.js
+    状态机的悬挂 Promise 进入 aborted 态
+  - 传输层: 让设备端 rz/sz 进程退出
+end note
+
+:finally: if (!cleanEnded)
+abortDeviceSession(shell)
+**(传输层 abort: CAN×5+BS×5 + drainPort)**;
+
+:finally: recoverShell(shell)
+排空缓冲;
+
+stop
+
+@enduml

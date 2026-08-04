@@ -41,30 +41,7 @@
 
 整个方案分为三层，自上而下各司其职，层间通过明确的接口解耦：
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  工具层  src/mcp/tools/serial/transfer.ts                        │
-│  serial_upload / serial_download                                │
-│  职责：参数校验 · 流控关闭 · 双正交超时 · 进度日志 · shell 恢复        │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ 调用 zmodemSend / zmodemReceive
-┌───────────────────────────────▼─────────────────────────────────┐
-│  协议桥接层  src/services/zmodem/zmodem-bridge.ts                 │
-│  zmodemSend / zmodemReceive                                     │
-│  职责：会话建立 · 帧收发 · ZFIN 握手 · 异常 abort                    │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │  zmodem.js@0.1.10（第三方库）                             │    │
-│  │  职责：ZDATA 编解码 · 协议状态机 · CRC 校验                 │    │
-│  └─────────────────────────────────────────────────────────┘    │
-└───────────────────────────────┬─────────────────────────────────┘
-                    set_sender()│↑attachRawReceiver(buf)
-                    rawWrite() │↓consume(octets)
-┌───────────────────────────────▼─────────────────────────────────┐
-│  传输层  src/transports/serial.ts                                │
-│  SerialShell + 字节旁路                                          │
-│  职责：串口收发 · rawWrite 写字节 · attachRawReceiver 字节旁路       │
-└─────────────────────────────────────────────────────────────────┘
-```
+![三层分层架构](./串口ZMODEM文件传输设计/img/layered-architecture.svg)
 
 底层依赖第三方库 `zmodem.js@0.1.10` 负责协议帧的编码解码，桥接层把它和串口的字节流粘合起来。
 
@@ -72,18 +49,7 @@
 
 这是整个方案的地基。串口的 `data` 事件原本只喂文本态 `OutputBuffer`，ZMODEM 帧会被污染。解决方案是**双写**——`data` 事件同时喂文本态和字节旁路：
 
-```
-                    串口 data 事件（原始 Buffer）
-                              │
-                 ┌────────────┴────────────┐
-                 ▼                         ▼
-    #rawReceiver（字节旁路）        appendData(toString())
-    仅 ZMODEM 传输期间挂载           始终执行
-         │                              │
-         ▼                              ▼
-  session.consume()              文本态 OutputBuffer
-  （ZMODEM 协议层）              （serial_read 等工具）
-```
+![字节旁路双写](./串口ZMODEM文件传输设计/img/byte-bypass.svg)
 
 相关代码在 [`src/transports/serial.ts`](../src/transports/serial.ts#L180-L183) 的数据监听：
 
@@ -103,35 +69,7 @@ serialPort.on("data", (data: Buffer) => {
 
 上传与下载的字节流向是对称的，区别仅在于"谁发数据、谁发控制帧"。完整双向数据流如下：
 
-```
-【上传】MCP 发数据，设备接收
-  本地文件
-    │ createReadStream 分块（8KiB）
-    ▼
-  transfer.send(chunk)
-    │ zmodem.js 编码为 ZDATA 帧
-    ▼
-  set_sender 回调 → shell.rawWrite(Buffer) ──写──► 串口 ──► 设备 rz
-                                                              │
-  设备回执 ◄── 串口 ◄──读── data 事件 ◄──────────────────────────┘
-    │
-    ▼
-  attachRawReceiver → session.consume → zmodem.js 解析（ZRPOS/ZACK/ZEOF）
-
-【下载】MCP 收数据，设备发送
-  MCP 控制帧（ZRINIT/ZFIN）
-    │ zmodem.js 编码
-    ▼
-  set_sender 回调 → shell.rawWrite(Buffer) ──写──► 串口 ──► 设备 sz
-                                                              │
-  设备数据 ◄── 串口 ◄──读── data 事件 ◄──────────────────────────┘
-    │
-    ▼
-  attachRawReceiver → session.consume → zmodem.js 解析
-    │
-    ▼
-  offer 事件 / on_input 回调 → writeStream 流式写盘
-```
+![双向数据流（上传与下载）](./串口ZMODEM文件传输设计/img/data-flow-bidirectional.svg)
 
 ### 3. 文件组织
 
@@ -338,29 +276,7 @@ function detectHandshakeFailure(bytes: number[]):
 
 ### 5. 建链流程图
 
-```
-establishSession(shell, onOutput, timeoutMs=5000, startCmd="rz")
-  │
-  ├─ preBuffer = []
-  ├─ detach = attachRawReceiver(cb)
-  │     └─ cb: session 已建 → consume；未建 → push 到 preBuffer
-  ├─ shell.write(startCmd)                         [挂旁路后再发]
-  │
-  ├─ while (未超时 5s)
-  │     ├─ detectHandshakeFailure(preBuffer) → 命中则 break（记 failReason）
-  │     ├─ findZmodemHeaderStart(preBuffer) → 定位真头
-  │     ├─ Session.parse(preBuffer.slice(headerStart))
-  │     │     ├─ 成功 → 再检一次 detectHandshakeFailure
-  │     │     │        ├─ 命中 → session=null + break（记 failReason）
-  │     │     │        └─ 未命中 → session.set_sender(onOutput) → break
-  │     │     └─ 失败 → 继续
-  │     └─ sleep 100ms
-  │
-  ├─ session 为空
-  │     ├─ failReason 非空 → detach() + throw "handshake failed: <原因> <预览>"
-  │     └─ failReason 为空 → detach() + throw "handshake timeout"
-  └─ 返回 { session, detach }
-```
+![建链流程图](./串口ZMODEM文件传输设计/img/establish-session.svg)
 
 ## 五、 上传方案（serial_upload）
 
@@ -368,21 +284,7 @@ establishSession(shell, onOutput, timeoutMs=5000, startCmd="rz")
 
 上传时，MCP 是 ZMODEM **发送端**，设备端 `rz` 是接收端。完整时序：
 
-```
-MCP（发送端）                            设备 rz（接收端）
-                 ── rz 命令 ──►          启动
-                 ◄── ZRINIT ──           "我准备好了"
-建 Send 会话
-                 ── ZFILE ──►            收到文件元信息
-                 ◄── ZRPOS ──            "从 offset 0 开始发"
-                 ── ZDATA × N ─►         接收数据
-                 ── ZEOF ──►             "文件发完了"
-                 ◄── ZRINIT ──           "文件收好了，准备下一个"
-session.close()
-                 ── ZFIN ──►             "会话结束"
-                 ◄── ZFIN ──             "确认结束"
-                 ── OO ──►               Over and Out，rz 退出
-```
+![上传时序图](./串口ZMODEM文件传输设计/img/upload-sequence.svg)
 
 ### 2. 数据发送
 
@@ -488,22 +390,7 @@ function closeSessionWithTimeout(
 
 下载时，MCP 是 ZMODEM **接收端**，设备端 `sz` 是发送端。完整时序：
 
-```
-MCP（接收端）                            设备 sz（发送端）
-                 ── sz 命令 ──►          启动
-                 ◄── ZRQINIT ──          "我要发文件了"
-建 Receive 会话
-session.start()
-                 ── ZRINIT ──►           "我准备好了"
-                 ◄── ZFILE ──            文件元信息（触发 offer 事件）
-                 ◄── ZDATA × N ─         文件数据（触发 on_input）
-                 ◄── ZEOF ──             "文件发完了"
-                 ── ZRINIT ──►           "收好了，准备下一个"
-                 ◄── ZFIN ──             "会话结束"
-                 ── ZFIN ──►             "确认结束"
-                 ◄── OO ──               Over and Out，sz 退出
-                                   session_end 触发
-```
+![下载时序图](./串口ZMODEM文件传输设计/img/download-sequence.svg)
 
 ### 2. 接收端的惰性会话（关键）
 
@@ -825,32 +712,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 
 异常发生后，代码按统一路径处理。以下决策流展示了不同异常的走向：
 
-```
-传输过程中出现异常
-      │
-      ├─ 建链超时（5s 无首帧）
-      │     └─ throw → catch: session.abort() → finally: abortDeviceSession
-      │
-      ├─ 握手期失败检测命中（detectHandshakeFailure）
-      │     └─ throw "handshake failed: <原因>" → finally: abortDeviceSession
-      │
-      ├─ 空闲超时（idle 触发，reason="idle"）
-      │     └─ controller.abort() → signal abort
-      │           → raceAbort reject / onAbort 调 session.abort()
-      │           → catch → finally: abortDeviceSession
-      │
-      ├─ 总时长到点（overall 触发）
-      │     ├─ 仍推进 → reason="overall-proceeding"
-      │     └─ 已停滞 → reason="overall-stalled"
-      │     └─ （后续路径同 idle，文案不同）
-      │
-      ├─ 对端拒绝（ZSKIP）
-      │     └─ throw → catch → finally: abortDeviceSession
-      │
-      └─ ZFIN 握手失败
-            └─ closeSessionWithTimeout 超时 → cleanEnded=false
-                  → finally: abortDeviceSession
-```
+![异常处理决策流](./串口ZMODEM文件传输设计/img/exception-decision.svg)
 
 ### 3. 双层 abort 设计
 

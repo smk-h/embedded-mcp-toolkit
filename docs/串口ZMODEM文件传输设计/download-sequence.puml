@@ -1,0 +1,48 @@
+@startuml 下载时序图
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 下载时序:MCP 为接收端, 设备 sz 为发送端
+
+participant "MCP\n(接收端)" as M
+participant "设备 sz\n(发送端)" as S
+
+== 建立会话:sz 发 ZRQINIT 请求发送 ==
+
+M -> S  : sz 命令
+S --> M : ZRQINIT  "我要发文件了"
+
+== MCP 发 ZRINIT 就绪, sz 回 ZFILE 触发 offer 事件 ==
+
+M -> S  : ZRINIT  "我准备好了"
+S --> M : ZFILE  文件元信息(触发 offer 事件)
+
+== 数据传输:ZDATA 帧流式写盘 ==
+
+S --> M : ZDATA × N  文件数据(触发 on_input)
+S --> M : ZEOF  "文件发完了"
+
+== 关闭握手:sz 发 ZFIN, MCP 确认后 sz 退出 ==
+
+M -> S  : ZRINIT  "收好了, 准备下一个"
+S --> M : ZFIN  "会话结束"
+M -> S  : ZFIN  "确认结束"
+S --> M : OO  Over and Out
+
+note over M : session_end 触发, sz 退出
+
+@enduml

@@ -1,0 +1,51 @@
+@startuml 字节旁路双写
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title 字节旁路双写:data 事件同时喂文本态与字节旁路
+
+rectangle "串口 data 事件\n(原始 Buffer)" as data #DCE9FB
+
+rectangle "#rawReceiver\n(字节旁路)" as raw #DDF3E4
+rectangle "session.consume()\n(ZMODEM 协议层)" as consume #FFFFFF
+
+rectangle "appendData(toString())" as append #FFE8E8
+rectangle "文本态 OutputBuffer\n(serial_read 等工具)" as ob #FFFFFF
+
+data -down-> raw : 仅 ZMODEM 传输期间挂载
+data -down-> append : 始终执行
+
+raw -down-> consume
+append -down-> ob
+
+note right of raw
+  原始 Buffer 直送协议层
+  不经 toString() 污染
+end note
+
+note right of append
+  文本态路径始终在工作
+  ZMODEM 帧在这里表现为乱码
+  (无害,会被 recoverShell 排空)
+end note
+
+@enduml

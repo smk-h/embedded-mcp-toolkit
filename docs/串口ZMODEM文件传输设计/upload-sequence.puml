@@ -1,0 +1,49 @@
+@startuml 上传时序图
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 上传时序:MCP 为发送端, 设备 rz 为接收端
+
+participant "MCP\n(发送端)" as M
+participant "设备 rz\n(接收端)" as R
+
+== 建立会话:rz 发 ZRINIT 表示就绪 ==
+
+M -> R  : rz 命令
+R --> M : ZRINIT  "我准备好了"
+
+== 协商起始偏移与文件元信息 ==
+
+M -> R  : ZFILE  文件元信息(文件名 / 大小)
+R --> M : ZRPOS  "从 offset 0 开始发"
+
+== 数据传输:ZDATA 帧流式发送 ==
+
+M -> R  : ZDATA × N  数据帧(每帧 ≤ 8KiB)
+M -> R  : ZEOF  "文件发完了"
+R --> M : ZRINIT  "文件收好了, 准备下一个"
+
+== 关闭握手:MCP 发 ZFIN, rz 确认后退出 ==
+
+M -> M  : session.close()
+M -> R  : ZFIN  "会话结束"
+R --> M : ZFIN  "确认结束"
+M -> R  : OO  Over and Out
+
+note over R : rz 退出
+
+@enduml

@@ -1,0 +1,69 @@
+@startuml 三层分层架构
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam rectangle {
+  BackgroundColor #F7F9FC
+  BorderColor #7A93BE
+  BorderThickness 1
+  FontColor #1F2933
+  FontSize 12
+}
+skinparam note {
+  BackgroundColor #FFFBE6
+  BorderColor #E0B400
+  FontColor #5C4A00
+  FontSize 10
+}
+
+title 三层分层设计:工具层 → 协议桥接层 → 传输层
+
+rectangle "工具层  src/mcp/tools/serial/transfer.ts" as tool #DCE9FB {
+  rectangle "serial_upload / serial_download" as tools #FFFFFF
+  note right of tools
+    <b>职责</b>
+    - 参数校验
+    - 流控关闭
+    - 双正交超时
+    - 进度日志
+    - shell 恢复
+  end note
+}
+
+rectangle "协议桥接层  src/services/zmodem/zmodem-bridge.ts" as bridge #DDF3E4 {
+  rectangle "zmodemSend / zmodemReceive" as bs #FFFFFF
+  rectangle "zmodem.js@0.1.10(第三方库)" as lib #FFF3D6
+  note right of bs
+    <b>职责</b>
+    - 会话建立
+    - 帧收发
+    - ZFIN 握手
+    - 异常 abort
+  end note
+  note right of lib
+    <b>职责</b>
+    - ZDATA 编解码
+    - 协议状态机
+    - CRC 校验
+  end note
+}
+
+rectangle "传输层  src/transports/serial.ts" as transport #FFE8E8 {
+  rectangle "SerialShell + 字节旁路" as shell #FFFFFF
+  note right of shell
+    <b>职责</b>
+    - 串口收发
+    - rawWrite 写字节
+    - attachRawReceiver 字节旁路
+  end note
+}
+
+tool -down-> bridge : 调用 zmodemSend / zmodemReceive
+bridge -down-> transport : set_sender() / rawWrite()\nattachRawReceiver(buf) / consume(octets)
+
+@enduml

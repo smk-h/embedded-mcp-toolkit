@@ -1,0 +1,50 @@
+@startuml 双向数据流(上传与下载)
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 双向数据流:上传(MCP 发数据)与下载(MCP 收数据)对称
+
+participant "MCP\n(本地)" as M
+participant "串口\n(传输层)" as S
+participant "设备\n(rz / sz)" as D
+
+== 上传:MCP 发数据, 设备接收 ==
+
+M -> M  : 本地文件 createReadStream\n分块 8KiB
+M -> M  : transfer.send(chunk)\nzmodem.js 编码为 ZDATA 帧
+M -> S  : set_sender 回调\nshell.rawWrite(Buffer)  写
+S -> D  : ZDATA 数据帧
+D --> S : 设备回执 (ZRPOS / ZACK / ZEOF)
+S -> M  : data 事件\nattachRawReceiver
+M -> M  : session.consume\nzmodem.js 解析
+
+== 下载:MCP 收数据, 设备发送 ==
+
+M -> M  : MCP 控制帧\n(ZRINIT / ZFIN) zmodem.js 编码
+M -> S  : set_sender 回调\nshell.rawWrite(Buffer)  写
+S -> D  : ZRINIT / ZFIN 控制帧
+D --> S : 设备数据 (ZFILE / ZDATA)
+S -> M  : data 事件\nattachRawReceiver
+M -> M  : session.consume\nzmodem.js 解析
+M -> M  : offer 事件 / on_input 回调\nwriteStream 流式写盘
+
+note over M
+  上传与下载的字节流向对称,
+  区别仅在于"谁发数据、谁发控制帧"
+end note
+
+@enduml
