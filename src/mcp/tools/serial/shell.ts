@@ -16,8 +16,13 @@ import {
 import {
   PshState,
   PshStateMachine,
+  PshHandler,
   PSH_STATE_DESC,
 } from "../../../services/psh.js";
+import {
+  UserLoginHandler,
+  UserLoginStatus,
+} from "../../../services/user-login.js";
 import { KeyProvider } from "../../../services/key-provider.js";
 import { serialStore, portToSession } from "./sessions.js";
 import {
@@ -678,6 +683,21 @@ export async function serialShellLoginHandler(args: {
     portToSession.set(baseConfig.port, newId);
   }
 
+  // ===== 用户登录判定（先于 PSH 探测，二者互斥）=====
+  // 正常系统登录（getty/login）停在 "login:" 提示符；PSH 设备提示符为 locked> / #，
+  // 不会出现 login:。先发一个回车唤醒 getty 重绘 login: 提示符（对 shell / PSH 无害），
+  // 命中 login: 则走用户名/密码登录；否则照常走 PSH 状态机。
+  if (await detectUserLoginPrompt(shell, banner, stepDelay)) {
+    logger.info(`[serial_shell_login] 检测到 login: 提示符, 走用户登录`);
+    return performUserLogin(
+      shell,
+      baseConfig,
+      existingId,
+      deviceName,
+      stepDelay
+    );
+  }
+
   // ===== 状态机驱动 profile 匹配 + 状态检测 =====
   const sm = new PshStateMachine("serial");
   let action = sm.start(banner);
@@ -685,7 +705,18 @@ export async function serialShellLoginHandler(args: {
   while (!action.done) {
     shell.write(action.send!, 1);
     await new Promise((r) => setTimeout(r, action.waitMs));
-    action = await sm.feed(shell, shell.read(1));
+    const probeOut = shell.read(1);
+    // 探测命令被 login 提示符当用户名吞掉 → 转用户登录
+    if (probeOut && isLoginPrompt(probeOut)) {
+      return performUserLogin(
+        shell,
+        baseConfig,
+        existingId,
+        deviceName,
+        stepDelay
+      );
+    }
+    action = await sm.feed(shell, probeOut);
   }
 
   const handler = action.handler;
@@ -714,6 +745,20 @@ export async function serialShellLoginHandler(args: {
 
   // --- 解锁中：悬挂的密码提示，需 key 完成输入 ---
   if (action.state === PshState.UNLOCKING) {
+    // 兜底：若 PshSM 误判（探测被 login 提示符当用户名/密码吞掉），
+    // 而设备配置了 loginUsername/loginPassword，则转用户登录流程
+    if (baseConfig.loginUsername && baseConfig.loginPassword) {
+      logger.info(
+        `[serial_shell_login] UNLOCKING但配置了login凭据, 转用户登录`
+      );
+      return performUserLogin(
+        shell,
+        baseConfig,
+        existingId,
+        deviceName,
+        stepDelay
+      );
+    }
     if (!args.key) {
       logger.warn(`[serial_shell_login] PSH处于UNLOCKING状态但未提供密钥`);
       if (!existingId) {
@@ -838,8 +883,143 @@ export async function serialShellLoginHandler(args: {
   );
 }
 
-// ── serial_enter_uboot ────────────────────────────────────────
+/**
+ * @brief login: 提示符判定正则（正常系统登录，getty/login 标准提示符）
+ *
+ * 匹配行尾的 "login:"（getty 的标准用户名提示）。PSH 设备提示符为 locked> / #，
+ * 不会命中此正则，因此可作为用户登录与 PSH 的互斥判定条件。
+ */
+const LOGIN_PROMPT_RE = /login:\s*$/im;
 
+/**
+ * @brief 判定一段终端输出是否停在 "login:" 提示符
+ *
+ * 纯文本判定，不产生任何终端交互（不发命令、不读端口）。
+ *
+ * @param text 终端累积输出
+ * @returns true = 已停在 login: 提示符（需走用户登录）
+ */
+function isLoginPrompt(text: string): boolean {
+  return LOGIN_PROMPT_RE.test(text);
+}
+
+/**
+ * @brief 探测终端是否处于用户登录提示符（先于 PSH 探测的互斥判定）
+ *
+ * 流程：
+ *   1. banner 已含 "login:" → 直接判定命中（不打扰终端）
+ *   2. banner 匹配 PSH profile → 判定不命中（PSH 设备优先走 PSH 流程）
+ *   3. 否则发一个回车唤醒 getty 重绘 login: 提示符（对 shell / PSH 无害），
+ *      再结合唤醒输出判定
+ *
+ * @param shell     串口 shell 实例
+ * @param banner    连接后读取到的初始输出
+ * @param stepDelay 唤醒后的等待时间（毫秒）
+ * @returns true = 终端处于 login: 提示符，应走用户登录
+ */
+async function detectUserLoginPrompt(
+  shell: SerialShell,
+  banner: string,
+  stepDelay: number
+): Promise<boolean> {
+  if (isLoginPrompt(banner)) {
+    return true;
+  }
+  if (PshHandler.matchFromOutput(banner, "serial")) {
+    return false;
+  }
+  shell.write("", 1);
+  await new Promise((r) => setTimeout(r, stepDelay));
+  const wakeOut = shell.read(1);
+  return !!wakeOut && isLoginPrompt(banner + "\n" + wakeOut);
+}
+
+/**
+ * @brief 串口用户名/密码登录（正常系统登录，非 PSH）
+ *
+ * 终端停在 "login:" 提示符（getty/login 标准登录）时调用。
+ * 复用 UserLoginHandler 的登录序列：发用户名 → 等待 Password: → 发密码 → 探测验证。
+ * 登录成功后注册会话并返回，失败时关闭新建会话并返回错误信息。
+ *
+ * @param shell     串口 shell 实例
+ * @param config    串口配置（需含 loginUsername / loginPassword）
+ * @param existingId 已有会话 ID（复用时不关闭）
+ * @param deviceName 设备名
+ * @param stepDelay 步骤间等待时间（毫秒）
+ * @return MCP 响应，成功含 session_id，失败含原因
+ */
+async function performUserLogin(
+  shell: SerialShell,
+  config: SerialShellConfig,
+  existingId: string | undefined,
+  deviceName: string,
+  stepDelay: number
+) {
+  const username = config.loginUsername ?? "";
+  const password = config.loginPassword ?? "";
+  if (!username || !password) {
+    logger.warn(
+      `[serial_shell_login] 用户登录失败: 未配置 loginUsername/loginPassword`
+    );
+    if (!existingId) await shell.close();
+    return {
+      content: [
+        text(
+          "User login required but loginUsername/loginPassword not configured for this device."
+        ),
+      ],
+    };
+  }
+
+  logger.info(
+    `[serial_shell_login] 用户登录开始 (username=${username})`
+  );
+
+  // 终端复位：若探测命令被 login 提示符当用户名吞掉，终端停在 Password:。
+  // 发送 Ctrl+C 中止当前登录并返回 login:，避免用户名被当成密码输入。
+  const danglingPassword = /Password:\s*$/im;
+  let pending = shell.read(0);
+  for (let attempt = 0; attempt < 3 && danglingPassword.test(pending); attempt++) {
+    logger.info(
+      `[serial_shell_login] 检测到悬挂的 Password:, 发 Ctrl+C 复位登录`
+    );
+    shell.write(CONTROL_CHAR_MAP["c"], 1, false);
+    await new Promise((r) => setTimeout(r, stepDelay));
+    pending = shell.read(1);
+  }
+
+  const handler = new UserLoginHandler({ username, password });
+  const stepDelays: Record<string, number> = {
+    [UserLoginStatus.WAITING_PASSWORD]: stepDelay,
+    [UserLoginStatus.LOGGED_IN]: stepDelay,
+  };
+  const result = await handler.login(shell, undefined, stepDelays);
+
+  if (!result.success) {
+    logger.error(
+      `[serial_shell_login] 用户登录失败, status=${result.status}, error=${result.error ?? "无"}`
+    );
+    if (!existingId) await shell.close();
+    return {
+      content: [
+        text(
+          `User login failed.\nStatus: ${result.status}\nError: ${result.error ?? "(none)"}\nOutput: ${result.output}`
+        ),
+      ],
+    };
+  }
+
+  logger.info(`[serial_shell_login] 用户登录成功`);
+  return registerSession(
+    shell,
+    config.port,
+    existingId,
+    deviceName,
+    `(user login succeeded)\nUser: ${username}`
+  );
+}
+
+// ── serial_enter_uboot ────────────────────────────────────────
 /**
  * @brief serial_enter_uboot 工具配置
  *
