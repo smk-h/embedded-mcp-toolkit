@@ -386,7 +386,15 @@ export const adbShellExecConfig = {
       maxDuration: {
         type: "number",
         description:
-          "Override execution duration in ms. Default varies by command type: resident commands (ping/logcat/top/...) 10000 (sampling, Ctrl+C sent on timeout), normal commands 300000 (5min fallback, no interrupt sent). Action on timeout still follows resident classification regardless of this value.",
+          "Execution cap in ms — ALWAYS estimate and pass a timeout matching the command's expected runtime; " +
+          "do not omit it. Suggested ranges: instant info commands (ls/ip addr/cat/echo) 3000-5000; " +
+          "medium tasks (apt install, dd, service restart) 30000-120000; " +
+          "long builds/flashes (make, flash_image) up to 600000; " +
+          "streaming/resident commands (ping/logcat/top, or sampling a fixed window of live output) " +
+          "10000 (Ctrl+C auto-sent to stop). If omitted, safety-valve defaults apply: " +
+          "resident commands 10000ms (sampling, Ctrl+C sent on timeout), " +
+          "other commands 300000ms (5min fallback, NO interrupt sent — the command may still be running, " +
+          "terminate via send_ctrl if needed). Timeout type is annotated in the returned output.",
       },
     },
     required: ["session_id", "command"],
