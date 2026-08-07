@@ -1,6 +1,7 @@
 // mcp 共享辅助函数、类型与工具构建器
 
 import { fromJsonSchema } from "@modelcontextprotocol/server";
+import { logger } from "../shared/logger.js";
 
 // ── 辅助函数 ────────────────────────────────────────────────
 
@@ -47,5 +48,35 @@ export function mcpDefineTool<T>(
   config: mcpToolConfig,
   handler: (args: T) => ReturnType<mcpToolCallback>
 ): ToolEntry {
-  return { name, config, handler: handler as mcpToolCallback };
+  return {
+    name,
+    config,
+    handler: withInvocationLog(name, handler as mcpToolCallback),
+  };
+}
+
+/**
+ * 统一包裹工具执行：记录调用开始（含 AI 传入的原始参数）与调用结束。
+ * 日志流据此能精确配对每一次工具调用的开始/完成边界。
+ */
+function withInvocationLog(
+  name: string,
+  handler: mcpToolCallback
+): mcpToolCallback {
+  return async (args: unknown) => {
+    const raw = args === undefined ? "" : JSON.stringify(args);
+    logger.info(`>>> Tool invocation begins! [${name}] args=${raw}`);
+    const started = Date.now();
+    try {
+      const result = await handler(args);
+      const ms = Date.now() - started;
+      logger.info(`<<< Tool invocation completed!!! [${name}] elapsed=${ms}ms`);
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const ms = Date.now() - started;
+      logger.error(`<<< Tool invocation FAILED [${name}] elapsed=${ms}ms err=${msg}`);
+      throw err;
+    }
+  };
 }
