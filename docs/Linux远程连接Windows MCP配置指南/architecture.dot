@@ -1,0 +1,88 @@
+digraph architecture {
+    // 全局设置
+    graph [
+        rankdir=LR,
+        bgcolor="transparent",
+        fontname="Noto Sans CJK SC",
+        fontsize=13,
+        nodesep=0.7,
+        ranksep=0.9,
+        splines=spline,
+        compound=true
+    ];
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#555555"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#666666",
+        arrowsize=0.9
+    ];
+
+    // ---- 左: Linux 编译服务器 (远程 Agent) ----
+    subgraph cluster_linux {
+        label="Linux 编译服务器(远程 Agent)";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#EAF2FB";
+        color="#3B6EA5";
+        labeljust=l;
+
+        agent [
+            label="Claude Code\n/ ZCode",
+            fillcolor="#D6E4F0",
+            color="#2C5F8A"
+        ];
+        mcp_cfg [
+            label="MCP 桥接配置\n.mcp.json 等",
+            fillcolor="#E6F0DA",
+            color="#4E7A2C"
+        ];
+    }
+
+    // ---- 右: Windows 本地 (MCP 宿主) ----
+    subgraph cluster_win {
+        label="Windows 本地(MCP 宿主)";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#FBEAF2";
+        color="#A53B6E";
+        labeljust=l;
+
+        sshd [
+            label="OpenSSH Server\n(sshd-config 搭建)",
+            fillcolor="#F5DCEB",
+            color="#8A2C5F"
+        ];
+        mcp [
+            label="MCP 服务\nremote-start-mcp.bat\n启动 node 进程",
+            fillcolor="#F3D9C7",
+            color="#8A4B2C"
+        ];
+    }
+
+    // ---- 中间: SSH 桥 ----
+    bridge [
+        label="SSH 反向桥\n(id_mcp_server 密钥)",
+        shape=box,
+        fillcolor="#FFF3CC",
+        color="#B08A1E",
+        fontsize=12,
+        style="filled,rounded"
+    ];
+
+    // ---- 调用链路(主流程): agent -> bridge -> sshd -> mcp ----
+    agent -> bridge [label="调用 MCP 工具", color="#2C5F8A", fontcolor="#2C5F8A"];
+    bridge -> sshd [label="免密反向登录\n(22 端口)", color="#8A4B2C", fontcolor="#8A4B2C"];
+    sshd -> mcp [label="拉起", color="#A53B6E", fontcolor="#A53B6E"];
+
+    // ---- 配置写入链(虚线): mcp_cfg -> bridge ----
+    mcp_cfg -> bridge [label="② 写入桥接配置", color="#4E7A2C", fontcolor="#4E7A2C", style=dashed, constraint=false];
+}
