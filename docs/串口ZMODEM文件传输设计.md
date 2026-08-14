@@ -1236,7 +1236,7 @@ serialDownloadHandler(args)
 - **看 CAN 序列长度**：CAN×5 是主动中止，CAN×10 是 lrzsz 超时退出（`fubar:` 路径 + `main()` 退出各调一次 `canit`）
 - **看时间间隔**：数据发完后 5 秒才 abort，通常是"等 ZFIN 超时"
 - **看 0x42 的位置**：在 `2a 2a 18` 之后是 hex 头格式指示符 ZHEX（'B'），不是帧类型
-- **独立诊断脚本**：`test/scripts/serial_abort_zmodem.mjs` 可在 MCP 释放端口后单独发 abort 恢复设备
+- **独立诊断脚本**：`test/scripts/serial/abort-zmodem.mjs` 可在 MCP 释放端口后单独发 abort 恢复设备
 
 ## 十四、 验收标准
 

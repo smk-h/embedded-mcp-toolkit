@@ -1,6 +1,6 @@
 /**
  * =====================================================
- * File name  : uboot-detector-test.mjs
+ * File name  : detector-test.mjs
  * Date       : 2026/07/19
  * Description: UbootDetector 离线验证脚本
  *
@@ -12,7 +12,7 @@
  *     - 配置值与默认值合并（非替换），用户配置补充默认而非覆盖
  *     - 无效正则构造抛错
  *
- *   运行：先 npm run build，再 node test/scripts/uboot-detector-test.mjs
+ *   运行：先 npm run build，再 node test/scripts/uboot/detector-test.mjs
  * ======================================================
  */
 

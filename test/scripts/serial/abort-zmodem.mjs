@@ -9,9 +9,9 @@
  *   前提：COM 口未被占用（若有 MCP 串口会话，需先 serial_close 释放）。
  *
  *   用法：
- *     node test/scripts/serial_abort_zmodem.mjs           # 默认 COM3
- *     node test/scripts/serial_abort_zmodem.mjs COM5      # 指定串口
- *     node test/scripts/serial_abort_zmodem.mjs COM5 921600  # 指定波特率
+ *     node test/scripts/serial/abort-zmodem.mjs           # 默认 COM3
+ *     node test/scripts/serial/abort-zmodem.mjs COM5      # 指定串口
+ *     node test/scripts/serial/abort-zmodem.mjs COM5 921600  # 指定波特率
  * ======================================================
  */
 
