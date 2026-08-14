@@ -472,7 +472,11 @@ export async function adbShellExecHandler(args: {
 
     // 三态格式化：正常完成原样返回；采样超时（常驻）与兜底超时（普通）追加不同标注
     let output = execResult.output;
-    if (execResult.timeoutKind === "sampling") {
+    if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
+      output =
+        (output ? output + "\n" : "") +
+        `[exit code: ${execResult.exitCode}]`;
+    } else if (execResult.timeoutKind === "sampling") {
       output =
         (output ? output + "\n" : "") +
         `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;

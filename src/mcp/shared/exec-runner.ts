@@ -13,10 +13,11 @@
  *   各通道差异（取 shell、取提示符配置）通过 ExecInput 注入，机制保持通道无关。
  *
  *   底层轮询骨架（sleep + drain 累积 + deadline）借鉴 ssh_build 已验证的模式，
- *   但结束检测与超时处理与 ssh_build 不同：
- *     - ssh_build：注入 marker（确定性、不杀命令、能拿退出码）
- *     - runExec  ：提示符正则（启发式、超时发 Ctrl+C、拿不到退出码）
- *   两者仅轮询骨架复用，机制不同（详见 plan.md 技术决策）。
+ *   结束检测采用三级策略：
+ *     - 1级 marker 注入（确定性，首选）：拼接 (cmd); echo "MARKER:$?"，
+ *       marker 出现即命令结束，附带退出码，不受刷屏影响
+ *     - 2级 末尾锚定（快路径）：提示符正则锚定输出末尾，无刷屏设备秒判
+ *     - 3级 行级扫描（慢路径，刷屏兜底）：提示符在中间行出现 + idle 窗口确认
  * ======================================================
  */
 
@@ -43,6 +44,56 @@ const DEFAULT_MIN_DELAY_MS = 1000;
 
 /** @brief PTY 回显剥离最大重试次数（每次等待 pollInterval） */
 const ECHO_STRIP_MAX_RETRIES = 10;
+
+/**
+ * @brief exec 完成标记前缀
+ *
+ * 注入命令尾部（echo "MARKER:$?"），检测到此标记出现即命令结束。
+ * 标记格式为 `___MCP_EXEC_DONE_<rand>___:<exitcode>`，随机后缀避免
+ * 命令输出中偶然出现相同字符串导致误判。ssh_build 已验证此模式。
+ */
+const EXEC_MARKER_PREFIX = "___MCP_EXEC_DONE_";
+
+/**
+ * @brief 生成唯一的 exec 完成标记
+ *
+ * 每次调用生成不同的随机后缀，避免与命令输出碰撞。
+ * @returns 形如 "___MCP_EXEC_DONE_a3f7b2___" 的唯一标记
+ */
+function generateMarker(): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${EXEC_MARKER_PREFIX}${rand}___`;
+}
+
+/**
+ * @brief 构造 marker 检测正则
+ *
+ * 匹配 `<marker>:<digits>`，捕获退出码。
+ * @param marker - 唯一标记字符串
+ * @returns 匹配 marker 及退出码的正则
+ */
+function buildMarkerRegex(marker: string): RegExp {
+  return new RegExp(`${marker}:(\\d+)`);
+}
+
+/**
+ * @brief 刷屏设备行级检测的噪声阈值（字节）
+ *
+ * 提示符行之后追加的数据量若小于此值，认为是后台日志噪声而非命令输出，
+ * 判定命令已结束。设备后台一行日志通常 80-120 字节，256 字节可容纳约
+ * 2 行噪声，既能容忍提示符后被 1-2 行后台日志覆盖，又不会把大量日志
+ * 误判为噪声截断。
+ */
+const NOISE_THRESHOLD_BYTES = 256;
+
+/**
+ * @brief 刷屏设备行级检测的 idle 确认周期数
+ *
+ * 提示符在中间行出现后，需要连续 N 个轮询周期都满足"新数据量 < 噪声阈值"
+ * 才判定命令结束。避免命令输出中间短暂停顿（提示符尚未出现但偶有行尾 # / $）
+ * 导致的误判。N=3 配合 200ms 轮询约 600ms 确认延迟。
+ */
+const IDLE_CONFIRM_CYCLES = 3;
 
 /**
  * @brief exec 超时类型
@@ -125,6 +176,8 @@ export interface ExecInput {
 export interface ExecResult {
   /** 累积的全部输出文本 */
   readonly output: string;
+  /** 命令退出码（marker 检测命中时可获取，其他场景为 null） */
+  readonly exitCode: number | null;
   /** 是否因异常被中断（保留字段，当前实现恒为 false） */
   readonly interrupted: boolean;
   /** 超时类型（取代单纯布尔 timedOut 的语义载体，none 表示未超时） */
@@ -205,8 +258,15 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     );
   }
 
-  // ── 2. 发命令 ──
-  input.shell.write(input.command, clear);
+  // ── 2. 发命令（拼接 marker） ──
+  // 子 shell 包裹原始命令 + echo marker:$?，命令结束后 marker 必然出现
+  //   (cmd); echo "MARKER:$?"
+  // 子 shell 保证 cmd 中的 | && ; 不影响外层 echo 的执行
+  const marker: string = generateMarker();
+  const markerRegex: RegExp = buildMarkerRegex(marker);
+  const fullCommand: string = `(${input.command}); echo "${marker}:$?"`;
+  logger.info(`${input.logPrefix} command with marker: ${fullCommand}`);
+  input.shell.write(fullCommand, clear);
 
   // ── 3. PTY 回显剥离：丢弃首行（提示符 + 命令回显） ──
   // PTY 模式下设备会原样回显输入的命令行（如 "rk3568:/ $ echo hi"），
@@ -240,23 +300,93 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     }
   }
 
-  // ── 4. 轮询 buffer 检测提示符 ──
+  // ── 4. 轮询 buffer：三级检测 marker > 末尾锚定 > 行级匹配 ──
+  // 三级检测策略（从快到慢、从确定到启发）：
+  //   1. marker 命中：确定性检测，命令拼接的 echo "MARKER:$?" 出现即命令结束
+  //      —— 不受刷屏影响，附带退出码，首选路径
+  //   2. detect() 末尾锚定：无刷屏设备秒判
+  //   3. detectInLines() 行级扫描：刷屏设备提示符被日志挤出末尾时兜底
+  //      判定条件：提示符出现在 accumulated 中间行 + 其后数据量 < 噪声阈值
+  //      + 连续 IDLE_CONFIRM_CYCLES 个周期新数据量稳定在噪声水平
+  let idleConfirmCount = 0; // 连续满足噪声阈值的周期数
+  let lastAccumulatedLen = accumulated.length; // 上轮 accumulated 长度，用于计算增量
+
   while (Date.now() - startTime < deadline) {
     await sleep(pollInterval);
     accumulated += input.shell.drain();
 
-    if (input.promptDetector.detect(accumulated)) {
+    // ── 1级：marker 检测（确定性，首选） ──
+    const markerMatch = accumulated.match(markerRegex);
+    if (markerMatch) {
+      const exitCode: number = parseInt(markerMatch[1], 10);
       const elapsedMs: number = Date.now() - startTime;
+      // 截断 marker 及其后的内容，只返回命令输出（marker 行本身也去掉）
+      const markerIdx = accumulated.indexOf(marker);
+      const cleanOutput = accumulated.substring(0, markerIdx).trimEnd();
       logger.info(
-        `${input.logPrefix} prompt detected, returning after ${elapsedMs}ms`
+        `${input.logPrefix} marker detected, exitCode=${exitCode}, returning after ${elapsedMs}ms`
       );
       return {
-        output: accumulated.trim(),
+        output: cleanOutput,
+        exitCode,
         interrupted: false,
         timeoutKind: "none",
         timedOut: false,
         elapsedMs,
       };
+    }
+
+    // ── 2级：末尾锚定（无刷屏设备快路径） ──
+    if (input.promptDetector.detect(accumulated)) {
+      const elapsedMs: number = Date.now() - startTime;
+      logger.info(
+        `${input.logPrefix} prompt detected (tail), returning after ${elapsedMs}ms`
+      );
+      return {
+        output: accumulated.trim(),
+        exitCode: null,
+        interrupted: false,
+        timeoutKind: "none",
+        timedOut: false,
+        elapsedMs,
+      };
+    }
+
+    // ── 3级：行级扫描（刷屏设备兜底） ──
+    const lineMatch = input.promptDetector.detectInLines(accumulated);
+    if (lineMatch) {
+      // 提示符行后的数据量（后台噪声）
+      const trailing = lineMatch.trailingBytes;
+      // 本轮新增数据量
+      const delta = accumulated.length - lastAccumulatedLen;
+      lastAccumulatedLen = accumulated.length;
+
+      if (trailing < NOISE_THRESHOLD_BYTES && delta < NOISE_THRESHOLD_BYTES) {
+        idleConfirmCount++;
+        if (idleConfirmCount >= IDLE_CONFIRM_CYCLES) {
+          const elapsedMs: number = Date.now() - startTime;
+          // 截断提示符后的噪声数据，只返回提示符之前的内容（含提示符行）
+          const cleanOutput = accumulated.substring(0, lineMatch.matchEnd);
+          logger.info(
+            `${input.logPrefix} prompt detected (line-level, trailing=${trailing}B, idle=${idleConfirmCount} cycles), returning after ${elapsedMs}ms`
+          );
+          return {
+            output: cleanOutput.trim(),
+            exitCode: null,
+            interrupted: false,
+            timeoutKind: "none",
+            timedOut: false,
+            elapsedMs,
+          };
+        }
+      } else {
+        // 新数据量超过噪声阈值，说明命令仍在产出或后台日志量大，重置计数
+        idleConfirmCount = 0;
+      }
+    } else {
+      // 未匹配到提示符行，重置计数
+      idleConfirmCount = 0;
+      lastAccumulatedLen = accumulated.length;
     }
   }
 
@@ -271,6 +401,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     accumulated += input.shell.drain();
     return {
       output: accumulated.trim(),
+      exitCode: null,
       interrupted: false,
       timeoutKind: "sampling",
       timedOut: true,
@@ -285,6 +416,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
   accumulated += input.shell.drain();
   return {
     output: accumulated.trim(),
+    exitCode: null,
     interrupted: false,
     timeoutKind: "fallback",
     timedOut: true,

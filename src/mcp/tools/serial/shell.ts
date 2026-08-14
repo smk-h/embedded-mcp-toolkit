@@ -490,7 +490,11 @@ export async function serialExecHandler(args: {
     });
 
     let output = execResult.output;
-    if (execResult.timeoutKind === "sampling") {
+    if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
+      output =
+        (output ? output + "\n" : "") +
+        `[exit code: ${execResult.exitCode}]`;
+    } else if (execResult.timeoutKind === "sampling") {
       output =
         (output ? output + "\n" : "") +
         `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
