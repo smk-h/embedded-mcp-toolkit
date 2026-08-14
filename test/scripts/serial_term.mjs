@@ -12,8 +12,9 @@
  *
  *   交互方式：
  *     - 直接在终端输入一行内容并回车，即发送到串口（自动追加换行符）
- *     - 输入 `exit` 或按 Ctrl+C 退出
- *     - 串口收到的数据以 [RX] 前缀实时打印，方便区分回显
+ *     - 按 Ctrl+C 直接把中断字节(0x03) 转发到串口，便于打断设备当前输出（类似 MobaXterm）
+ *     - 输入 `exit` 退出并关闭串口
+ *     - 串口收到的数据实时打印
  * ======================================================
  */
 
@@ -60,7 +61,7 @@ async function main() {
   if (!INTERACTIVE) {
     console.warn(`[serial] 非 TTY 环境，禁用 readline 交互，仅打印串口回传数据`);
   } else {
-    console.log(`[serial] 交互模式已就绪，输入一行回车发送到串口，输入 \`${EXIT_CMD}\` 或按 Ctrl+C 退出`);
+    console.log(`[serial] 交互模式已就绪，输入一行回车发送到串口；按 Ctrl+C 直接转发到串口；输入 \`${EXIT_CMD}\` 退出`);
   }
 
   // 2. 接收串口数据，实时打印（带 [RX] 前缀便于区分回显）
@@ -95,7 +96,14 @@ async function main() {
     }
   });
 
-  // 退出流程
+  // Ctrl+C: 直接转发中断字节(0x03) 到串口，而不是退出进程（类似 MobaXterm）
+  rl.on("SIGINT", () => {
+    const intByte = Buffer.from([0x03]);
+    process.stdout.write("\n[TX] ^C\n");
+    port.write(intByte);
+  });
+
+  // 退出流程（仅通过输入 exit 触发）
   const shutdown = async () => {
     console.log(`\n[serial] 正在关闭...`);
     rl.close();
@@ -109,7 +117,6 @@ async function main() {
   };
 
   rl.on("close", shutdown);
-  process.on("SIGINT", shutdown); // Ctrl+C
 }
 
 main().catch((err) => {
