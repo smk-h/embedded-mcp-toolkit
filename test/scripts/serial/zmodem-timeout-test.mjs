@@ -27,6 +27,10 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * 打开串口 shell 并做一次同步探针，确保提示符稳定后再返回
+ * @returns {Promise<SerialShell>} 已就绪的串口 shell
+ */
 async function openShell() {
   const shell = new SerialShell({ port: PORT, baudRate: BAUD_RATE });
   await shell.open();
@@ -50,6 +54,9 @@ async function openShell() {
   return shell;
 }
 
+/**
+ * 排空串口残留数据并恢复干净的 shell 提示符，供下一次测试复用
+ */
 async function recoverShell(shell) {
   shell.read(1);
   shell.write("", 1);

@@ -1,3 +1,19 @@
+/**
+ * =====================================================
+ * SSH exec() vs shell() 对比演示
+ *
+ *   通过同一台设备的 SSH 连接，演示两种执行方式的差异：
+ *     - exec()：每次独立 fork 进程，cd / 变量等状态不保持
+ *     - shell()：同一 shell 进程内持续交互，cd / 变量等状态保持
+ *
+ *   用法：
+ *     node test/scripts/ssh/exec-vs-shell-demo.mjs
+ *
+ *   说明：连接信息（HOST / USER / PASS）硬编码在文件顶部，
+ *   请按实际设备修改后再运行。
+ * ======================================================
+ */
+
 import { Client } from "ssh2";
 
 const HOST = "192.168.16.105";
@@ -16,11 +32,14 @@ client.on("ready", async () => {
   console.log("==============================================\n");
 
   // ── exec() 演示 ──
+  // exec() 每次通过独立的 SSH channel 在服务端 fork 一个新进程，
+  // 因此 cd、环境变量等进程内状态在命令间不会保持。
   console.log("======================================================");
   console.log("  exec()：每次通过 SSH channel 独立 fork 进程");
   console.log("======================================================\n");
 
   const execResults = [];
+  // 连续三条命令观察 cd 状态是否跨命令保持
   for (const cmd of ["pwd", "cd /tmp && pwd", "pwd"]) {
     const { stdout } = await new Promise((resolve, reject) => {
       client.exec(cmd, (err, stream) => {
@@ -60,6 +79,7 @@ client.on("ready", async () => {
     });
   });
 
+  // shell() 在同一 channel 内持续交互，cd、变量等状态在后续命令间保持
   let buf = "";
   shell.on("data", (d) => { buf += d.toString(); });
 
