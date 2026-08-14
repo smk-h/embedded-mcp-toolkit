@@ -12,14 +12,14 @@
  *     - 配置值与默认值合并（非替换），用户配置补充默认而非覆盖
  *     - 无效正则构造抛错
  *
- *   运行：先 npm run build，再 node test/scripts/uboot/detector-test.mjs
+ *   运行：先 npm run build，再 node test/scripts/serial/uboot-detector-test.mjs
  * ======================================================
  */
 
 import assert from "node:assert/strict";
 
 const { UbootDetector } = await import(
-  "../../out/mcp/shared/prompt-detector.js"
+  "../out/mcp/shared/prompt-detector.js"
 );
 
 let passed = 0;

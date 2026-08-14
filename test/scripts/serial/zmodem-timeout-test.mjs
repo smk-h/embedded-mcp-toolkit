@@ -9,15 +9,15 @@
  *     - 超时后设备端 rz/sz 干净退出（CAN×5+BS×5）
  *
  *   用法：
- *     node test/scripts/zmodem/timeout-test.mjs upload   <file> <timeoutSec>
- *     node test/scripts/zmodem/timeout-test.mjs download <remotePath> <localOut> <timeoutSec>
+ *     node test/scripts/serial/zmodem-timeout-test.mjs upload   <file> <timeoutSec>
+ *     node test/scripts/serial/zmodem-timeout-test.mjs download <remotePath> <localOut> <timeoutSec>
  *
  *   前提：COM 口未被占用（若有 MCP 串口会话，需先 serial_close 释放）。
  * ======================================================
  */
 
-import { SerialShell } from "../../out/transports/serial.js";
-import { zmodemSend, zmodemReceive } from "../../out/services/zmodem/index.js";
+import { SerialShell } from "../out/transports/serial.js";
+import { zmodemSend, zmodemReceive } from "../out/services/zmodem/index.js";
 
 const PORT = "COM3";
 const BAUD_RATE = 115200;
@@ -65,7 +65,7 @@ async function main() {
   const [, , mode, ...rest] = process.argv;
   if (!mode) {
     console.error(
-      "usage: node test/scripts/zmodem/timeout-test.mjs upload <file> <timeoutSec> | download <remotePath> <localOut> <timeoutSec>"
+      "usage: node test/scripts/serial/zmodem-timeout-test.mjs upload <file> <timeoutSec> | download <remotePath> <localOut> <timeoutSec>"
     );
     process.exit(2);
   }
