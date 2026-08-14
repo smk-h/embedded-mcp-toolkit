@@ -13,18 +13,11 @@
 
 ### 1. 整体架构
 
-MCP 本体始终运行在 **Windows 本地**（由 `remote-start-mcp.bat` 拉起 `node` 进程），Linux 编译服务器上的 Claude / ZCode 通过 `ssh` 免密**反向登录**到 Windows，把 MCP 作为远程工具来调用。
+MCP 本体始终运行在 **Windows 本地**（由 `remote-start-mcp.bat` 拉起 `node` 进程），Linux 编译服务器上的 Claude Code / ZCode 通过 `ssh` 免密**反向登录**到 Windows，把 MCP 作为远程工具来调用。整体环境如下图所示：
 
-```
-Linux 编译服务器(Claude/ZCode Agent)
-   │  ① sshd-config 搭桥：Linux 免密反向登录进 Windows
-   ▼
-Windows 本地(remote-start-mcp.bat 启动 MCP)
-   │  ② remote-mcp-config 写桥接配置：在 Linux 端写 MCP server 定义
-   └── Linux 通过 embedded-board 调用 Windows 上的 MCP 工具
-```
+![Linux 远程连接 Windows MCP 环境架构图](./Linux远程连接Windows%20MCP配置指南/img/architecture.svg)
 
-一次完整的 MCP 环境配置通常分两步：
+一次完整的 MCP 环境配置通常分两步（对应架构图中两条链路：① 搭桥 + ② 写入桥接配置）：
 
 1. **先 `sshd-config` 搭桥**：让 Linux 能免密登录进 Windows（反向 SSH 桥）。
 2. **再 `remote-mcp-config` 写桥接配置**：把 `embedded-board` 这个桥接 server 按规范写入 Linux 端 Claude / ZCode 的配置文件。
@@ -109,13 +102,7 @@ sudo dnf install openssh-server && sudo systemctl start sshd
 
 `sshd-config` 负责把「桥」建好：安装 Windows OpenSSH 服务、生成 MCP 专用密钥对、把公钥写入 Windows 的 `authorized_keys`，并最终生成一份 Linux 端可直接使用的 `.mcp.json` 模板。
 
-### 1. 命令位置与源码
-
-- 命令入口：[`src/cli/commands/sshd-config/index.ts`](../src/cli/commands/sshd-config/index.ts)
-- 主菜单与主入口：[`src/cli/commands/sshd-config/run.ts`](../src/cli/commands/sshd-config/run.ts)
-- 命令注册：[`src/cli/index.ts`](../src/cli/index.ts)
-
-### 2. 如何运行命令
+### 1. 如何运行命令
 
 在 Windows 上以管理员身份打开终端，在**初始化后的项目根目录**执行：
 
@@ -125,7 +112,7 @@ embedded-mcp-toolkit sshd-config
 
 命令会先做平台校验与管理权限检查，通过后展示交互式主菜单。
 
-#### 2.1 主菜单选项
+#### 1.1 主菜单选项
 
 | 编号 | 功能 | 说明 |
 |------|------|------|
@@ -139,7 +126,7 @@ embedded-mcp-toolkit sshd-config
 | `8` | 生成 Linux 端 MCP 配置模板 | 生成 `.mcp.json` 模板 |
 | `0` | 退出 | 结束命令 |
 
-### 3. 一键完成全流程（推荐）
+### 2. 一键完成全流程（推荐）
 
 在菜单选择 `[1]`，命令会自动按顺序执行四个步骤：
 
@@ -149,7 +136,7 @@ embedded-mcp-toolkit sshd-config
 
 任一步骤失败会中止并提示，可修复后重新进入对应菜单项单独执行。下面按步骤说明每个环节做了什么，以及需要准备什么。
 
-#### 3.1 步骤一：安装 Windows SSH 服务（菜单 `[2]`）
+#### 2.1 步骤一：安装 Windows SSH 服务（菜单 `[2]`）
 
 命令先检测 sshd 是否已安装，已安装则跳过。未安装时让你选择安装方式：
 
@@ -160,7 +147,7 @@ embedded-mcp-toolkit sshd-config
 
 > **前置要求**：本步骤需要管理员权限。
 
-#### 3.2 步骤二：编译服务器生成密钥对（菜单 `[3]`）
+#### 2.2 步骤二：编译服务器生成密钥对（菜单 `[3]`）
 
 命令交互式收集 Linux 服务器地址（`user@host[:port]`）与登录密码，SSH 登录后：
 
@@ -171,7 +158,7 @@ embedded-mcp-toolkit sshd-config
 
 > **说明**：使用专用密钥名 `id_mcp_server`，避免覆盖你原有的通用密钥。若已存在会询问是否覆盖。
 
-#### 3.3 步骤三：配置 Windows sshd（菜单 `[4]`）
+#### 2.3 步骤三：配置 Windows sshd（菜单 `[4]`）
 
 命令在 Windows 端完成三件事：
 
@@ -181,7 +168,7 @@ embedded-mcp-toolkit sshd-config
 
 > **前置要求**：必须先执行步骤二（生成了公钥）、步骤一（安装了 sshd），否则会提示缺少公钥或 sshd_config。
 
-#### 3.4 步骤四：生成 Linux 端 MCP 配置模板（菜单 `[8]`）
+#### 2.4 步骤四：生成 Linux 端 MCP 配置模板（菜单 `[8]`）
 
 命令自动采集本机用户名与 IPv4 地址，结合专用密钥名（`id_mcp_server`）与 `remote-start-mcp.bat` 路径，生成一份 Linux 端可直接使用的 `.mcp.json` 模板，写入：
 
@@ -216,26 +203,17 @@ embedded-mcp-toolkit sshd-config
 
 `remote-mcp-config` 负责把「桥接配置」写到 Linux 端正确的位置：它登录 Linux、通过 SFTP 读写几个 JSON 文件，自动把 `embedded-board` 这个 MCP 桥接 server 写入 Claude 全局 / Claude 项目 / ZCode 项目。
 
-### 1. 命令位置与源码
-
-- 命令入口：[`src/cli/commands/remote-mcp-config/index.ts`](../src/cli/commands/remote-mcp-config/index.ts)
-- 主菜单与主入口：[`src/cli/commands/remote-mcp-config/run.ts`](../src/cli/commands/remote-mcp-config/run.ts)
-- 配置/删除/诊断流程：[`src/cli/commands/remote-mcp-config/operations.ts`](../src/cli/commands/remote-mcp-config/operations.ts)
-- 落点路由：[`src/cli/commands/remote-mcp-config/target.ts`](../src/cli/commands/remote-mcp-config/target.ts)
-- 状态判定与桥接构造：[`src/cli/commands/remote-mcp-config/status.ts`](../src/cli/commands/remote-mcp-config/status.ts)
-- 命令注册：[`src/cli/index.ts`](../src/cli/index.ts)
-
-### 2. 命令能做什么（三类落点）
+### 1. 命令能做什么（三类落点）
 
 `remote-mcp-config` 把 MCP 桥接 server（固定 key 名 `embedded-board`）写入 Linux 端的三类落点之一。**它的本质是「Windows 通过 SSH/SFTP 登录 Linux，读写 Linux 上几个 JSON 文件」**。Linux 端不需要安装 node、不需要本工具包、不需要设备配置——MCP 本体始终由 Windows 的 `remote-start-mcp.bat` 启动。
 
-#### 2.1 Claude 全局
+#### 1.1 Claude 全局
 
 - 写入文件：`~/.claude.json`
 - 写入位置：顶层 `mcpServers.embedded-board`
 - 效果：所有 Claude Code 项目都可用该桥接
 
-#### 2.2 Claude 项目
+#### 1.2 Claude 项目
 
 - 写入文件一：`<项目路径>/.mcp.json`
 - 写入位置：`mcpServers.embedded-board`（server 定义）
@@ -243,13 +221,13 @@ embedded-mcp-toolkit sshd-config
 - 写入位置：`enabledMcpjsonServers` 使能数组中追加 `embedded-board`
 - 效果：仅指定项目可用该桥接
 
-#### 2.3 ZCode 项目
+#### 1.3 ZCode 项目
 
 - 写入文件：`<项目路径>/.zcode/config.json`
 - 写入位置：`mcp.servers.embedded-board`（额外带 `type: "stdio"` / `enabled: true`）
 - 效果：指定 ZCode 项目可用该桥接（ZCode 全局本期不做）
 
-#### 2.4 桥接 server 的定义
+#### 1.4 桥接 server 的定义
 
 无论哪种落点，写入的 server 定义都是同一个「反向 SSH 桥接」：
 
@@ -267,7 +245,7 @@ embedded-mcp-toolkit sshd-config
 
 含义：Linux 端用专用密钥 `~/.ssh/id_mcp_server` 免密反向登录 Windows 的 `<win_user>@<win_ip>`，执行 `remote-start-mcp.bat` 拉起 Windows 上的 MCP 服务。ZCode 落点额外带 `type: "stdio"` / `enabled: true`。
 
-### 3. 如何运行命令
+### 2. 如何运行命令
 
 在 Windows 上打开终端，在**初始化后的项目根目录**执行：
 
@@ -277,14 +255,14 @@ embedded-mcp-toolkit remote-mcp-config
 
 命令启动后会交互收集连接信息，连接成功后再展示交互式主菜单。
 
-#### 3.1 连接信息交互
+#### 2.1 连接信息交互
 
 1. **远程 Linux 服务器地址**：输入 `user@host[:port]` 格式，如 `sumu@1.2.3.4` 或 `root@1.2.3.4:2222`。
 2. **登录密码**：输入密码（不回显）。
 
 命令尝试 SSH 连接 Linux。连接失败会报错并中止（请检查地址/端口/凭据，以及远端 sshd 是否可达）；成功后打开一个贯穿整个菜单循环复用的 SFTP 会话（避免反复开 channel 触发远端会话限制）。
 
-#### 3.2 主菜单选项
+#### 2.2 主菜单选项
 
 | 编号 | 功能 | 说明 |
 |------|------|------|
@@ -293,11 +271,11 @@ embedded-mcp-toolkit remote-mcp-config
 | `3` | 删除已配置的 MCP | 从选中的落点移除 `embedded-board` |
 | `0` | 退出 | 结束命令 |
 
-### 4. 配置 MCP 桥接的完整流程
+### 3. 配置 MCP 桥接的完整流程
 
 以下以菜单 `[1]`「配置 MCP 桥接」为例，说明一次完整配置做了什么。
 
-#### 4.1 第一步：采集本机端点
+#### 3.1 第一步：采集本机端点
 
 命令自动采集 Windows 本机的 SSH 登录用户名与可用 IPv4 地址（已过滤回环、链路本地 `169.254`、以及 VirtualBox / VMware / Hyper-V / WSL / Docker 等虚拟网卡），并拼接 `remote-start-mcp.bat` 的绝对路径（取当前 cwd）：
 
@@ -305,7 +283,7 @@ embedded-mcp-toolkit remote-mcp-config
 - 多个 IP：交互式让你选择「Windows 主 IP（远程反连地址）」，避免取到 Linux 路由不可达的网段
 - 无可用 IP：提示「未检测到本机可用 IPv4 地址」并中止
 
-#### 4.2 第二步：选择落点（客户端类型 + 范围）
+#### 3.2 第二步：选择落点（客户端类型 + 范围）
 
 命令交互式引导你选择写入到哪里：
 
@@ -315,7 +293,7 @@ embedded-mcp-toolkit remote-mcp-config
 
 > 项目路径需为远端 Linux 上的**绝对路径**，如 `/home/sumu/my-project`。
 
-#### 4.3 第三步：展示当前状态并确认
+#### 3.3 第三步：展示当前状态并确认
 
 命令会**先读取并展示**各落点文件的当前状态（只读，不写入）：
 
@@ -326,7 +304,7 @@ embedded-mcp-toolkit remote-mcp-config
 
 确认无误后，选择「确认写入」才会真正落盘。
 
-#### 4.4 第四步：写入配置
+#### 3.4 第四步：写入配置
 
 命令通过 SFTP 对每个落点文件执行「**备份 → 读 → 本地 JSON 改写 → 写回**」的原子流程：
 
@@ -338,17 +316,17 @@ embedded-mcp-toolkit remote-mcp-config
 
 > 所有文件读写都走 **SFTP 整文件**方式，不通过 shell 改文件，规避 JSON 引号转义与远端编码问题。
 
-#### 4.5 第五步：回显与生效
+#### 3.5 第五步：回显与生效
 
 写入完成后命令回显最终写入的桥接定义（`command` 与 `args`），并提示**需重启对应 client（Claude / ZCode）使配置生效**。
 
-### 5. 查看与删除配置
+### 4. 查看与删除配置
 
-#### 5.1 查看当前配置状态（菜单 `[2]`）
+#### 4.1 查看当前配置状态（菜单 `[2]`）
 
 只读诊断：选择落点后，命令读取并展示各文件当前状态（`absent` / `consistent` / `inconsistent` / `error`），**不修改任何文件**。即使本机无可反连的 IP，也允许用占位端点做展示。
 
-#### 5.2 删除已配置的 MCP（菜单 `[3]`）
+#### 4.2 删除已配置的 MCP（菜单 `[3]`）
 
 选择落点后，命令展示各文件是否「已配置，可删除」，确认后从各文件中移除 `embedded-board`（server 定义 + 使能数组项）。文件不存在或未配置时会提示「无需删除」而非报错。同样带备份与失败回滚保护。
 
