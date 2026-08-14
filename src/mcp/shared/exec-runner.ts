@@ -13,11 +13,10 @@
  *   各通道差异（取 shell、取提示符配置）通过 ExecInput 注入，机制保持通道无关。
  *
  *   底层轮询骨架（sleep + drain 累积 + deadline）借鉴 ssh_build 已验证的模式，
- *   结束检测采用三级策略：
+ *   结束检测采用两级策略：
  *     - 1级 marker 注入（确定性，首选）：拼接 (cmd); echo "MARKER:$?"，
  *       marker 出现即命令结束，附带退出码，不受刷屏影响
  *     - 2级 末尾锚定（快路径）：提示符正则锚定输出末尾，无刷屏设备秒判
- *     - 3级 行级扫描（慢路径，刷屏兜底）：提示符在中间行出现 + idle 窗口确认
  * ======================================================
  */
 
@@ -75,25 +74,6 @@ function generateMarker(): string {
 function buildMarkerRegex(marker: string): RegExp {
   return new RegExp(`${marker}:(\\d+)`);
 }
-
-/**
- * @brief 刷屏设备行级检测的噪声阈值（字节）
- *
- * 提示符行之后追加的数据量若小于此值，认为是后台日志噪声而非命令输出，
- * 判定命令已结束。设备后台一行日志通常 80-120 字节，256 字节可容纳约
- * 2 行噪声，既能容忍提示符后被 1-2 行后台日志覆盖，又不会把大量日志
- * 误判为噪声截断。
- */
-const NOISE_THRESHOLD_BYTES = 256;
-
-/**
- * @brief 刷屏设备行级检测的 idle 确认周期数
- *
- * 提示符在中间行出现后，需要连续 N 个轮询周期都满足"新数据量 < 噪声阈值"
- * 才判定命令结束。避免命令输出中间短暂停顿（提示符尚未出现但偶有行尾 # / $）
- * 导致的误判。N=3 配合 200ms 轮询约 600ms 确认延迟。
- */
-const IDLE_CONFIRM_CYCLES = 3;
 
 /**
  * @brief exec 超时类型
@@ -300,17 +280,15 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     }
   }
 
-  // ── 4. 轮询 buffer：三级检测 marker > 末尾锚定 > 行级匹配 ──
-  // 三级检测策略（从快到慢、从确定到启发）：
+  // ── 4. 轮询 buffer：两级检测 marker > 末尾锚定 ──
+  // 两级检测策略（从确定到启发）：
   //   1. marker 命中：确定性检测，命令拼接的 echo "MARKER:$?" 出现即命令结束
   //      —— 不受刷屏影响，附带退出码，首选路径
   //   2. detect() 末尾锚定：无刷屏设备秒判
-  //   3. detectInLines() 行级扫描：刷屏设备提示符被日志挤出末尾时兜底
-  //      判定条件：提示符出现在 accumulated 中间行 + 其后数据量 < 噪声阈值
-  //      + 连续 IDLE_CONFIRM_CYCLES 个周期新数据量稳定在噪声水平
-  let idleConfirmCount = 0; // 连续满足噪声阈值的周期数
-  let lastAccumulatedLen = accumulated.length; // 上轮 accumulated 长度，用于计算增量
-
+  //
+  // 已移除原 3级 detectInLines() 行级扫描：marker 为子串匹配天然免疫刷屏，
+  // 已完全覆盖其职责；对常驻命令（marker 永不出现）行级扫描反而可能提前截断
+  // 采样输出，成为误判源。故只保留 marker + 末尾锚定两级，配合超时熔断兜底。
   while (Date.now() - startTime < deadline) {
     await sleep(pollInterval);
     accumulated += input.shell.drain();
@@ -350,43 +328,6 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
         timedOut: false,
         elapsedMs,
       };
-    }
-
-    // ── 3级：行级扫描（刷屏设备兜底） ──
-    const lineMatch = input.promptDetector.detectInLines(accumulated);
-    if (lineMatch) {
-      // 提示符行后的数据量（后台噪声）
-      const trailing = lineMatch.trailingBytes;
-      // 本轮新增数据量
-      const delta = accumulated.length - lastAccumulatedLen;
-      lastAccumulatedLen = accumulated.length;
-
-      if (trailing < NOISE_THRESHOLD_BYTES && delta < NOISE_THRESHOLD_BYTES) {
-        idleConfirmCount++;
-        if (idleConfirmCount >= IDLE_CONFIRM_CYCLES) {
-          const elapsedMs: number = Date.now() - startTime;
-          // 截断提示符后的噪声数据，只返回提示符之前的内容（含提示符行）
-          const cleanOutput = accumulated.substring(0, lineMatch.matchEnd);
-          logger.info(
-            `${input.logPrefix} prompt detected (line-level, trailing=${trailing}B, idle=${idleConfirmCount} cycles), returning after ${elapsedMs}ms`
-          );
-          return {
-            output: cleanOutput.trim(),
-            exitCode: null,
-            interrupted: false,
-            timeoutKind: "none",
-            timedOut: false,
-            elapsedMs,
-          };
-        }
-      } else {
-        // 新数据量超过噪声阈值，说明命令仍在产出或后台日志量大，重置计数
-        idleConfirmCount = 0;
-      }
-    } else {
-      // 未匹配到提示符行，重置计数
-      idleConfirmCount = 0;
-      lastAccumulatedLen = accumulated.length;
     }
   }
 

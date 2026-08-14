@@ -55,10 +55,12 @@ export const CONTROL_CHAR_MAP: Readonly<Record<ControlChar, string>> = {
  *   - 未传 customPattern：使用 DEFAULT_PATTERN，覆盖 Android / Linux / U-Boot 常见 prompt
  *   - 传 customPattern：按设备配置的正则识别（应对自定义 PS1）
  *
- * 提供两种检测模式：
+ * 提供一种检测模式：
  *   - detect()：仅检测「输出末尾」是否以提示符结尾（快路径，适合无刷屏设备）
- *   - detectInLines()：从末尾向前逐行扫描，返回提示符出现位置及其后数据量（慢路径，
- *     用于刷屏设备——提示符被后续日志行从末尾挤走时仍能检测到）
+ *
+ * 注：曾提供 detectInLines() 行级扫描用于刷屏设备兜底，但 marker 注入为子串匹配、
+ * 天然免疫刷屏已完全覆盖其职责，且行级扫描对常驻命令可能提前截断采样输出成为误判源，
+ * 故已移除。刷屏设备场景由 marker（1级）直接命中，无需行级扫描。
  */
 export class PromptDetector {
   /**
@@ -75,20 +77,8 @@ export class PromptDetector {
   static readonly DEFAULT_PATTERN =
     /(?:[^\r\n]*[:/]?\s*[/~]\s*[#$]\s*|[^\r\n]*[#>$]\s*|[^\r\n]*=>\s*)$/;
 
-  /**
-   * @brief 行级匹配正则（不锚定末尾，匹配每行末尾的提示符）
-   *
-   * 将 DEFAULT_PATTERN 去掉尾部 $ 并加 m 标志，使 ^ $ 分别匹配每行的
-   * 行首行尾。用于 detectInLines() 逐行扫描。
-   */
-  static readonly LINE_PATTERN =
-    /(?:[^\r\n]*[:/]?\s*[/~]\s*[#$]\s*|[^\r\n]*[#>$]\s*|[^\r\n]*=>\s*)$/m;
-
   /** @brief 实际使用的提示符正则（末尾锚定，默认或配置覆盖） */
   private readonly pattern: RegExp;
-
-  /** @brief 行级匹配正则（不锚定整体末尾，匹配行尾提示符） */
-  private readonly linePattern: RegExp;
 
   /**
    * @brief 构造提示符检测器
@@ -99,10 +89,6 @@ export class PromptDetector {
     this.pattern = customPattern
       ? new RegExp(customPattern)
       : PromptDetector.DEFAULT_PATTERN;
-    // 行级正则：去掉尾部 $ 后加 m 标志，用于逐行扫描
-    this.linePattern = customPattern
-      ? new RegExp(customPattern.replace(/\$$/, ""), "m")
-      : PromptDetector.LINE_PATTERN;
   }
 
   /**
@@ -111,42 +97,15 @@ export class PromptDetector {
    * PTY 回显的命令行本身不以提示符结尾，只有命令执行完返回到交互态时
    * 才会出现提示符。因此检测「输出末尾」即可判定命令是否结束。
    *
-   * 对刷屏设备（后台持续向 console 输出日志）可能失效：提示符出现后
-   * 被后续日志行从末尾挤走，$ 锚定失配。此时应使用 detectInLines()。
+   * 注：对刷屏设备（后台持续向 console 输出日志）此方法可能失效——提示符
+   * 出现后被后续日志行从末尾挤走，$ 锚定失配。此类场景由 runExec 的 1级
+   * marker 注入兜底（marker 为子串匹配，天然免疫刷屏）。
    *
    * @param accumulated - 当前累积的全部输出
    * @returns true 表示已检测到提示符，命令结束
    */
   detect(accumulated: string): boolean {
     return this.pattern.test(accumulated);
-  }
-
-  /**
-   * @brief 逐行扫描提示符出现位置（慢路径，用于刷屏设备）
-   *
-   * 从 accumulated 末尾向前扫描，找到最后一个匹配提示符的行。
-   * 返回该提示符在 accumulated 中的偏移及其后追加的数据量。
-   *
-   * 刷屏场景下，提示符出现在 accumulated 中间某行，其后被后台日志行覆盖。
-   * 调用方（runExec）据此判定：提示符后的数据量是否在噪声阈值内，
-   * 若是则认为命令已结束（提示符后的数据是后台噪声而非命令输出）。
-   *
-   * @param accumulated - 当前累积的全部输出
-   * @returns 提示符结束位置（matchEnd）及其后数据量（trailingBytes）；
-   *          未匹配返回 null
-   */
-  detectInLines(accumulated: string): {
-    matchEnd: number;
-    trailingBytes: number;
-  } | null {
-    const match: RegExpMatchArray | null = this.linePattern.exec(accumulated);
-    if (!match) {
-      return null;
-    }
-    // match.index 是匹配起始位置，match[0].length 是匹配长度
-    const matchEnd: number = match.index! + match[0].length;
-    const trailingBytes: number = accumulated.length - matchEnd;
-    return { matchEnd, trailingBytes };
   }
 }
 
