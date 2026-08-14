@@ -6,9 +6,9 @@
  *   串口回传的数据实时显示在终端。
  *
  *   用法：
- *     node test/scripts/serial_term.mjs                      # 默认 COM3 @ 115200
- *     node test/scripts/serial_term.mjs COM5 921600          # 指定串口 + 波特率
- *     node test/scripts/serial_term.mjs COM5 921600 --line   # 指定串口 + 波特率 + 行模式
+ *     node test/scripts/serial/terminal.mjs                      # 默认 COM3 @ 115200
+ *     node test/scripts/serial/terminal.mjs COM5 921600          # 指定串口 + 波特率
+ *     node test/scripts/serial/terminal.mjs COM5 921600 --line   # 指定串口 + 波特率 + 行模式
  *
  *   裸转发模式（默认，TTY 下自动启用，行为对齐 MobaXterm）：
  *     - 键盘输入逐字节原样转发：Backspace / Ctrl+C / 回车都交给设备端行编辑处理，

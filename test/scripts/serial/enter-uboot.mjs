@@ -1,13 +1,36 @@
+/**
+ * =====================================================
+ * 自动进入 U-Boot 命令行
+ *
+ *   发送 `reboot` 重启设备，持续监听串口输出，
+ *   检测到 "Hit any key to stop autoboot" 提示时
+ *   自动发送换行，进入 U-Boot 命令行（提示符 `=>`）。
+ *
+ *   用法：
+ *     node test/scripts/serial/enter-uboot.mjs              # 默认 COM3 @ 115200
+ *
+ *   说明：脚本内部硬编码了串口路径与波特率，如需修改
+ *   请直接编辑文件顶部的 SERIAL_PORT / BAUD_RATE 常量。
+ *   运行后按 Ctrl+C 可优雅退出并关闭串口。
+ * ======================================================
+ */
+
 import { SerialPort } from "serialport";
 
 const SERIAL_PORT = "COM3";
 const BAUD_RATE = 115200;
 
+/** @brief 匹配 U-Boot 自动引导提示（大小写不敏感） */
+const AUTBOOT_PATTERN = /Hit any key to stop autoboot/i;
+
+/** @brief 匹配 U-Boot 命令行提示符（末尾 =>） */
+const UBOOT_PROMPT_PATTERN = /=>\s*$/;
+
 /**
  * 持续监听串口数据，检测到 U-Boot 自动引导提示时自动发送换行进入 uboot 命令行
  */
 async function main() {
-  // 1. 打开串口
+  // 1. 打开串口：autoOpen=false 以便显式等待 open 回调成功后再往下走
   const port = new SerialPort({
     path: SERIAL_PORT,
     baudRate: BAUD_RATE,
@@ -31,14 +54,12 @@ async function main() {
   let output = "";
   let hitDetected = false;
 
-  const AUTBOOT_PATTERN = /Hit any key to stop autoboot/i;
-
   port.on("data", (data) => {
     const chunk = data.toString();
     output += chunk;
     process.stdout.write(chunk); // 实时打印串口输出
 
-    // 检测到 autoboot 提示时发送换行
+    // 检测到 autoboot 提示时发送换行，抢在默认倒计时结束前进入 U-Boot
     if (!hitDetected && AUTBOOT_PATTERN.test(output)) {
       hitDetected = true;
       console.log("\n>>> Detected autoboot prompt, sending newline to enter U-Boot...");
@@ -46,8 +67,8 @@ async function main() {
       output = ""; // 重置缓冲区，继续监听后续输出
     }
 
-    // 检测到 uboot 提示符 =>（可选，用于确认已进入 uboot）
-    if (hitDetected && /=>\s*$/.test(output)) {
+    // 检测到 uboot 提示符 =>（用于确认已进入 uboot）
+    if (hitDetected && UBOOT_PROMPT_PATTERN.test(output)) {
       console.log("\n>>> Entered U-Boot command line.");
       hitDetected = false; // 重置以便后续再次检测（如果触发了 reset 等）
     }

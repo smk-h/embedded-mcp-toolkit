@@ -1,3 +1,18 @@
+/**
+ * =====================================================
+ * 终端状态检测逻辑离线验证脚本
+ *
+ *   用一组预置的终端输出样例（U-Boot / ash ready / locked /
+ *   unlocking / error 等）验证 detectState 状态检测规则，
+ *   覆盖 U-Boot、正常 shell、锁定、解锁中、密钥错误等场景。
+ *
+ *   用法：
+ *     node test/scripts/serial/uboot-state-detect.mjs
+ *
+ *   输出：逐个样例打印 [✓]/[✗] 及检测结果，最后汇总是否全部通过。
+ * ======================================================
+ */
+
 // ── 测试字符串（用于验证检测逻辑） ──────────────────────────
 const TEST_UBOOT = `
 U-Boot 2023.04
@@ -80,9 +95,15 @@ const RULES = [
 
 /**
  * 根据终端输出文本检测当前处于什么状态
+ *
+ * 按 RULES 的优先级依次匹配，命中即返回对应状态与描述；
+ * 全部未命中则返回 UNKNOWN。
+ * @param {string} output 终端累积输出
+ * @returns {{state: string, description: string}} 检测结果
  */
 function detectState(output) {
   for (const rule of RULES) {
+    // 只要命中该规则任一模式即判定为此状态
     if (rule.patterns.some((p) => p.test(output))) {
       return { state: rule.state, description: rule.desc };
     }
@@ -104,6 +125,7 @@ function runTests() {
   ];
 
   let allPassed = true;
+  // 逐个样例跑检测，与实际期望状态比对并打印 ✓/✗
   for (const { label, input, expected } of tests) {
     const result = detectState(input);
     const pass = result.state === expected;

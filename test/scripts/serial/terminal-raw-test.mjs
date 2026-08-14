@@ -1,19 +1,19 @@
 /**
  * =====================================================
- * serial_term.mjs 裸转发模式单元测试
+ * terminal.mjs 裸转发模式单元测试
  *
  *   覆盖：
  *     - nextDevLine 行状态推算（exit 识别 / 退格 / 清行 / 脏行标记）
  *     - startRawForward 透传行为（逐字节转发 / CRLF 折叠 / exit 回车截获）
  *
  *   用法：
- *     node test/scripts/serial-term-raw-test.mjs
+ *     node test/scripts/serial/terminal-raw-test.mjs
  * ======================================================
  */
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { nextDevLine, startRawForward } from "./serial_term.mjs";
+import { nextDevLine, startRawForward } from "./terminal.mjs";
 
 const CR = 0x0d;
 const LF = 0x0a;

@@ -1,11 +1,31 @@
+/**
+ * =====================================================
+ * 串口基础演示（debug 命令 + 密钥交互）
+ *
+ *   打开串口后依次执行：
+ *     1. 发送 `debug` 命令并收集 3 秒输出
+ *     2. 从命令行读取解锁密钥并发送
+ *     3. 再次收集 3 秒输出后关闭串口
+ *
+ *   用法：
+ *     node test/scripts/serial/basic-demo.mjs              # 默认 COM3 @ 115200
+ *
+ *   说明：脚本内部硬编码了串口路径与波特率，如需修改
+ *   请直接编辑文件顶部的 SERIAL_PORT / BAUD_RATE 常量。
+ * ======================================================
+ */
+
 import { SerialPort } from "serialport";
 import { createInterface } from "readline";
 
+/** @brief 串口路径（演示用，按实际设备修改） */
 const SERIAL_PORT = "COM3";
+
+/** @brief 波特率 */
 const BAUD_RATE = 115200;
 
 async function main() {
-  // 1. 打开串口
+  // 1. 打开串口：autoOpen=false 以便显式等待 open 回调成功后再往下走
   const port = new SerialPort({
     path: SERIAL_PORT,
     baudRate: BAUD_RATE,
@@ -20,6 +40,7 @@ async function main() {
   });
   console.log(`Serial opened: ${SERIAL_PORT} @ ${BAUD_RATE}`);
 
+  // 累积串口回显，便于在命令执行后统一打印
   let output = "";
   port.on("data", (data) => {
     output += data.toString();

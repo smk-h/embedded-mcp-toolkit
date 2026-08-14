@@ -1,8 +1,6 @@
 /**
  * =====================================================
- * File name  : uboot-detector-test.mjs
- * Date       : 2026/07/19
- * Description: UbootDetector 离线验证脚本
+ * UbootDetector 离线验证脚本
  *
  *   项目无测试框架（无 vitest/jest），用 node:assert + 动态 import 编译产物
  *   覆盖 spec AC1/AC2/AC3/AC4/AC6/AC9 的可离线部分。
@@ -12,18 +10,28 @@
  *     - 配置值与默认值合并（非替换），用户配置补充默认而非覆盖
  *     - 无效正则构造抛错
  *
- *   运行：先 npm run build，再 node test/scripts/uboot-detector-test.mjs
+ *   用法：
+ *     先 npm run build 编译 out/ 产物，再运行：
+ *     node test/scripts/serial/uboot-detector-test.mjs
+ *
+ *   输出：按 [1]~[5] 分组打印各用例结果，最后汇总通过/失败数。
  * ======================================================
  */
 
 import assert from "node:assert/strict";
 
 const { UbootDetector } = await import(
-  "../../out/mcp/shared/prompt-detector.js"
+  "../out/mcp/shared/prompt-detector.js"
 );
 
 let passed = 0;
 let failed = 0;
+
+/**
+ * 运行一条用例：通过则 passed+1，失败则 failed+1 并打印错误信息
+ * @param {string} name 用例名
+ * @param {Function} fn 用例断言逻辑（内部使用 node:assert）
+ */
 function check(name, fn) {
   try {
     fn();

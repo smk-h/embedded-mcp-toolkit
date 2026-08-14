@@ -9,15 +9,15 @@
  *     - 超时后设备端 rz/sz 干净退出（CAN×5+BS×5）
  *
  *   用法：
- *     node test/scripts/zmodem_timeout_test.mjs upload   <file> <timeoutSec>
- *     node test/scripts/zmodem_timeout_test.mjs download <remotePath> <localOut> <timeoutSec>
+ *     node test/scripts/serial/zmodem-timeout-test.mjs upload   <file> <timeoutSec>
+ *     node test/scripts/serial/zmodem-timeout-test.mjs download <remotePath> <localOut> <timeoutSec>
  *
  *   前提：COM 口未被占用（若有 MCP 串口会话，需先 serial_close 释放）。
  * ======================================================
  */
 
-import { SerialShell } from "../../out/transports/serial.js";
-import { zmodemSend, zmodemReceive } from "../../out/services/zmodem/index.js";
+import { SerialShell } from "../out/transports/serial.js";
+import { zmodemSend, zmodemReceive } from "../out/services/zmodem/index.js";
 
 const PORT = "COM3";
 const BAUD_RATE = 115200;
@@ -27,6 +27,10 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * 打开串口 shell 并做一次同步探针，确保提示符稳定后再返回
+ * @returns {Promise<SerialShell>} 已就绪的串口 shell
+ */
 async function openShell() {
   const shell = new SerialShell({ port: PORT, baudRate: BAUD_RATE });
   await shell.open();
@@ -50,6 +54,9 @@ async function openShell() {
   return shell;
 }
 
+/**
+ * 排空串口残留数据并恢复干净的 shell 提示符，供下一次测试复用
+ */
 async function recoverShell(shell) {
   shell.read(1);
   shell.write("", 1);
@@ -65,7 +72,7 @@ async function main() {
   const [, , mode, ...rest] = process.argv;
   if (!mode) {
     console.error(
-      "usage: node zmodem_timeout_test.mjs upload <file> <timeoutSec> | download <remotePath> <localOut> <timeoutSec>"
+      "usage: node test/scripts/serial/zmodem-timeout-test.mjs upload <file> <timeoutSec> | download <remotePath> <localOut> <timeoutSec>"
     );
     process.exit(2);
   }
