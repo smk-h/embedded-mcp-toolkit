@@ -256,7 +256,10 @@ export async function serialCloseHandler(args: { session_id: string }) {
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
 export const serialWriteConfig = {
-  description: "Send a command to a serial shell session.",
+  description:
+    "Send a command to a serial shell session. " +
+    "Do NOT call this concurrently with serial_exec/serial_read on the same session_id — " +
+    "concurrent access to the same serial console corrupts the output buffer.",
   inputSchema: fromJsonSchema<{
     session_id: string;
     command: string;
@@ -321,7 +324,10 @@ export async function serialWriteHandler(args: {
  * @param clear       缓冲区清空标志（1=读取后清空，0=保留缓冲区，默认 1）
  */
 export const serialReadConfig = {
-  description: "Read output from a serial shell session.",
+  description:
+    "Read output from a serial shell session. " +
+    "Do NOT call this concurrently with serial_exec/serial_write on the same session_id — " +
+    "concurrent access to the same serial console corrupts the output buffer.",
   inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
     type: "object",
     properties: {
@@ -381,7 +387,11 @@ export async function serialReadHandler(args: {
  */
 export const serialExecConfig = {
   description:
-    "Send a command to a serial shell session and wait for the output. Combines write + delay + read in one call.",
+    "Send a command to a serial shell session and wait for the output. Combines write + delay + read in one call. " +
+    "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the serial console is a single " +
+    "channel; concurrent calls will interleave output and corrupt results. " +
+    "Always wait for the previous command to finish before sending the next one. " +
+    "If you need parallel execution, open multiple sessions via serial_open.",
   inputSchema: fromJsonSchema<{
     session_id: string;
     command: string;
