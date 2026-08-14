@@ -434,75 +434,79 @@ export async function serialUploadHandler(args: {
   const remoteName = args.remote_name ?? basename(args.local_path);
   const recvCmd = args.recv_cmd ?? "rz";
 
-  // ZMODEM 前置：关闭设备端软件流控，避免 XON/XOFF 拦截协议字节
-  await disableFlowControl(shell);
+  // 整个传输过程（含 ZMODEM 前置流控关闭 + 传输 + 恢复 shell）都在 session 锁保护内，
+  // 避免并发 exec/write 注入命令破坏 ZMODEM 协议帧或污染 buffer
+  return serialStore.withLock(args.session_id, async () => {
+    // ZMODEM 前置：关闭设备端软件流控，避免 XON/XOFF 拦截协议字节
+    await disableFlowControl(shell);
 
-  // 超时控制：空闲超时（真故障）+ 总时长超时（兜底），共用 AbortController
-  const controller = new AbortController();
-  const guard = createTransferTimeoutGuard(
-    controller,
-    timeoutSec,
-    idleTimeoutSec
-  );
+    // 超时控制：空闲超时（真故障）+ 总时长超时（兜底），共用 AbortController
+    const controller = new AbortController();
+    const guard = createTransferTimeoutGuard(
+      controller,
+      timeoutSec,
+      idleTimeoutSec
+    );
 
-  // 进度节流：按字节增量打印，避免本地突发读取下时间节流吞掉绝大部分日志
-  let lastLoggedBytes = 0;
-  try {
-    // recvCmd 由 zmodemSend→establishSession 挂完字节旁路后发出，
-    // 确保设备 rz 回的 ZRINIT 进预缓冲区而非文本态
-    const result = await zmodemSend(
-      shell,
-      args.local_path,
-      remoteName,
-      {
-        onProgress: (p) => {
-          guard.touch(p.bytes); // 每次数据流动重置空闲计时
-          if (p.bytes - lastLoggedBytes >= LOG_PROGRESS_BYTES) {
-            logger.info(
-              `[serial_upload] progress ${p.bytes}/${p.total ?? "?"} bytes`
-            );
-            lastLoggedBytes = p.bytes;
-          }
+    // 进度节流：按字节增量打印，避免本地突发读取下时间节流吞掉绝大部分日志
+    let lastLoggedBytes = 0;
+    try {
+      // recvCmd 由 zmodemSend→establishSession 挂完字节旁路后发出，
+      // 确保设备 rz 回的 ZRINIT 进预缓冲区而非文本态
+      const result = await zmodemSend(
+        shell,
+        args.local_path,
+        remoteName,
+        {
+          onProgress: (p) => {
+            guard.touch(p.bytes); // 每次数据流动重置空闲计时
+            if (p.bytes - lastLoggedBytes >= LOG_PROGRESS_BYTES) {
+              logger.info(
+                `[serial_upload] progress ${p.bytes}/${p.total ?? "?"} bytes`
+              );
+              lastLoggedBytes = p.bytes;
+            }
+          },
+          // 心跳：握手/关闭阶段（transfer.end / session.close）无数据帧，
+          // 但协议在推进，靠此回调刷新 idle 时间戳，避免被误判为链路挂了。
+          onHeartbeat: () => guard.heartbeat(),
+          signal: controller.signal,
         },
-        // 心跳：握手/关闭阶段（transfer.end / session.close）无数据帧，
-        // 但协议在推进，靠此回调刷新 idle 时间戳，避免被误判为链路挂了。
-        onHeartbeat: () => guard.heartbeat(),
-        signal: controller.signal,
-      },
-      recvCmd
-    );
+        recvCmd
+      );
 
-    logger.info(
-      `[serial_upload] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
-    );
+      logger.info(
+        `[serial_upload] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
+      );
 
-    // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）
-    const reason = guard.reason();
-    if (!result.success && reason) {
-      return {
-        content: [
-          text(
-            formatAbortedSummary(
-              reason,
-              "Upload",
-              args.local_path,
-              remoteName,
-              { bytes: result.bytes, durationMs: result.durationMs },
-              timeoutSec,
-              idleTimeoutSec,
-              totalSize
-            )
-          ),
-        ],
-      };
+      // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）
+      const reason = guard.reason();
+      if (!result.success && reason) {
+        return {
+          content: [
+            text(
+              formatAbortedSummary(
+                reason,
+                "Upload",
+                args.local_path,
+                remoteName,
+                { bytes: result.bytes, durationMs: result.durationMs },
+                timeoutSec,
+                idleTimeoutSec,
+                totalSize
+              )
+            ),
+          ],
+        };
+      }
+      return { content: [text(formatTransferSummary(result))] };
+    } finally {
+      guard.clear();
+      // ZMODEM 结束后恢复 shell 到正常提示符状态（rz 退出后 shell 可能停在异常终端态）。
+      // 超时/异常时底层 finally 已发 CAN×5+BS×5 让设备端 rz 退出，此处排空缓冲恢复提示符。
+      await recoverShell(shell);
     }
-    return { content: [text(formatTransferSummary(result))] };
-  } finally {
-    guard.clear();
-    // ZMODEM 结束后恢复 shell 到正常提示符状态（rz 退出后 shell 可能停在异常终端态）。
-    // 超时/异常时底层 finally 已发 CAN×5+BS×5 让设备端 rz 退出，此处排空缓冲恢复提示符。
-    await recoverShell(shell);
-  }
+  });
 }
 
 // ── serial_download ─────────────────────────────────────────
@@ -610,78 +614,81 @@ export async function serialDownloadHandler(args: {
     args.remote_path
   );
 
-  // ZMODEM 前置：关闭设备端软件流控，避免 XON/XOFF 拦截协议字节
-  await disableFlowControl(shell);
+  // 整个传输过程（含 ZMODEM 前置流控关闭 + 传输 + 恢复 shell）都在 session 锁保护内
+  return serialStore.withLock(args.session_id, async () => {
+    // ZMODEM 前置：关闭设备端软件流控，避免 XON/XOFF 拦截协议字节
+    await disableFlowControl(shell);
 
-  // 超时控制：空闲超时（真故障）+ 总时长超时（兜底），共用 AbortController
-  const controller = new AbortController();
-  const guard = createTransferTimeoutGuard(
-    controller,
-    timeoutSec,
-    idleTimeoutSec
-  );
+    // 超时控制：空闲超时（真故障）+ 总时长超时（兜底），共用 AbortController
+    const controller = new AbortController();
+    const guard = createTransferTimeoutGuard(
+      controller,
+      timeoutSec,
+      idleTimeoutSec
+    );
 
-  // 记录 offer 携带的总大小（来自设备 sz），供 overall-proceeding 给建议值
-  let offerTotalSize = 0;
-  // 进度节流：下载侧 on_input 受串口速率限制（平滑非突发），时间节流本就工作良好
-  let lastLogAt = 0;
-  try {
-    // sendCmd 由 zmodemReceive→establishSession 挂完字节旁路后发出
-    const result = await zmodemReceive(
-      shell,
-      args.local_path,
-      {
-        onProgress: (p) => {
-          if (typeof p.total === "number" && p.total > 0) {
-            offerTotalSize = p.total;
-          }
-          guard.touch(p.bytes); // 每次数据流动重置空闲计时
-          const now = Date.now();
-          if (now - lastLogAt >= PROGRESS_LOG_THROTTLE_MS) {
-            logger.info(
-              `[serial_download] progress ${p.bytes}/${p.total ?? "?"} bytes`
-            );
-            lastLogAt = now;
-          }
+    // 记录 offer 携带的总大小（来自设备 sz），供 overall-proceeding 给建议值
+    let offerTotalSize = 0;
+    // 进度节流：下载侧 on_input 受串口速率限制（平滑非突发），时间节流本就工作良好
+    let lastLogAt = 0;
+    try {
+      // sendCmd 由 zmodemReceive→establishSession 挂完字节旁路后发出
+      const result = await zmodemReceive(
+        shell,
+        args.local_path,
+        {
+          onProgress: (p) => {
+            if (typeof p.total === "number" && p.total > 0) {
+              offerTotalSize = p.total;
+            }
+            guard.touch(p.bytes); // 每次数据流动重置空闲计时
+            const now = Date.now();
+            if (now - lastLogAt >= PROGRESS_LOG_THROTTLE_MS) {
+              logger.info(
+                `[serial_download] progress ${p.bytes}/${p.total ?? "?"} bytes`
+              );
+              lastLogAt = now;
+            }
+          },
+          // 心跳：握手/关闭阶段（session.start→offer 间隙、ZFIN 握手）无数据帧，
+          // 但协议在推进，靠此回调刷新 idle 时间戳，避免被误判为链路挂了。
+          onHeartbeat: () => guard.heartbeat(),
+          signal: controller.signal,
         },
-        // 心跳：握手/关闭阶段（session.start→offer 间隙、ZFIN 握手）无数据帧，
-        // 但协议在推进，靠此回调刷新 idle 时间戳，避免被误判为链路挂了。
-        onHeartbeat: () => guard.heartbeat(),
-        signal: controller.signal,
-      },
-      sendCmd
-    );
+        sendCmd
+      );
 
-    logger.info(
-      `[serial_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
-    );
+      logger.info(
+        `[serial_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
+      );
 
-    // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）。
-    // 注意：底层 zmodemReceive 在 abort 时已删除残缺本地文件，此处只负责文案。
-    const reason = guard.reason();
-    if (!result.success && reason) {
-      return {
-        content: [
-          text(
-            formatAbortedSummary(
-              reason,
-              "Download",
-              args.local_path,
-              args.remote_path,
-              { bytes: result.bytes, durationMs: result.durationMs },
-              timeoutSec,
-              idleTimeoutSec,
-              offerTotalSize
-            )
-          ),
-        ],
-      };
+      // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）。
+      // 注意：底层 zmodemReceive 在 abort 时已删除残缺本地文件，此处只负责文案。
+      const reason = guard.reason();
+      if (!result.success && reason) {
+        return {
+          content: [
+            text(
+              formatAbortedSummary(
+                reason,
+                "Download",
+                args.local_path,
+                args.remote_path,
+                { bytes: result.bytes, durationMs: result.durationMs },
+                timeoutSec,
+                idleTimeoutSec,
+                offerTotalSize
+              )
+            ),
+          ],
+        };
+      }
+      return { content: [text(formatTransferSummary(result))] };
+    } finally {
+      guard.clear();
+      // ZMODEM 结束后恢复 shell 到正常提示符状态。
+      // 超时/异常时底层 finally 已发 CAN×5+BS×5 让设备端 sz 退出，此处排空缓冲恢复提示符。
+      await recoverShell(shell);
     }
-    return { content: [text(formatTransferSummary(result))] };
-  } finally {
-    guard.clear();
-    // ZMODEM 结束后恢复 shell 到正常提示符状态。
-    // 超时/异常时底层 finally 已发 CAN×5+BS×5 让设备端 sz 退出，此处排空缓冲恢复提示符。
-    await recoverShell(shell);
-  }
+  });
 }

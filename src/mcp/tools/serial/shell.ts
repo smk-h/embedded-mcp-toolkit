@@ -231,7 +231,11 @@ export async function serialCloseHandler(args: { session_id: string }) {
   }
 
   const port = result.shell.getPort();
-  await result.shell.close();
+  // 在锁内执行 close，确保没有其他操作正在使用 shell
+  await serialStore.withLock(args.session_id, async () => {
+    await result.shell.close();
+  });
+  // close 完成后再 remove（同时清理 mutex）
   serialStore.remove(args.session_id);
   if (port) {
     portToSession.delete(port);
@@ -287,7 +291,7 @@ export const serialWriteConfig = {
  * @param args  工具参数，包含 session_id、command 和可选的 clear
  * @return MCP 响应，确认命令已发送
  */
-export function serialWriteHandler(args: {
+export async function serialWriteHandler(args: {
   session_id: string;
   command: string;
   clear?: number;
@@ -300,9 +304,10 @@ export function serialWriteHandler(args: {
     return result.response;
   }
 
-  result.shell.write(args.command, args.clear ?? 1);
-
-  return { content: [text(`Command sent: ${args.command}`)] };
+  return serialStore.withLock(args.session_id, async () => {
+    result.shell.write(args.command, args.clear ?? 1);
+    return { content: [text(`Command sent: ${args.command}`)] };
+  });
 }
 
 // ── serial_read ──────────────────────────────────────────────
@@ -344,7 +349,7 @@ export const serialReadConfig = {
  * @param args  工具参数，包含 session_id 和可选的 clear
  * @return MCP 响应，包含读取到的输出内容
  */
-export function serialReadHandler(args: {
+export async function serialReadHandler(args: {
   session_id: string;
   clear?: number;
 }) {
@@ -356,9 +361,10 @@ export function serialReadHandler(args: {
     return result.response;
   }
 
-  const output = result.shell.read(args.clear ?? 1);
-
-  return { content: [text(output || "(no output)")] };
+  return serialStore.withLock(args.session_id, async () => {
+    const output = result.shell.read(args.clear ?? 1);
+    return { content: [text(output || "(no output)")] };
+  });
 }
 
 // ── serial_exec ──────────────────────────────────────────────
@@ -460,30 +466,32 @@ export async function serialExecHandler(args: {
     shell.write(CONTROL_CHAR_MAP[key], 1, false);
   };
 
-  const execResult = await runExec({
-    shell,
-    command: args.command,
-    delay: delayVal,
-    clear: clearVal,
-    maxDuration: maxDurationVal,
-    promptDetector,
-    sendCtrl,
-    logPrefix: "[serial_exec]",
-    execTimeoutConfig,
+  return serialStore.withLock(args.session_id, async () => {
+    const execResult = await runExec({
+      shell,
+      command: args.command,
+      delay: delayVal,
+      clear: clearVal,
+      maxDuration: maxDurationVal,
+      promptDetector,
+      sendCtrl,
+      logPrefix: "[serial_exec]",
+      execTimeoutConfig,
+    });
+
+    let output = execResult.output;
+    if (execResult.timeoutKind === "sampling") {
+      output =
+        (output ? output + "\n" : "") +
+        `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
+    } else if (execResult.timeoutKind === "fallback") {
+      output =
+        (output ? output + "\n" : "") +
+        `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
+    }
+
+    return { content: [text(output || "(no output)")] };
   });
-
-  let output = execResult.output;
-  if (execResult.timeoutKind === "sampling") {
-    output =
-      (output ? output + "\n" : "") +
-      `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
-  } else if (execResult.timeoutKind === "fallback") {
-    output =
-      (output ? output + "\n" : "") +
-      `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
-  }
-
-  return { content: [text(output || "(no output)")] };
 }
 
 // ── serial_send_ctrl ───────────────────────────────────────────
@@ -550,12 +558,13 @@ export async function serialSendCtrlHandler(args: {
     return result.response;
   }
 
-  const byte = await sendControlChar(result.shell, args.key);
-  const label = CTRL_LABEL[args.key];
-
-  return {
-    content: [text(`${label} sent (${byte})`)],
-  };
+  return serialStore.withLock(args.session_id, async () => {
+    const byte = await sendControlChar(result.shell, args.key);
+    const label = CTRL_LABEL[args.key];
+    return {
+      content: [text(`${label} sent (${byte})`)],
+    };
+  });
 }
 
 // ── serial_shell_login ──────────────────────────────────────────
@@ -640,6 +649,30 @@ export async function serialShellLoginHandler(args: {
 
   // ===== 打开串口（或复用已有 session）=====
   const existingId = portToSession.get(baseConfig.port);
+
+  // 锁的 sessionId：复用已有 session 用 existingId，新建 session 用预览 id（= create 生成的 id）
+  const lockId = existingId ?? serialStore.peekNextId();
+
+  // 整个 session 操作流程（open/复用 → 探测 → 解锁 → 注册）都在锁保护内，
+  // 避免并发 exec/write/read/send_ctrl 注入命令或污染 buffer
+  return serialStore.withLock(lockId, () =>
+    serialShellLoginInner(args, deviceName, baseConfig, stepDelay, existingId)
+  );
+}
+
+/**
+ * @brief serial_shell_login 的内部实现（在 session 锁保护内执行）
+ *
+ * 从 session 复用/新建判定到最终注册返回的完整流程。所有 shell 操作
+ * （read/write/sendRaw/状态机探测/解锁序列）都在调用方的 withLock 保护内。
+ */
+async function serialShellLoginInner(
+  args: { device?: string; key?: string; timeout?: number },
+  deviceName: string,
+  baseConfig: SerialShellConfig,
+  stepDelay: number,
+  existingId: string | undefined
+) {
   let newSessionId: string | undefined;
   let shell: SerialShell;
   let banner: string;
@@ -1097,147 +1130,149 @@ export async function serialEnterUbootHandler(args: {
 
   const shell = result.shell;
 
-  // 构造 U-Boot 检测器：从设备配置读 uboot 子段，未配置走默认值
-  // 配置非法（re: 后跟无效正则）时立即返回配置错误，不进入轮询
-  let detector: UbootDetector;
-  try {
-    detector = new UbootDetector(getUbootConfig(shell.getDeviceName()));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`[serial_enter_uboot] config error: ${msg}`);
-    return {
-      content: [text(`Failed to build U-Boot detector (config error): ${msg}`)],
-    };
-  }
+  return serialStore.withLock(args.session_id, async () => {
+    // 构造 U-Boot 检测器：从设备配置读 uboot 子段，未配置走默认值
+    // 配置非法（re: 后跟无效正则）时立即返回配置错误，不进入轮询
+    let detector: UbootDetector;
+    try {
+      detector = new UbootDetector(getUbootConfig(shell.getDeviceName()));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`[serial_enter_uboot] config error: ${msg}`);
+      return {
+        content: [text(`Failed to build U-Boot detector (config error): ${msg}`)],
+      };
+    }
 
-  // 发送 reboot 重启设备
-  shell.write("reboot", 1);
-  logger.info(
-    `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
-  );
+    // 发送 reboot 重启设备
+    shell.write("reboot", 1);
+    logger.info(
+      `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
+    );
 
-  const deadline = Date.now() + timeoutSec * 1000;
-  const verifyTimeoutMs = detector.verifyTimeoutMs;
-  let allOutput = "";
-  let interruptKey = "";
-  let interruptedAt = 0; // 中断键发送时刻，用于主层窗口计时
-  let verifyStarted = false; // 是否已发 printenv（保证只发一次）
-  let verifyStartedAt = 0; // printenv 发送时刻，用于验证层窗口计时
+    const deadline = Date.now() + timeoutSec * 1000;
+    const verifyTimeoutMs = detector.verifyTimeoutMs;
+    let allOutput = "";
+    let interruptKey = "";
+    let interruptedAt = 0; // 中断键发送时刻，用于主层窗口计时
+    let verifyStarted = false; // 是否已发 printenv（保证只发一次）
+    let verifyStartedAt = 0; // printenv 发送时刻，用于验证层窗口计时
 
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 500));
-    const chunk = shell.read(0); // 不清空缓冲区，持续累积
-    if (chunk) allOutput += chunk;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      const chunk = shell.read(0); // 不清空缓冲区，持续累积
+      if (chunk) allOutput += chunk;
 
-    // 阶段 1：autoboot 提示检测（未中断时）
-    if (!interruptKey) {
-      const key = detector.matchAutoboot(allOutput);
-      if (key) {
-        shell.sendRaw(key, 1);
-        interruptKey = key === "\x15" ? "Ctrl+u" : "Enter";
-        interruptedAt = Date.now();
-        allOutput = ""; // 重置，接下来只收集 U-Boot 阶段输出
-        logger.info(
-          `[serial_enter_uboot] detected autoboot prompt, sent ${interruptKey}`
-        );
+      // 阶段 1：autoboot 提示检测（未中断时）
+      if (!interruptKey) {
+        const key = detector.matchAutoboot(allOutput);
+        if (key) {
+          shell.sendRaw(key, 1);
+          interruptKey = key === "\x15" ? "Ctrl+u" : "Enter";
+          interruptedAt = Date.now();
+          allOutput = ""; // 重置，接下来只收集 U-Boot 阶段输出
+          logger.info(
+            `[serial_enter_uboot] detected autoboot prompt, sent ${interruptKey}`
+          );
+          continue;
+        }
+      }
+
+      // 已中断后才进入主层 / 验证层判定
+      if (!interruptKey) {
         continue;
       }
-    }
 
-    // 已中断后才进入主层 / 验证层判定
-    if (!interruptKey) {
-      continue;
-    }
+      // 内核启动特征 → 立即失败（不论主层还是验证层）
+      if (detector.matchKernelBoot(allOutput)) {
+        logger.warn(
+          "[serial_enter_uboot] kernel boot detected, abort (device bypassed U-Boot)"
+        );
+        return {
+          content: [
+            text(
+              `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
+            ),
+          ],
+        };
+      }
 
-    // 内核启动特征 → 立即失败（不论主层还是验证层）
-    if (detector.matchKernelBoot(allOutput)) {
-      logger.warn(
-        "[serial_enter_uboot] kernel boot detected, abort (device bypassed U-Boot)"
-      );
-      return {
-        content: [
-          text(
-            `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
-          ),
-        ],
-      };
-    }
-
-    // 阶段 2：主层 — 提示符命中即成功
-    if (!verifyStarted && detector.matchPrompt(allOutput)) {
-      const finalOutput = shell.read(1);
-      if (finalOutput) allOutput += finalOutput;
-      logger.info(
-        `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
-      );
-      return {
-        content: [
-          text(
-            `Entered U-Boot successfully (via prompt, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
-          ),
-        ],
-      };
-    }
-
-    // 主层窗口耗尽 → 触发验证层（仅一次）
-    if (!verifyStarted && Date.now() - interruptedAt >= verifyTimeoutMs) {
-      shell.sendRaw("\nprintenv\n", 1);
-      verifyStarted = true;
-      verifyStartedAt = Date.now();
-      allOutput = ""; // 重置，接下来只收集 printenv 输出
-      logger.info(
-        "[serial_enter_uboot] prompt not matched in main window, sent printenv for verification"
-      );
-      continue;
-    }
-
-    // 阶段 3：验证层 — 环境变量键命中即成功
-    if (verifyStarted) {
-      if (detector.matchVerifyKey(allOutput)) {
+      // 阶段 2：主层 — 提示符命中即成功
+      if (!verifyStarted && detector.matchPrompt(allOutput)) {
         const finalOutput = shell.read(1);
         if (finalOutput) allOutput += finalOutput;
         logger.info(
-          "[serial_enter_uboot] verify key matched (via verify), entered U-Boot"
+          `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
         );
         return {
           content: [
             text(
-              `Entered U-Boot successfully (via verify, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
+              `Entered U-Boot successfully (via prompt, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
             ),
           ],
         };
       }
 
-      // 验证层窗口耗尽 → 快速失败
-      if (Date.now() - verifyStartedAt >= verifyTimeoutMs) {
-        logger.warn(
-          `[serial_enter_uboot] verify timeout (${verifyTimeoutMs}ms), no env key matched`
+      // 主层窗口耗尽 → 触发验证层（仅一次）
+      if (!verifyStarted && Date.now() - interruptedAt >= verifyTimeoutMs) {
+        shell.sendRaw("\nprintenv\n", 1);
+        verifyStarted = true;
+        verifyStartedAt = Date.now();
+        allOutput = ""; // 重置，接下来只收集 printenv 输出
+        logger.info(
+          "[serial_enter_uboot] prompt not matched in main window, sent printenv for verification"
         );
-        return {
-          content: [
-            text(
-              `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
-            ),
-          ],
-        };
+        continue;
+      }
+
+      // 阶段 3：验证层 — 环境变量键命中即成功
+      if (verifyStarted) {
+        if (detector.matchVerifyKey(allOutput)) {
+          const finalOutput = shell.read(1);
+          if (finalOutput) allOutput += finalOutput;
+          logger.info(
+            "[serial_enter_uboot] verify key matched (via verify), entered U-Boot"
+          );
+          return {
+            content: [
+              text(
+                `Entered U-Boot successfully (via verify, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
+              ),
+            ],
+          };
+        }
+
+        // 验证层窗口耗尽 → 快速失败
+        if (Date.now() - verifyStartedAt >= verifyTimeoutMs) {
+          logger.warn(
+            `[serial_enter_uboot] verify timeout (${verifyTimeoutMs}ms), no env key matched`
+          );
+          return {
+            content: [
+              text(
+                `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
+              ),
+            ],
+          };
+        }
       }
     }
-  }
 
-  // 总超时兜底
-  const remaining = shell.read(1);
-  if (remaining) allOutput += remaining;
+    // 总超时兜底
+    const remaining = shell.read(1);
+    if (remaining) allOutput += remaining;
 
-  logger.warn(
-    `[serial_enter_uboot] overall timeout after ${timeoutSec}s, interruptKey=${interruptKey || "(none)"}`
-  );
-  return {
-    content: [
-      text(
-        `Timeout after ${timeoutSec}s waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`
-      ),
-    ],
-  };
+    logger.warn(
+      `[serial_enter_uboot] overall timeout after ${timeoutSec}s, interruptKey=${interruptKey || "(none)"}`
+    );
+    return {
+      content: [
+        text(
+          `Timeout after ${timeoutSec}s waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`
+        ),
+      ],
+    };
+  });
 }
 
 /** 注册 session（复用已有或新建），返回统一的 MCP 响应 */

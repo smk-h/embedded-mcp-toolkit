@@ -140,7 +140,9 @@ export async function powerShellCloseHandler(args: { session_id: string }) {
     return result.response;
   }
 
-  await result.shell.close();
+  await powerStore.withLock(args.session_id, async () => {
+    await result.shell.close();
+  });
   powerStore.remove(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
@@ -193,7 +195,7 @@ export const powerShellWriteConfig = {
  * @param args  工具参数，包含 session_id、command 和可选的 clear
  * @return MCP 响应，确认命令已发送
  */
-export function powerShellWriteHandler(args: {
+export async function powerShellWriteHandler(args: {
   session_id: string;
   command: string;
   clear?: number;
@@ -206,9 +208,10 @@ export function powerShellWriteHandler(args: {
     return result.response;
   }
 
-  result.shell.write(args.command, args.clear ?? 1);
-
-  return { content: [text(`Command sent: ${args.command}`)] };
+  return powerStore.withLock(args.session_id, async () => {
+    result.shell.write(args.command, args.clear ?? 1);
+    return { content: [text(`Command sent: ${args.command}`)] };
+  });
 }
 
 // ── power_shell_read ────────────────────────────────────────
@@ -250,7 +253,7 @@ export const powerShellReadConfig = {
  * @param args  工具参数，包含 session_id 和可选的 clear
  * @return MCP 响应，包含读取到的输出内容
  */
-export function powerShellReadHandler(args: {
+export async function powerShellReadHandler(args: {
   session_id: string;
   clear?: number;
 }) {
@@ -262,9 +265,10 @@ export function powerShellReadHandler(args: {
     return result.response;
   }
 
-  const output = result.shell.read(args.clear ?? 1);
-
-  return { content: [text(output || "(no output)")] };
+  return powerStore.withLock(args.session_id, async () => {
+    const output = result.shell.read(args.clear ?? 1);
+    return { content: [text(output || "(no output)")] };
+  });
 }
 
 // ── power_shell_exec ────────────────────────────────────────
@@ -338,12 +342,14 @@ export async function powerShellExecHandler(args: {
 
   const shell = result.shell;
 
-  shell.write(args.command, args.clear ?? 1);
+  return powerStore.withLock(args.session_id, async () => {
+    shell.write(args.command, args.clear ?? 1);
 
-  // 等待命令执行完成，让 stdout/stderr 数据积累到内部缓冲区
-  await new Promise((r) => setTimeout(r, args.delay ?? 1000));
+    // 等待命令执行完成，让 stdout/stderr 数据积累到内部缓冲区
+    await new Promise((r) => setTimeout(r, args.delay ?? 1000));
 
-  const output = shell.read(1);
+    const output = shell.read(1);
 
-  return { content: [text(output || "(no output)")] };
+    return { content: [text(output || "(no output)")] };
+  });
 }

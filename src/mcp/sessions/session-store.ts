@@ -52,6 +52,59 @@ export type GetResult<T extends BaseShell> =
   | { ok: true; shell: T }
   | { ok: false; response: { content: { type: "text"; text: string }[] } };
 
+// ── SessionMutex ───────────────────────────────────────────
+
+/**
+ * @brief 异步互斥锁（Promise-based mutex）
+ *
+ * 基于 Promise 链实现：acquire() 返回一个 Promise，持有锁的调用 release() 后
+ * 队列中下一个 acquire() 的 Promise 才 resolve。同一时刻只有一个 acquire 持有锁。
+ *
+ * 用于 per-session 串行化：同一 session 的并发工具调用排队执行，
+ * 避免共享 OutputBuffer 被并发 drain/write 污染。
+ *
+ * 无外部依赖，Node 单线程事件循环下 Promise 链天然保证 FIFO 公平性。
+ */
+class SessionMutex {
+  /** @brief 是否已锁定 */
+  #locked = false;
+  /** @brief 等待队列：每个 entry 是 release 时要 resolve 的函数 */
+  #queue: (() => void)[] = [];
+
+  /**
+   * @brief 获取锁，返回释放函数
+   *
+   * 锁空闲时立即返回（同步 resolve）；锁已被持有时入队等待，
+   * 当前持有者调 release 后队列首部的 waiter 才被唤醒。
+   *
+   * @returns release 函数，调用后释放锁并唤醒下一个 waiter
+   */
+  async acquire(): Promise<() => void> {
+    if (!this.#locked) {
+      this.#locked = true;
+      return () => this.release();
+    }
+    // 锁已被持有，入队等待
+    return new Promise<() => void>((resolve) => {
+      this.#queue.push(() => {
+        this.#locked = true;
+        resolve(() => this.release());
+      });
+    });
+  }
+
+  /**
+   * @brief 释放锁并唤醒队列中下一个 waiter
+   */
+  private release(): void {
+    this.#locked = false;
+    const next = this.#queue.shift();
+    if (next) {
+      next();
+    }
+  }
+}
+
 // ── ShellSessionStore ──────────────────────────────────────
 
 /**
@@ -60,11 +113,17 @@ export type GetResult<T extends BaseShell> =
  * 以 session_id 为键存储 BaseShell 子类实例，统一管理 ID 生成、registry 协调与批量清理。
  * 各通道实例化时传入前缀（"ssh" / "serial" / "adb" / "power"），计数器各自独立。
  *
+ * 每个 session 绑定一把独立的 SessionMutex，通过 withLock() 串行化对该 session 的并发操作。
+ * 不同 session 的锁互相独立，不会互相阻塞。
+ *
  * @typeParam T - BaseShell 的具体子类类型
  */
 export class ShellSessionStore<T extends BaseShell> {
   /** @brief 会话实例表：session_id → shell 实例 */
   readonly #sessions = new Map<string, T>();
+
+  /** @brief per-session 互斥锁表：session_id → SessionMutex */
+  readonly #mutexes = new Map<string, SessionMutex>();
 
   /** @brief 自增计数器，用于生成唯一 session_id */
   #counter = 0;
@@ -93,6 +152,7 @@ export class ShellSessionStore<T extends BaseShell> {
   create(shell: T, meta: CreateSessionMeta): string {
     const sessionId = `${this.#prefix}_${++this.#counter}`;
     this.#sessions.set(sessionId, shell);
+    this.#mutexes.set(sessionId, new SessionMutex());
     registry.register({
       id: sessionId,
       type: meta.type,
@@ -166,7 +226,38 @@ export class ShellSessionStore<T extends BaseShell> {
    */
   remove(sessionId: string): void {
     this.#sessions.delete(sessionId);
+    this.#mutexes.delete(sessionId);
     registry.unregister(sessionId);
+  }
+
+  /**
+   * @brief 在 session 互斥锁保护下执行异步操作
+   *
+   * 同一 session_id 的并发调用会串行排队：先到先执行，后到者在 acquire() 处 await 等待，
+   * 前一个调用的 fn resolve 后才获得锁开始执行。确保同一 session 的 OutputBuffer
+   * 不会被并发 drain/write 污染。
+   *
+   * 不同 session_id 的锁互相独立，不会互相阻塞。
+   *
+   * session 不存在时直接执行 fn（让 fn 内部的 getOrNotFound 返回 not-found 响应），
+   * 不阻塞调用方。
+   *
+   * @param sessionId - 会话 ID
+   * @param fn - 需要在锁保护下执行的异步函数
+   * @returns fn 的返回值
+   */
+  async withLock<R>(sessionId: string, fn: () => Promise<R>): Promise<R> {
+    const mutex = this.#mutexes.get(sessionId);
+    if (!mutex) {
+      // session 不存在（可能已被 close/remove），直接执行 fn 让调用方走 not-found 逻辑
+      return fn();
+    }
+    const release = await mutex.acquire();
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
   }
 
   /**
@@ -189,5 +280,6 @@ export class ShellSessionStore<T extends BaseShell> {
       registry.unregister(id);
     }
     this.#sessions.clear();
+    this.#mutexes.clear();
   }
 }

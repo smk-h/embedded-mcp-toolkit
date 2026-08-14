@@ -153,7 +153,9 @@ export async function sshShellCloseHandler(args: { session_id: string }) {
     return result.response;
   }
 
-  await result.shell.close();
+  await sshStore.withLock(args.session_id, async () => {
+    await result.shell.close();
+  });
   sshStore.remove(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
@@ -206,7 +208,7 @@ export const sshShellWriteConfig = {
  * @param args  工具参数，包含 session_id、command 和可选的 clear
  * @return MCP 响应，确认命令已发送
  */
-export function sshShellWriteHandler(args: {
+export async function sshShellWriteHandler(args: {
   session_id: string;
   command: string;
   clear?: number;
@@ -219,9 +221,10 @@ export function sshShellWriteHandler(args: {
     return result.response;
   }
 
-  result.shell.write(args.command, args.clear ?? 1);
-
-  return { content: [text(`Command sent: ${args.command}`)] };
+  return sshStore.withLock(args.session_id, async () => {
+    result.shell.write(args.command, args.clear ?? 1);
+    return { content: [text(`Command sent: ${args.command}`)] };
+  });
 }
 
 // ── ssh_shell_read ──────────────────────────────────────────
@@ -263,7 +266,7 @@ export const sshShellReadConfig = {
  * @param args  工具参数，包含 session_id 和可选的 clear
  * @return MCP 响应，包含读取到的输出内容
  */
-export function sshShellReadHandler(args: {
+export async function sshShellReadHandler(args: {
   session_id: string;
   clear?: number;
 }) {
@@ -275,9 +278,10 @@ export function sshShellReadHandler(args: {
     return result.response;
   }
 
-  const output = result.shell.read(args.clear ?? 1);
-
-  return { content: [text(output || "(no output)")] };
+  return sshStore.withLock(args.session_id, async () => {
+    const output = result.shell.read(args.clear ?? 1);
+    return { content: [text(output || "(no output)")] };
+  });
 }
 
 // ── ssh_shell_exec ──────────────────────────────────────────
@@ -379,30 +383,32 @@ export async function sshShellExecHandler(args: {
     shell.write(CONTROL_CHAR_MAP[key], 1, false);
   };
 
-  const execResult = await runExec({
-    shell,
-    command: args.command,
-    delay: delayVal,
-    clear: clearVal,
-    maxDuration: maxDurationVal,
-    promptDetector,
-    sendCtrl,
-    logPrefix: "[ssh_shell_exec]",
-    execTimeoutConfig,
+  return sshStore.withLock(args.session_id, async () => {
+    const execResult = await runExec({
+      shell,
+      command: args.command,
+      delay: delayVal,
+      clear: clearVal,
+      maxDuration: maxDurationVal,
+      promptDetector,
+      sendCtrl,
+      logPrefix: "[ssh_shell_exec]",
+      execTimeoutConfig,
+    });
+
+    let output = execResult.output;
+    if (execResult.timeoutKind === "sampling") {
+      output =
+        (output ? output + "\n" : "") +
+        `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
+    } else if (execResult.timeoutKind === "fallback") {
+      output =
+        (output ? output + "\n" : "") +
+        `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
+    }
+
+    return { content: [text(output || "(no output)")] };
   });
-
-  let output = execResult.output;
-  if (execResult.timeoutKind === "sampling") {
-    output =
-      (output ? output + "\n" : "") +
-      `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
-  } else if (execResult.timeoutKind === "fallback") {
-    output =
-      (output ? output + "\n" : "") +
-      `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
-  }
-
-  return { content: [text(output || "(no output)")] };
 }
 
 // ── ssh_shell_send_ctrl ─────────────────────────────────────
@@ -469,12 +475,13 @@ export async function sshShellSendCtrlHandler(args: {
     return result.response;
   }
 
-  const byte = await sendControlChar(result.shell, args.key);
-  const label = CTRL_LABEL[args.key];
-
-  return {
-    content: [text(`${label} sent (${byte})`)],
-  };
+  return sshStore.withLock(args.session_id, async () => {
+    const byte = await sendControlChar(result.shell, args.key);
+    const label = CTRL_LABEL[args.key];
+    return {
+      content: [text(`${label} sent (${byte})`)],
+    };
+  });
 }
 
 // ── ssh_connections ────────────────────────────────────────
@@ -519,27 +526,29 @@ export async function sshConnectionsHandler(args: { session_id: string }) {
 
   const shell = result.shell;
 
-  const commands = [
-    "netstat -tn 2>/dev/null | grep :22",
-    "ss -tn 2>/dev/null | grep :22",
-    "cat /proc/net/tcp",
-  ];
+  return sshStore.withLock(args.session_id, async () => {
+    const commands = [
+      "netstat -tn 2>/dev/null | grep :22",
+      "ss -tn 2>/dev/null | grep :22",
+      "cat /proc/net/tcp",
+    ];
 
-  let output = "";
-  for (const cmd of commands) {
-    shell.write(cmd, 1);
-    await new Promise((r) => setTimeout(r, 1000));
-    output = shell.read(1).trim();
-    if (
-      output &&
-      !output.includes("not found") &&
-      !output.includes("command not found")
-    ) {
-      break;
+    let output = "";
+    for (const cmd of commands) {
+      shell.write(cmd, 1);
+      await new Promise((r) => setTimeout(r, 1000));
+      output = shell.read(1).trim();
+      if (
+        output &&
+        !output.includes("not found") &&
+        !output.includes("command not found")
+      ) {
+        break;
+      }
     }
-  }
 
-  return { content: [text(output || "No SSH connection info available.")] };
+    return { content: [text(output || "No SSH connection info available.")] };
+  });
 }
 
 // ── ssh_shell_login ──────────────────────────────────────────
@@ -619,6 +628,25 @@ export async function sshShellLoginHandler(args: {
 
   const stepDelay = args.timeout ?? 1500;
 
+  // 预览 session id（= create 生成的 id），用于提前获取锁
+  const lockId = sshStore.peekNextId();
+
+  // 整个流程（open → 探测 → 解锁）都在锁保护内，
+  // 避免注册到 store 后并发 exec/write/read 污染探测过程
+  return sshStore.withLock(lockId, () =>
+    sshShellLoginInner(args, config, deviceName, stepDelay)
+  );
+}
+
+/**
+ * @brief ssh_shell_login 的内部实现（在 session 锁保护内执行）
+ */
+async function sshShellLoginInner(
+  args: { device?: string; key?: string; timeout?: number },
+  config: SSHShellConfig,
+  deviceName: string,
+  stepDelay: number
+) {
   // ===== 步骤 1：建立 SSH 连接 =====
   const shell = new SSHShell(config);
   let banner: string;

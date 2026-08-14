@@ -344,136 +344,116 @@ export async function sshBuildHandler(args: {
   }
   const shell = result.shell;
 
-  // ── 步骤 2：构造远端命令 ──
-  // fullCommand 形如：
-  //   cd <cwd> || { echo "___MCP_BUILD_DONE___:1"; exit 1; }; <command> 2>&1; echo "___MCP_BUILD_DONE___:$?"
-  // 或（无 cwd）：
-  //   <command> 2>&1; echo "___MCP_BUILD_DONE___:$?"
-  //
-  // 其中 cd 失败分支的 echo "___MCP_BUILD_DONE___:1" 会在 PTY 回显中出现 :1，
-  // 而 :1 会被 ___MCP_BUILD_DONE___:(\d+) 正则匹配，导致误检测。
-  // 因此必须在检测完成标记之前剥离 PTY 回显行（见步骤 4）。
-  const fullCommand: string = buildRemoteCommand(
-    args.command,
-    args.cwd,
-    BUILD_MARKER
-  );
+  // 整个构建过程（发命令 → 剥离回显 → 轮询检测完成标记 → 分类输出）都在 session 锁保护内
+  return sshStore.withLock(args.session_id, async () => {
+    // ── 步骤 2：构造远端命令 ──
+    const fullCommand: string = buildRemoteCommand(
+      args.command,
+      args.cwd,
+      BUILD_MARKER
+    );
 
-  // ── 步骤 3：发送命令 ──
-  // 先排空残留数据，再用 clear=0（追加模式）写入命令，overflow=true 确保缓冲满时保留最新数据
-  shell.drain();
-  shell.write(fullCommand, 0);
+    // ── 步骤 3：发送命令 ──
+    shell.drain();
+    shell.write(fullCommand, 0);
 
-  // ── 步骤 4：剥离 PTY 回显 ──
-  // PTY 会将用户输入的命令原样回显，回显是发送命令后收到的第一行数据（以 \n 结尾）。
-  // 回显中 cd 失败分支的 echo "___MCP_BUILD_DONE___:1" 会被后续正则误匹配，
-  // 因此先剥离回显行，\n 之后的所有数据才是真实构建输出。
-  let allOutput: string = "";
-  let echoBuffer: string = "";
-  let echoRetries = 10;
-  while (echoRetries > 0) {
-    echoRetries--;
-    await new Promise((r) => setTimeout(r, 200));
-    echoBuffer += shell.drain();
-    const nlIdx = echoBuffer.indexOf("\n");
-    if (nlIdx !== -1) {
-      allOutput = echoBuffer.substring(nlIdx + 1);
-      logger.info(
-        { retries: 10 - echoRetries, echoLine: echoBuffer.substring(0, nlIdx) },
-        "PTY echo stripped successfully"
-      );
-      break;
+    // ── 步骤 4：剥离 PTY 回显 ──
+    let allOutput: string = "";
+    let echoBuffer: string = "";
+    let echoRetries = 10;
+    while (echoRetries > 0) {
+      echoRetries--;
+      await new Promise((r) => setTimeout(r, 200));
+      echoBuffer += shell.drain();
+      const nlIdx = echoBuffer.indexOf("\n");
+      if (nlIdx !== -1) {
+        allOutput = echoBuffer.substring(nlIdx + 1);
+        logger.info(
+          { retries: 10 - echoRetries, echoLine: echoBuffer.substring(0, nlIdx) },
+          "PTY echo stripped successfully"
+        );
+        break;
+      }
     }
-  }
-  if (echoRetries === 0) {
-    logger.warn(
-      { echoBuffer },
-      "Failed to strip PTY echo: no newline found within retry limit"
-    );
-  }
-
-  // ── 步骤 5：回显剥离完成后，轮询缓冲区检测完成标记 ──
-  const deadline: number = Date.now() + maxWait;
-  let exitCode: number | null = null;
-  const markerRegex = new RegExp(`${BUILD_MARKER}:(\\d+)`);
-
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    allOutput += shell.drain();
-
-    const match = allOutput.match(markerRegex);
-    if (match) {
-      exitCode = parseInt(match[1], 10);
-      allOutput = allOutput
-        .substring(0, allOutput.search(markerRegex))
-        .trimEnd();
-      break;
-    }
-  }
-
-  // ── 步骤 6：超时/完成，统一格式化输出 ──
-  // exitCode 为 null 表示超时（未检测到完成标记），否则为实际退出码
-  const timedOut = exitCode === null;
-  // 剥离 ANSI 控制序列（gcc 在 PTY 下输出的彩色 warning:/error: 前缀会破坏
-  // 分类正则，如 "\x1b[0;32mwarning:\x1b[0m" 中 warning 后是 ESC 而非冒号）。
-  // 在标记剥离之后统一清洗，避免破坏 ___MCP_BUILD_DONE___ 检测。
-  allOutput = sanitize(allOutput);
-  // 超时时用 -1 作为退出码占位符，统一为 number 类型便于下游使用
-  // exitCode! 是 TypeScript 非空断言运算符（Non-null Assertion Operator）：
-  //   - exitCode 的类型是 number | null，TS 编译器无法从 timedOut===false 推断出此处 exitCode 非 null
-  //   - ! 告诉编译器："我确定这里不是 null/undefined，请当作 number 类型使用"
-  //   - 这是纯编译期提示，不产生任何运行时代码，运行时 exitCode 如果实际为 null 则会原值传递
-  //   - 此处安全：timedOut===false 意味着 exitCode !== null 已由上文 === 判断保证
-  const resolvedExitCode = timedOut ? -1 : exitCode!;
-  const header = timedOut
-    ? `Build timed out after ${maxWait}ms.`
-    : `${resolvedExitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED"} (exit code: ${resolvedExitCode})`;
-
-  if (timedOut) {
-    logger.warn(
-      `[ssh_build:${args.session_id}] timed out after ${maxWait}ms, outputLength=${allOutput.length}`
-    );
-  } else {
-    logger.info(
-      `[ssh_build:${args.session_id}] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`
-    );
-  }
-
-  if (doClassify) {
-    const collector = createCollector();
-    collectOutput(collector, allOutput);
-    if (!timedOut) {
-      logger.info(
-        `[ssh_build:${args.session_id}] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.infoCount} info lines`
+    if (echoRetries === 0) {
+      logger.warn(
+        { echoBuffer },
+        "Failed to strip PTY echo: no newline found within retry limit"
       );
     }
 
-    // 将分类摘要写入日志文件
-    const formatted = formatBuildResult(
-      collector,
-      resolvedExitCode,
-      args.session_id
-    );
-    logger.block(
-      "INFO",
-      `ssh_build:${args.session_id}`,
-      "build classified",
-      formatted
-    );
+    // ── 步骤 5：轮询缓冲区检测完成标记 ──
+    const deadline: number = Date.now() + maxWait;
+    let exitCode: number | null = null;
+    const markerRegex = new RegExp(`${BUILD_MARKER}:(\\d+)`);
 
-    const prefix = timedOut
-      ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
-      : "";
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      allOutput += shell.drain();
+
+      const match = allOutput.match(markerRegex);
+      if (match) {
+        exitCode = parseInt(match[1], 10);
+        allOutput = allOutput
+          .substring(0, allOutput.search(markerRegex))
+          .trimEnd();
+        break;
+      }
+    }
+
+    // ── 步骤 6：超时/完成，统一格式化输出 ──
+    const timedOut = exitCode === null;
+    allOutput = sanitize(allOutput);
+    const resolvedExitCode = timedOut ? -1 : exitCode!;
+    const header = timedOut
+      ? `Build timed out after ${maxWait}ms.`
+      : `${resolvedExitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED"} (exit code: ${resolvedExitCode})`;
+
+    if (timedOut) {
+      logger.warn(
+        `[ssh_build:${args.session_id}] timed out after ${maxWait}ms, outputLength=${allOutput.length}`
+      );
+    } else {
+      logger.info(
+        `[ssh_build:${args.session_id}] completed exitCode=${resolvedExitCode} outputLength=${allOutput.length}`
+      );
+    }
+
+    if (doClassify) {
+      const collector = createCollector();
+      collectOutput(collector, allOutput);
+      if (!timedOut) {
+        logger.info(
+          `[ssh_build:${args.session_id}] classified: ${collector.errors.length} errors, ${collector.warnings.length} warnings, ${collector.infoCount} info lines`
+        );
+      }
+
+      const formatted = formatBuildResult(
+        collector,
+        resolvedExitCode,
+        args.session_id
+      );
+      logger.block(
+        "INFO",
+        `ssh_build:${args.session_id}`,
+        "build classified",
+        formatted
+      );
+
+      const prefix = timedOut
+        ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
+        : "";
+      return {
+        content: [text(routingHint + prefix + formatted)],
+      };
+    }
+
     return {
-      content: [text(routingHint + prefix + formatted)],
+      content: [
+        text(
+          `${routingHint}${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`
+        ),
+      ],
     };
-  }
-
-  return {
-    content: [
-      text(
-        `${routingHint}${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`
-      ),
-    ],
-  };
+  });
 }

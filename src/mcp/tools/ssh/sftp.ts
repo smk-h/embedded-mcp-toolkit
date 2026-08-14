@@ -77,11 +77,13 @@ export async function sshSftpUploadHandler(args: {
   }
   const shell = lookup.shell;
 
-  const result = await shell.uploadFile(args.local_path, args.remote_path);
-  logger.info(
-    `[ssh_sftp_upload] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
-  );
-  return { content: [text(formatTransferSummary(result))] };
+  return sshStore.withLock(args.session_id, async () => {
+    const result = await shell.uploadFile(args.local_path, args.remote_path);
+    logger.info(
+      `[ssh_sftp_upload] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
+    );
+    return { content: [text(formatTransferSummary(result))] };
+  });
 }
 
 // ── ssh_sftp_download ───────────────────────────────────────
@@ -148,9 +150,11 @@ export async function sshSftpDownloadHandler(args: {
   }
   const shell = lookup.shell;
 
-  const result = await shell.downloadFile(args.remote_path, args.local_path);
-  logger.info(
-    `[ssh_sftp_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
-  );
-  return { content: [text(formatTransferSummary(result))] };
+  return sshStore.withLock(args.session_id, async () => {
+    const result = await shell.downloadFile(args.remote_path, args.local_path);
+    logger.info(
+      `[ssh_sftp_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
+    );
+    return { content: [text(formatTransferSummary(result))] };
+  });
 }

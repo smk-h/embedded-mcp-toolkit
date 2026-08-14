@@ -210,7 +210,9 @@ export async function adbShellCloseHandler(args: { session_id: string }) {
     return result.response;
   }
 
-  await result.shell.close();
+  await adbStore.withLock(args.session_id, async () => {
+    await result.shell.close();
+  });
   adbStore.remove(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
@@ -263,7 +265,7 @@ export const adbShellWriteConfig = {
  * @param args  工具参数，包含 session_id、command 和可选的 clear
  * @returns MCP 响应，确认命令已发送
  */
-export function adbShellWriteHandler(args: {
+export async function adbShellWriteHandler(args: {
   session_id: string;
   command: string;
   clear?: number;
@@ -277,9 +279,10 @@ export function adbShellWriteHandler(args: {
     return result.response;
   }
 
-  result.shell.write(args.command, clearVal);
-
-  return { content: [text(`Command sent: ${args.command}`)] };
+  return adbStore.withLock(args.session_id, async () => {
+    result.shell.write(args.command, clearVal);
+    return { content: [text(`Command sent: ${args.command}`)] };
+  });
 }
 
 // ── adb_shell_read ──────────────────────────────────────────
@@ -321,7 +324,7 @@ export const adbShellReadConfig = {
  * @param args  工具参数，包含 session_id 和可选的 clear
  * @returns MCP 响应，包含读取到的输出内容
  */
-export function adbShellReadHandler(args: {
+export async function adbShellReadHandler(args: {
   session_id: string;
   clear?: number;
 }) {
@@ -334,9 +337,10 @@ export function adbShellReadHandler(args: {
     return result.response;
   }
 
-  const output = result.shell.read(clearVal);
-
-  return { content: [text(output || "(no output)")] };
+  return adbStore.withLock(args.session_id, async () => {
+    const output = result.shell.read(clearVal);
+    return { content: [text(output || "(no output)")] };
+  });
 }
 
 // ── adb_shell_exec ──────────────────────────────────────────
@@ -443,31 +447,33 @@ export async function adbShellExecHandler(args: {
     shell.write(CONTROL_CHAR_MAP[key], 1, false);
   };
 
-  const execResult = await runExec({
-    shell,
-    command: args.command,
-    delay: delayVal,
-    clear: clearVal,
-    maxDuration: maxDurationVal,
-    promptDetector,
-    sendCtrl,
-    logPrefix: "[adb_shell_exec]",
-    execTimeoutConfig,
+  return adbStore.withLock(args.session_id, async () => {
+    const execResult = await runExec({
+      shell,
+      command: args.command,
+      delay: delayVal,
+      clear: clearVal,
+      maxDuration: maxDurationVal,
+      promptDetector,
+      sendCtrl,
+      logPrefix: "[adb_shell_exec]",
+      execTimeoutConfig,
+    });
+
+    // 三态格式化：正常完成原样返回；采样超时（常驻）与兜底超时（普通）追加不同标注
+    let output = execResult.output;
+    if (execResult.timeoutKind === "sampling") {
+      output =
+        (output ? output + "\n" : "") +
+        `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
+    } else if (execResult.timeoutKind === "fallback") {
+      output =
+        (output ? output + "\n" : "") +
+        `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
+    }
+
+    return { content: [text(output || "(no output)")] };
   });
-
-  // 三态格式化：正常完成原样返回；采样超时（常驻）与兜底超时（普通）追加不同标注
-  let output = execResult.output;
-  if (execResult.timeoutKind === "sampling") {
-    output =
-      (output ? output + "\n" : "") +
-      `[采样超时: 已收集 ${execResult.elapsedMs}ms 输出，已发送 Ctrl+C 终止常驻命令]`;
-  } else if (execResult.timeoutKind === "fallback") {
-    output =
-      (output ? output + "\n" : "") +
-      `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
-  }
-
-  return { content: [text(output || "(no output)")] };
 }
 
 // ── adb_shell_send_ctrl ─────────────────────────────────────
@@ -537,10 +543,11 @@ export async function adbShellSendCtrlHandler(args: {
     return result.response;
   }
 
-  const byte = await sendControlChar(result.shell, args.key);
-  const label = CTRL_LABEL[args.key];
-
-  return {
-    content: [text(`${label} sent (${byte})`)],
-  };
+  return adbStore.withLock(args.session_id, async () => {
+    const byte = await sendControlChar(result.shell, args.key);
+    const label = CTRL_LABEL[args.key];
+    return {
+      content: [text(`${label} sent (${byte})`)],
+    };
+  });
 }
