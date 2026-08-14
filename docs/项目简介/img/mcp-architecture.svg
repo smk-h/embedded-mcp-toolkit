@@ -1,74 +1,105 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 600" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
-    </marker>
-  </defs>
-
-  <!-- Title -->
-  <text x="490" y="28" text-anchor="middle" font-size="17" font-weight="700" fill="#1F2933">MCP 三大角色与连接关系</text>
-
-  <!-- ===== MCP Host ===== -->
-  <rect x="40" y="50" width="900" height="230" rx="12" fill="#DCE9FB" stroke="#5B7CBA" stroke-width="1.5"/>
-  <text x="60" y="74" font-size="13" font-weight="700" fill="#2A4365">MCP Host — AI 应用（Claude Code / OpenCode / ZCode）</text>
-
-  <!-- LLM / Agent -->
-  <rect x="370" y="92" width="240" height="64" rx="8" fill="#C9DCF7" stroke="#5B7CBA"/>
-  <text x="490" y="116" text-anchor="middle" font-size="14" font-weight="700" fill="#1F2933">LLM / Agent</text>
-  <text x="490" y="138" text-anchor="middle" font-size="11" fill="#333">决定调用哪个工具、传什么参数</text>
-
-  <!-- Client 1 -->
-  <rect x="180" y="200" width="220" height="60" rx="8" fill="#FFFFFF" stroke="#5B7CBA"/>
-  <text x="290" y="224" text-anchor="middle" font-size="13" font-weight="700" fill="#1F2933">MCP Client</text>
-  <text x="290" y="244" text-anchor="middle" font-size="11" fill="#555">1:1 连接 Server · 收发 JSON-RPC</text>
-
-  <!-- Client 2 -->
-  <rect x="580" y="200" width="220" height="60" rx="8" fill="#FFFFFF" stroke="#5B7CBA"/>
-  <text x="690" y="224" text-anchor="middle" font-size="13" font-weight="700" fill="#1F2933">MCP Client</text>
-  <text x="690" y="244" text-anchor="middle" font-size="11" fill="#555">1:1 连接 Server · 收发 JSON-RPC</text>
-
-  <!-- ===== Curved connectors: Agent -> Clients ===== -->
-  <path d="M 430 156 Q 355 172 322 200" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <path d="M 550 156 Q 625 172 658 200" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="350" y="182" font-size="10" fill="#555">tools/call</text>
-  <text x="578" y="182" font-size="10" fill="#555">tools/call</text>
-
-  <!-- ===== Straight connectors: Client -> Server ===== -->
-  <line x1="290" y1="260" x2="290" y2="400" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-  <line x1="690" y1="260" x2="690" y2="400" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <!-- stdio label (right of the left line) -->
-  <rect x="315" y="312" width="120" height="40" rx="6" fill="#FFFBE6" stroke="#E0B400"/>
-  <text x="375" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#5C4A00">stdio</text>
-  <text x="375" y="346" text-anchor="middle" font-size="10" fill="#5C4A00">本地子进程</text>
-
-  <!-- Streamable HTTP label (left of the right line) -->
-  <rect x="545" y="312" width="120" height="40" rx="6" fill="#FFFBE6" stroke="#E0B400"/>
-  <text x="605" y="330" text-anchor="middle" font-size="12" font-weight="700" fill="#5C4A00">Streamable HTTP</text>
-  <text x="605" y="346" text-anchor="middle" font-size="10" fill="#5C4A00">远程 · 流式回传</text>
-
-  <!-- JSON-RPC center note -->
-  <text x="490" y="335" text-anchor="middle" font-size="12" font-weight="700" fill="#7A5C00">JSON-RPC 2.0</text>
-  <text x="490" y="352" text-anchor="middle" font-size="10" fill="#7A5C00">数据层 · 与传输无关</text>
-
-  <!-- ===== Servers ===== -->
-  <!-- embedded (highlight) -->
-  <rect x="160" y="400" width="260" height="120" rx="10" fill="#FFE6A8" stroke="#D9A300" stroke-width="1.8"/>
-  <text x="290" y="426" text-anchor="middle" font-size="14" font-weight="700" fill="#5C3D00">embedded-mcp-toolkit</text>
-  <text x="290" y="446" text-anchor="middle" font-size="11" fill="#7A5C00">（本项目 · MCP Server）</text>
-  <line x1="180" y1="456" x2="400" y2="456" stroke="#D9A300" stroke-width="1" stroke-dasharray="3 3"/>
-  <text x="290" y="476" text-anchor="middle" font-size="11" fill="#5C3D00">串口 · SSH · ADB · PowerShell</text>
-  <text x="290" y="496" text-anchor="middle" font-size="10" fill="#7A5C00">实现 tools，响应 tools/call</text>
-
-  <!-- other server -->
-  <rect x="560" y="400" width="260" height="120" rx="10" fill="#DDF3E4" stroke="#6BAF7E" stroke-width="1.5"/>
-  <text x="690" y="426" text-anchor="middle" font-size="14" font-weight="700" fill="#1F4D2E">其他 MCP Server</text>
-  <text x="690" y="446" text-anchor="middle" font-size="11" fill="#3A6B4A">（独立进程）</text>
-  <line x1="580" y1="456" x2="800" y2="456" stroke="#6BAF7E" stroke-width="1" stroke-dasharray="3 3"/>
-  <text x="690" y="476" text-anchor="middle" font-size="11" fill="#1F4D2E">文件系统 · 数据库 · …</text>
-  <text x="690" y="496" text-anchor="middle" font-size="10" fill="#3A6B4A">同样以 tools 形式对外暴露</text>
-
-  <!-- bottom note -->
-  <text x="490" y="560" text-anchor="middle" font-size="12" fill="#333">每个 MCP Client 与一个 MCP Server 一一对应（1:1）；Host 内可同时管理多个 Client。</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: mcp_architecture Pages: 1 -->
+<svg width="684pt" height="409pt"
+ viewBox="0.00 0.00 684.00 409.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 405)">
+<title>mcp_architecture</title>
+<g id="clust1" class="cluster">
+<title>cluster_host</title>
+<path fill="#dce9fb" stroke="#5b7cba" d="M20,-196C20,-196 656,-196 656,-196 662,-196 668,-202 668,-208 668,-208 668,-381 668,-381 668,-387 662,-393 656,-393 656,-393 20,-393 20,-393 14,-393 8,-387 8,-381 8,-381 8,-208 8,-208 8,-202 14,-196 20,-196"/>
+<text text-anchor="middle" x="215" y="-377.8" font-family="Noto Sans CJK SC" font-size="14.00">MCP Host — AI 应用（Claude Code / OpenCode / ZCode）</text>
+</g>
+<!-- llm -->
+<g id="node1" class="node">
+<title>llm</title>
+<path fill="#c9dcf7" stroke="#2c5f8a" d="M465,-354C465,-354 211,-354 211,-354 205,-354 199,-348 199,-342 199,-342 199,-330 199,-330 199,-324 205,-318 211,-318 211,-318 465,-318 465,-318 471,-318 477,-324 477,-330 477,-330 477,-342 477,-342 477,-348 471,-354 465,-354"/>
+<text text-anchor="middle" x="338" y="-332.9" font-family="Noto Sans CJK SC" font-size="12.00">LLM / Agent：决定调用哪个工具、传什么参数</text>
+</g>
+<!-- client1 -->
+<g id="node2" class="node">
+<title>client1</title>
+<path fill="#ffffff" stroke="#5b7cba" d="M308,-248C308,-248 36,-248 36,-248 30,-248 24,-242 24,-236 24,-236 24,-224 24,-224 24,-218 30,-212 36,-212 36,-212 308,-212 308,-212 314,-212 320,-218 320,-224 320,-224 320,-236 320,-236 320,-242 314,-248 308,-248"/>
+<text text-anchor="middle" x="172" y="-226.9" font-family="Noto Sans CJK SC" font-size="12.00">MCP Client（1:1 连接 Server · 收发 JSON&#45;RPC）</text>
+</g>
+<!-- llm&#45;&gt;client1 -->
+<g id="edge1" class="edge">
+<title>llm&#45;&gt;client1</title>
+<path fill="none" stroke="#555555" d="M310.59,-317.83C282.27,-300.08 237.97,-272.33 207.11,-253"/>
+<polygon fill="#555555" stroke="#555555" points="208.48,-250.14 199.18,-248.03 205.13,-255.47 208.48,-250.14"/>
+<text text-anchor="middle" x="285" y="-280.2" font-family="Noto Sans CJK SC" font-size="11.00">tools/call</text>
+</g>
+<!-- client2 -->
+<g id="node3" class="node">
+<title>client2</title>
+<path fill="#ffffff" stroke="#5b7cba" d="M640,-248C640,-248 368,-248 368,-248 362,-248 356,-242 356,-236 356,-236 356,-224 356,-224 356,-218 362,-212 368,-212 368,-212 640,-212 640,-212 646,-212 652,-218 652,-224 652,-224 652,-236 652,-236 652,-242 646,-248 640,-248"/>
+<text text-anchor="middle" x="504" y="-226.9" font-family="Noto Sans CJK SC" font-size="12.00">MCP Client（1:1 连接 Server · 收发 JSON&#45;RPC）</text>
+</g>
+<!-- llm&#45;&gt;client2 -->
+<g id="edge2" class="edge">
+<title>llm&#45;&gt;client2</title>
+<path fill="none" stroke="#555555" d="M365.41,-317.83C393.73,-300.08 438.03,-272.33 468.89,-253"/>
+<polygon fill="#555555" stroke="#555555" points="470.87,-255.47 476.82,-248.03 467.52,-250.14 470.87,-255.47"/>
+<text text-anchor="middle" x="450" y="-280.2" font-family="Noto Sans CJK SC" font-size="11.00">tools/call</text>
+</g>
+<!-- t_stdio -->
+<g id="node6" class="node">
+<title>t_stdio</title>
+<path fill="#fffbe6" stroke="#e0b400" d="M200,-142C200,-142 144,-142 144,-142 138,-142 132,-136 132,-130 132,-130 132,-118 132,-118 132,-112 138,-106 144,-106 144,-106 200,-106 200,-106 206,-106 212,-112 212,-118 212,-118 212,-130 212,-130 212,-136 206,-142 200,-142"/>
+<text text-anchor="middle" x="172" y="-127.2" font-family="Noto Sans CJK SC" font-size="11.00">stdio</text>
+<text text-anchor="middle" x="172" y="-115.2" font-family="Noto Sans CJK SC" font-size="11.00">本地子进程</text>
+</g>
+<!-- client1&#45;&gt;t_stdio -->
+<g id="edge3" class="edge">
+<title>client1&#45;&gt;t_stdio</title>
+<path fill="none" stroke="#7a5c00" d="M172,-211.83C172,-195.34 172,-170.22 172,-151.23"/>
+<polygon fill="#7a5c00" stroke="#7a5c00" points="175.15,-151.2 172,-142.2 168.85,-151.2 175.15,-151.2"/>
+<text text-anchor="middle" x="209" y="-174.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#7a5c00">JSON&#45;RPC 2.0</text>
+</g>
+<!-- t_http -->
+<g id="node7" class="node">
+<title>t_http</title>
+<path fill="#fffbe6" stroke="#e0b400" d="M548,-142C548,-142 460,-142 460,-142 454,-142 448,-136 448,-130 448,-130 448,-118 448,-118 448,-112 454,-106 460,-106 460,-106 548,-106 548,-106 554,-106 560,-112 560,-118 560,-118 560,-130 560,-130 560,-136 554,-142 548,-142"/>
+<text text-anchor="middle" x="504" y="-127.2" font-family="Noto Sans CJK SC" font-size="11.00">Streamable HTTP</text>
+<text text-anchor="middle" x="504" y="-115.2" font-family="Noto Sans CJK SC" font-size="11.00">远程 · 流式回传</text>
+</g>
+<!-- client2&#45;&gt;t_http -->
+<g id="edge5" class="edge">
+<title>client2&#45;&gt;t_http</title>
+<path fill="none" stroke="#7a5c00" d="M504,-211.83C504,-195.34 504,-170.22 504,-151.23"/>
+<polygon fill="#7a5c00" stroke="#7a5c00" points="507.15,-151.2 504,-142.2 500.85,-151.2 507.15,-151.2"/>
+<text text-anchor="middle" x="541" y="-174.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#7a5c00">JSON&#45;RPC 2.0</text>
+</g>
+<!-- server_emb -->
+<g id="node4" class="node">
+<title>server_emb</title>
+<path fill="#ffe6a8" stroke="#d9a300" d="M290,-36C290,-36 54,-36 54,-36 48,-36 42,-30 42,-24 42,-24 42,-12 42,-12 42,-6 48,0 54,0 54,0 290,0 290,0 296,0 302,-6 302,-12 302,-12 302,-24 302,-24 302,-30 296,-36 290,-36"/>
+<text text-anchor="middle" x="172" y="-21.4" font-family="Noto Sans CJK SC" font-size="12.00">embedded&#45;mcp&#45;toolkit（MCP Server）</text>
+<text text-anchor="middle" x="172" y="-8.4" font-family="Noto Sans CJK SC" font-size="12.00">串口 · SSH · ADB · PowerShell · 实现 tools</text>
+</g>
+<!-- server_other -->
+<g id="node5" class="node">
+<title>server_other</title>
+<path fill="#ddf3e4" stroke="#6baf7e" d="M614,-36C614,-36 394,-36 394,-36 388,-36 382,-30 382,-24 382,-24 382,-12 382,-12 382,-6 388,0 394,0 394,0 614,0 614,0 620,0 626,-6 626,-12 626,-12 626,-24 626,-24 626,-30 620,-36 614,-36"/>
+<text text-anchor="middle" x="504" y="-21.4" font-family="Noto Sans CJK SC" font-size="12.00">其他 MCP Server（独立进程）</text>
+<text text-anchor="middle" x="504" y="-8.4" font-family="Noto Sans CJK SC" font-size="12.00">文件系统 · 数据库 · … 以 tools 对外暴露</text>
+</g>
+<!-- t_stdio&#45;&gt;server_emb -->
+<g id="edge4" class="edge">
+<title>t_stdio&#45;&gt;server_emb</title>
+<path fill="none" stroke="#7a5c00" d="M172,-105.83C172,-89.34 172,-64.22 172,-45.23"/>
+<polygon fill="#7a5c00" stroke="#7a5c00" points="175.15,-45.2 172,-36.2 168.85,-45.2 175.15,-45.2"/>
+<text text-anchor="middle" x="229" y="-68.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#7a5c00">数据层 · 与传输无关</text>
+</g>
+<!-- t_http&#45;&gt;server_other -->
+<g id="edge6" class="edge">
+<title>t_http&#45;&gt;server_other</title>
+<path fill="none" stroke="#7a5c00" d="M504,-105.83C504,-89.34 504,-64.22 504,-45.23"/>
+<polygon fill="#7a5c00" stroke="#7a5c00" points="507.15,-45.2 504,-36.2 500.85,-45.2 507.15,-45.2"/>
+<text text-anchor="middle" x="561" y="-68.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#7a5c00">数据层 · 与传输无关</text>
+</g>
+</g>
 </svg>

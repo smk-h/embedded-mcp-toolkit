@@ -1,0 +1,165 @@
+// 用法二：跨机远程部署拓扑
+// 渲染: dot -Tsvg usage2-remote.dot -o img/usage2-remote.svg
+digraph usage2_remote {
+    rankdir=TB;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.4;
+    ranksep=0.55;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#7A93BE"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#555555",
+        arrowsize=0.9
+    ];
+
+    // ============ Linux 机器（AI 客户端） ============
+    subgraph cluster_linux {
+        label="Linux 机器（AI 客户端 + 文件编辑）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#EAF2FB";
+        color="#3B6EA5";
+        labeljust=l;
+        margin=16;
+
+        subgraph cluster_ai {
+            label="AI 编程助手（Claude Code / ZCode）";
+            fontname="Noto Sans CJK SC";
+            fontsize=13;
+            style="rounded,filled";
+            fillcolor="#DCE9FB";
+            color="#5B7CBA";
+            labeljust=l;
+            margin=12;
+
+            llm [
+                label="LLM (Agent)",
+                fillcolor="#C9DCF7",
+                color="#2C5F8A"
+            ];
+            client [
+                label="MCP Client",
+                fillcolor="#FFFFFF",
+                color="#5B7CBA"
+            ];
+            llm -> client [label="tools/call"];
+        }
+
+        // Linux 端桥接配置（command: ssh）
+        cfg [
+            label=".mcp.json（桥接 server）\ncommand: ssh -i ~/.ssh/id_mcp_server <winuser>@<winip> remote-start-mcp.bat",
+            shape=box,
+            style="rounded,filled,dashed",
+            fillcolor="#FAFAFA",
+            color="#999999",
+            fontsize=11
+        ];
+
+        // 文件编辑通路（AI 自带 read/write，本机完成）
+        filesrc [
+            label="文件编辑通路\n（AI 自带 read / write，本机完成）",
+            fillcolor="#FFFFFF",
+            color="#7A93BE"
+        ];
+    }
+
+    // ============ Windows 工位机（MCP 宿主） ============
+    subgraph cluster_win {
+        label="Windows 工位机（MCP Server 留守，握着物理设备）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#FBEAF2";
+        color="#A53B6E";
+        labeljust=l;
+        margin=16;
+
+        bat [
+            label="remote-start-mcp.bat\n（锚定 cwd + 5 个 env，本地/远程共用）",
+            shape=box,
+            style="rounded,filled,dashed",
+            fillcolor="#FAFAFA",
+            color="#999999",
+            fontsize=11
+        ];
+
+        server [
+            label="embedded-mcp-toolkit（MCP Server · Node.js）\nChannels: serial · ssh · adb · powershell",
+            fillcolor="#DDF3E4",
+            color="#4E7A2C"
+        ];
+
+        // MCP → 外部设备 边界
+        phys [
+            label="MCP → 外部设备（native libs / system calls）\n本机直调",
+            shape=box,
+            style="rounded,filled,dashed",
+            fillcolor="#FAFAFA",
+            color="#999999",
+            fontsize=11
+        ];
+
+        // 宿主端点提示
+        endpoint [
+            label="宿主端点提示（instructions + host_info 工具）\n传达 username@ip，不含凭据",
+            shape=box,
+            style="rounded,filled,dashed",
+            fillcolor="#FFFBE6",
+            color="#E0B400",
+            fontsize=11
+        ];
+    }
+
+    // ============ 外部目标设备（连在 Windows 上） ============
+    serial [
+        label="串口控制台\n（serial 通道 · UART / U-Boot）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+    board [
+        label="嵌入式 Linux 开发板\n（ssh 通道 · sshd :22）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+    android [
+        label="Android 设备\n（adb 通道 · USB）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+
+    // ============ 连线 ============
+    // AI 客户端读取桥接配置，经 SSH 隧道连到 Windows
+    client -> cfg [label="读取", color="#2C5F8A", fontcolor="#2C5F8A"];
+    llm -> filesrc [label="本地编辑源码", color="#2C5F8A", fontcolor="#2C5F8A"];
+
+    // SSH 隧道：把 stdio 从 Linux 延长到 Windows
+    cfg -> bat [
+        label="SSH 隧道转发 stdio（JSON-RPC over TCP :22）\n免密：Linux id_mcp_server → Windows authorized_keys",
+        color="#A53B6E",
+        fontcolor="#A53B6E"
+    ];
+
+    // Windows 内：bat 拉起 server
+    bat -> server [label="node … · stdio transport"];
+
+    // server 经本机直调连物理设备
+    server -> phys;
+    phys -> serial  [label="serial : COM 口", color="#4E7A2C", fontcolor="#4E7A2C"];
+    phys -> board   [label="ssh : TCP :22", color="#4E7A2C", fontcolor="#4E7A2C"];
+    phys -> android [label="adb : USB", color="#4E7A2C", fontcolor="#4E7A2C"];
+
+    // 宿主端点提示回传给 AI（跨机），AI 据此构造 scp
+    server -> endpoint [label="解析 SSH_CONNECTION\n区分远程/本地场景", style=dashed];
+    endpoint -> llm [label="AI 据此构造 scp\n（用 Linux 自己的 shell）", color="#B08A1E", fontcolor="#B08A1E", constraint=false];
+}
