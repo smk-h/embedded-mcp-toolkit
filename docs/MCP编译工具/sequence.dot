@@ -1,0 +1,87 @@
+digraph sequence {
+    // ──── 全局设置 ────
+    graph [
+        rankdir=TB,
+        bgcolor="transparent",
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        nodesep=0.3,
+        ranksep=0.7,
+        splines=polyline,
+        compound=true
+    ];
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=10,
+        shape=box,
+        style="rounded,filled",
+        color="#555555",
+        margin="0.15,0.08"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=9,
+        color="#666666",
+        arrowsize=0.7
+    ];
+
+    // ==========================================================
+    // 泳道 1：MCP Client（生命线：隐形边纵向贯穿）
+    // ==========================================================
+    c1 [label="MCP Client\n(AI)", fillcolor="#D6E4F0", color="#2C5F8A"];
+    c2 [label="", shape=point, width=0.01, style=invis];
+    c3 [label="", shape=point, width=0.01, style=invis];
+    c4 [label="", shape=point, width=0.01, style=invis];
+    c5 [label="", shape=point, width=0.01, style=invis];
+    c6 [label="", shape=point, width=0.01, style=invis];
+    c7 [label="", shape=point, width=0.01, style=invis];
+    c1 -> c2 -> c3 -> c4 -> c5 -> c6 -> c7 [style=invis];
+
+    // ==========================================================
+    // 泳道 2：MCP Server（生命线）
+    // ==========================================================
+    s1 [label="MCP Server\nembedded-mcp-toolkit", fillcolor="#FFF3CC", color="#B08A1E"];
+    s2 [label="", shape=point, width=0.01, style=invis];
+    s3 [label="", shape=point, width=0.01, style=invis];
+    s4 [label="", shape=point, width=0.01, style=invis];
+    s5 [label="", shape=point, width=0.01, style=invis];
+    s6 [label="", shape=point, width=0.01, style=invis];
+    s7 [label="", shape=point, width=0.01, style=invis];
+    s1 -> s2 -> s3 -> s4 -> s5 -> s6 -> s7 [style=invis];
+
+    // ==========================================================
+    // 泳道 3：远端编译服务器（生命线）
+    // ==========================================================
+    r1 [label="远端编译服务器", fillcolor="#D9ECD9", color="#2F6E2F"];
+    r2 [label="", shape=point, width=0.01, style=invis];
+    r3 [label="", shape=point, width=0.01, style=invis];
+    r4 [label="", shape=point, width=0.01, style=invis];
+    r5 [label="", shape=point, width=0.01, style=invis];
+    r6 [label="", shape=point, width=0.01, style=invis];
+    r7 [label="", shape=point, width=0.01, style=invis];
+    r1 -> r2 -> r3 -> r4 -> r5 -> r6 -> r7 [style=invis];
+
+    // ==========================================================
+    // 消息层（横向边，两端节点在生命线对应位置自然对齐）
+    // ==========================================================
+    // ① 建立会话
+    c2 -> s2 [label="① tools/call\nssh_shell_open", color="#2C5F8A", fontcolor="#2C5F8A"];
+    s2 -> r2 [label="建立 SSH 连接", color="#8A6D1E", fontcolor="#8A6D1E"];
+
+    // ② 会话就绪 + 返回 session_id
+    r3 -> s3 [label="② 会话就绪", style=dashed, color="#8A6D1E", fontcolor="#8A6D1E"];
+    s3 -> c3 [label="返回 session_id", style=dashed, color="#2C5F8A", fontcolor="#2C5F8A"];
+
+    // ③ 发起编译
+    c4 -> s4 [label="③ tools/call\nssh_build(...)", color="#2C5F8A", fontcolor="#2C5F8A"];
+
+    // ④ 构造命令 + 下发执行
+    s5 -> r5 [label="④ (cd cwd && cmd 2>&1); echo MARKER:$?", color="#8A6D1E", fontcolor="#8A6D1E"];
+
+    // ⑤ 轮询检测 + 远端输出
+    s6 -> s6 [label="⑤ 剥离回显 → 轮询 drain()\n(每 2s 增量读取) → 匹配 MARKER", color="#B08A1E", fontcolor="#B08A1E"];
+    r6 -> s6 [label="编译输出\n(含 MARKER:exit)", style=dashed, color="#4A6A8A", fontcolor="#4A6A8A"];
+
+    // ⑥ 分类返回
+    s7 -> c7 [label="⑥ BUILD SUCCESS/FAILED\nSummary: N err, M warn", color="#2C5F8A", fontcolor="#2C5F8A"];
+}

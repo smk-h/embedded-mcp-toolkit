@@ -1,0 +1,116 @@
+digraph deployment {
+    // ──── 全局设置 ────
+    graph [
+        rankdir=LR,
+        bgcolor="transparent",
+        fontname="Noto Sans CJK SC",
+        fontsize=13,
+        nodesep=0.6,
+        ranksep=0.8,
+        splines=spline,
+        compound=true
+    ];
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#555555"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=10,
+        color="#666666",
+        arrowsize=0.8
+    ];
+
+    // ──── 左：开发机（MCP Client 宿主） ────
+    subgraph cluster_dev {
+        label="开发机（MCP Client 宿主）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#EAF2FB";
+        color="#3B6EA5";
+        labeljust=l;
+
+        llm [
+            label="AI 编程助手\n(opencode / Claude Code)\nLLM 推理",
+            fillcolor="#D6E4F0",
+            color="#2C5F8A"
+        ];
+        mcp_client [
+            label="MCP Client\n(tools/call 请求)",
+            fillcolor="#D6E4F0",
+            color="#2C5F8A"
+        ];
+        llm -> mcp_client [label="调用工具", style=dotted];
+    }
+
+    // ──── 中：MCP Server（embedded-mcp-toolkit） ────
+    subgraph cluster_server {
+        label="embedded-mcp-toolkit（MCP Server）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#F3EAD8";
+        color="#B08A1E";
+        labeljust=l;
+
+        ssh_build [
+            label="ssh_build\n（编译工具）",
+            fillcolor="#FFF3CC",
+            color="#B08A1E"
+        ];
+        ssh_shell_open [
+            label="ssh_shell_open\n（建立会话）",
+            fillcolor="#FFF3CC",
+            color="#B08A1E"
+        ];
+        ssh_store [
+            label="SSH 会话存储\n(sshStore)",
+            shape=cylinder,
+            fillcolor="#F6E8C0",
+            color="#8A6D1E"
+        ];
+        ssh_build -> ssh_store [label="查询/加锁", style=dashed, constraint=false];
+        ssh_shell_open -> ssh_store [label="写入", style=dashed];
+    }
+
+    // ──── 右：远端编译服务器 ────
+    subgraph cluster_remote {
+        label="远端编译服务器（嵌入式板卡/构建机）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#E8F4E8";
+        color="#2F6E2F";
+        labeljust=l;
+
+        sshd [
+            label="SSH Server\n(sshd)",
+            fillcolor="#D9ECD9",
+            color="#2F6E2F"
+        ];
+        build_env [
+            label="编译环境\n(make / cmake / gcc\nshell 脚本)",
+            fillcolor="#D9ECD9",
+            color="#2F6E2F"
+        ];
+        sshd -> build_env [label="拉起编译"];
+    }
+
+    // ──── 连接 ────
+    mcp_client -> ssh_build [label="tools/call\n(stdio)", color="#2C5F8A", fontcolor="#2C5F8A"];
+    ssh_build -> sshd [label="SSH 会话\n(免密登录)", color="#8A6D1E", fontcolor="#8A6D1E"];
+
+    // 标注：同一会话单编译限制
+    note_parallel [
+        label="⚠ 同一会话同一时间仅支持 1 个编译任务\n并行编译需打开多个 SSH 会话",
+        shape=note,
+        fillcolor="#FDF3D8",
+        color="#B08A1E",
+        fontsize=11
+    ];
+    ssh_build -> note_parallel [label="约束", style=dashed, color="#B08A1E", constraint=false];
+}
