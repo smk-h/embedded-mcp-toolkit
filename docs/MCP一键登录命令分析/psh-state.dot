@@ -1,0 +1,42 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="PSH 状态机（PshStateMachine）状态转变", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.6, ranksep=0.8];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  start [label="连接后\n读取 banner", shape=ellipse, fillcolor="#DCE9FB"];
+  unknown [label="UNKNOWN\n(需探测)", fillcolor="#FFF3D6"];
+  probe [label="发探测\n echo __PSH_PROBE__", shape=ellipse, fillcolor="#FFF3D6"];
+
+  // 终态
+  ready [label="READY\n已解锁/非 PSH", fillcolor="#DDF3E4"];
+  locked [label="LOCKED\nPSH 锁定", fillcolor="#DDF3E4"];
+  unlocking [label="UNLOCKING\n等待密码", fillcolor="#DDF3E4"];
+  error [label="ERROR\n解锁出错", fillcolor="#F8D7DA"];
+
+  // start 判定
+  start -> unknown [label="无 profile 匹配\n无 PSH 特征"];
+  start -> ready [label="matchFromOutput\n启发式判定"];
+  start -> locked [label="banner 匹配 locked"];
+  start -> unlocking [label="启发式=UNLOCKING"];
+  start -> error [label="启发式=ERROR\n发 ls 二次确认"];
+
+  // 探测路径
+  unknown -> probe [label="发 echo 探测"];
+  probe -> locked [label="探测后匹配 profile\ndetect=LOCKED"];
+  probe -> ready [label="无 PSH 特征\n(非 PSH)"];
+  probe -> unlocking [label="启发式=UNLOCKING"];
+  probe -> error [label="probeState=ERROR\nprobeCount<2 → 再确认"];
+
+  // ERROR 重试逻辑
+  error -> probe [label="probeCount<2\n(可能是噪声)", style=dashed, color="#B0B0B0"];
+  error -> locked [label="probeState 确认=LOCKED", color="#27AE60"];
+
+  // 锁定 → 解锁
+  locked -> unlocking [label="send 'debug'\n触发密码提示"];
+  unlocking -> ready [label="密钥正确\nAccess Granted / Enter Debug Mode", color="#27AE60"];
+  unlocking -> error [label="密钥错误\nIncorrect Password", color="#C0392B"];
+  error -> locked [label="返回锁定模式", color="#B0B0B0"];
+}

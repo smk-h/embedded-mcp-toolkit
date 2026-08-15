@@ -1,0 +1,51 @@
+@startuml 状态机驱动的一键登录时序
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 状态机驱动的一键登录时序（banner → 探测 → 登录）
+
+participant "Channel\n(Serial/SSH)" as CH
+participant "状态机\nUserLoginStateMachine" as SM
+participant "UserLoginHandler" as HD
+participant "终端设备" as TE
+
+== 阶段一：banner 判定 ==
+
+TE --> CH : open() 返回 banner
+CH -> SM : start(banner)
+
+== 阶段二：探测分析 ==
+
+SM --> CH : action: 发探测
+CH -> TE : write('echo __SH_STATUS_PROBE__')
+TE --> CH : read() 输出
+CH -> SM : feed(output)
+SM --> CH : action: 探测 / 终态
+
+== 阶段三：登录序列（UserLoginHandler） ==
+
+SM -> HD : WAITING_USERNAME 创建 handler
+HD --> CH : login() 序列
+CH -> TE : 发 {username} → Password:
+TE --> CH : read()
+CH -> TE : 发 {password} → 校验
+TE --> CH : read()
+CH -> TE : 发 {probe} → 回显
+TE --> CH : read() 回显
+HD --> CH : LOGGED_IN 成功
+
+@enduml
