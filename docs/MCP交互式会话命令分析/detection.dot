@@ -1,0 +1,31 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="命令结束两级检测策略", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.5, ranksep=0.7];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  injected [label="命令注入\n(cmd); echo \"MARKER:$?\"", fillcolor="#DCE9FB"];
+  top [label="两级检测", shape=oval, fillcolor="#DDF3E4"];
+
+  l1 [label="1级 marker 检测\n(确定性, 首选)", fillcolor="#DDF3E4"];
+  l1d [label="子串匹配 <marker>:<退出码>\n天然免疫刷屏\n附带退出码", fillcolor="#DDF3E4"];
+
+  l2 [label="2级 末尾锚定\n(快路径)", fillcolor="#DDF3E4"];
+  l2d [label="提示符正则锚定输出末尾\n无刷屏设备秒判\n无退出码", fillcolor="#DDF3E4"];
+
+  timeout [label="超时熔断兜底\n按常驻性分支", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  resident [label="常驻命令: 采样超时\n发 Ctrl+C 终止\n(中性语义)", fillcolor="#FFF3D6"];
+  normal [label="普通命令: 兜底超时\n不发 Ctrl+C\n(异常语义, 安全阀)", fillcolor="#FFF3D6"];
+
+  injected -> top;
+  top -> l1;
+  top -> l2;
+  l1 -> l1d;
+  l2 -> l2d;
+  l1d -> timeout [label="未命中"];
+  l2d -> timeout [label="未命中"];
+  timeout -> resident [label="常驻"];
+  timeout -> normal [label="普通"];
+}

@@ -1,0 +1,39 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="runExec 命令执行统一流程", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.5, ranksep=0.6];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  start [label="开始", shape=oval, fillcolor="#DCE9FB"];
+  classify [label="0. 常驻分类\n(classifyResident)", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  flush [label="1. 前置冲刷 drain()\n丢弃缓冲区残留"];
+  genmarker [label="2. 拼接并发送命令\n(cmd); echo \"MARKER:$?\"", fillcolor="#DCE9FB"];
+  striptail [label="3. PTY 回显剥离\n丢弃首行提示符+命令回显"];
+  poll [label="4. 轮询 buffer\n(每 pollInterval 取 drain())", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  checkdeadline [label="到达 deadline?\n(≥ max(effectiveTimeout, minDelay))", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  markermatch [label="marker 命中?\n子串匹配 (cmd);echo 尾部", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  promptmatch [label="提示符末尾锚定?\nPromptDetector.detect()", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  done_marker [label="返回\ntimeoutKind=none\n附带退出码", fillcolor="#DDF3E4"];
+  done_prompt [label="返回\ntimeoutKind=none\n无退出码", fillcolor="#DDF3E4"];
+  isres [label="常驻命令?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  sampling [label="采样超时: 发 Ctrl+C\n返回 sampling", fillcolor="#FFF3D6"];
+  fallback [label="兜底超时: 不发 Ctrl+C\n返回 fallback", fillcolor="#FFF3D6"];
+
+  start -> classify;
+  classify -> flush [label="常驻/普通"];
+  flush -> genmarker;
+  genmarker -> striptail;
+  striptail -> poll;
+  poll -> markermatch;
+  poll -> checkdeadline;
+  checkdeadline -> markermatch [label="未到期"];
+  markermatch -> done_marker [label="是"];
+  markermatch -> promptmatch [label="否"];
+  promptmatch -> done_prompt [label="是"];
+  promptmatch -> poll [label="否, 继续轮询"];
+  checkdeadline -> isres [label="已到期"];
+  isres -> sampling [label="常驻"];
+  isres -> fallback [label="普通"];
+}

@@ -1,0 +1,49 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="传输层与命令执行编排架构", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.6, ranksep=0.8];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  subgraph cluster_transport {
+    label="传输层 (src/transports)";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    base [label="BaseShell\n(模板方法基类)", fillcolor="#DCE9FB"];
+    iface [label="<<interface>>\nInteractiveShell\nopen/write/read/drain/close", shape=note, fillcolor="#DCE9FB"];
+    serial [label="SerialShell\n(串口)"];
+    ssh [label="SSHShell\n(SSH)"];
+    adb [label="AdbShell\n(ADB)"];
+    ps [label="PowerShellShell\n(PowerShell)"];
+    base -> iface [style=dashed, dir=back, label="实现"];
+    base -> serial [style=dashed, label="继承", dir=back];
+    base -> ssh [style=dashed, label="继承", dir=back];
+    base -> adb [style=dashed, label="继承", dir=back];
+    base -> ps [style=dashed, label="继承", dir=back];
+  }
+
+  subgraph cluster_exec {
+    label="命令执行编排层 (src/mcp/shared)";
+    style="rounded,filled"; fillcolor="#EDF7EE"; color="#5C9E6E"; fontcolor="#1F2933";
+    runner [label="runExec()\n统一编排: 冲刷→发命令→轮询→熔断", fillcolor="#DDF3E4"];
+    prompt [label="PromptDetector\n提示符/命令结束判定", fillcolor="#DDF3E4"];
+    resident [label="resident-detector\n常驻命令分类", fillcolor="#DDF3E4"];
+    ctrl [label="sendControlChar()\n控制字符发送", fillcolor="#DDF3E4"];
+    runner -> prompt [label="检测"];
+    runner -> resident [label="分类"];
+    runner -> ctrl [label="熔断"];
+  }
+
+  subgraph cluster_tools {
+    label="MCP 工具层 (src/mcp/tools)";
+    style="rounded,filled"; fillcolor="#FFF9EC"; color="#C99A2E"; fontcolor="#1F2933";
+    sshell [label="serial/shell.ts\nserial_exec 等", fillcolor="#FFF3D6"];
+    sshshell [label="ssh/shell.ts\nssh_exec 等", fillcolor="#FFF3D6"];
+    adbshell [label="adb/shell.ts\nadb_shell_exec 等", fillcolor="#FFF3D6"];
+  }
+
+  sshell -> runner [label="调用"];
+  sshshell -> runner [label="调用"];
+  adbshell -> runner [label="调用"];
+  runner -> base [label="读写 shell"];
+}
