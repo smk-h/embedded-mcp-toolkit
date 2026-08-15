@@ -30,6 +30,7 @@ NPC 在每次被召唤时，必须自动获取并加载以下远程技能仓库�
 | `code-spec` | Spec 驱动开发：依次生成 spec/plan/task/checklist 四份文档，指导开发与验收 |
 | `git-commit-spec` | Git 提交规范的检查、格式化与编写指导（基于 Conventional Commits） |
 | `makefile-spec` | Makefile 编写规范的代码检查、格式化与编写指导 |
+| `graphviz-diagram` | 用 Graphviz dot 画架构图/流程图/拓扑图/依赖图/状态图并转 SVG 嵌入文档，支持绝对定位布局 |
 | `markdowncli` | 按指定格式规范创建或修改 Markdown 文件 |
 | `plantuml-diagram` | 用 PlantUML 画架构图/时序图/流程图并转 SVG 嵌入文档 |
 | `ts-lang-spec` | TypeScript 语言编程规范的代码检查与格式化指导 |
@@ -55,15 +56,22 @@ NPC 被召唤后，在执行任何用户任务之前，必须先完成以下步�
 
 NPC 必须根据以下规则自动识别并调用技能：
 
-1. **名称匹配**：当用户消息中出现技能名称（如「markdowncli」「git-commit-spec」「plantuml-diagram」「ts-lang-spec」等），NPC 必须立即加载并严格遵循该技能的完整规范执行任务
+1. **名称匹配**：当用户消息中出现技能名称（如「markdowncli」「git-commit-spec」「plantuml-diagram」「graphviz-diagram」「ts-lang-spec」等），NPC 必须立即加载并严格遵循该技能的完整规范执行任务
 2. **语义匹配**：即使用户没有明确说出技能名称，只要请求内容与某技能的触发条件匹配，NPC 也应自动激活该技能。例如：
-   - 用户说「帮我画个架构图」→ 自动激活 `plantuml-diagram`
+   - 用户说「帮我画个时序图」→ 自动激活 `plantuml-diagram`
+   - 用户说「帮我画个架构图」→ 优先激活 `graphviz-diagram`（架构图/框图/状态图/拓扑图等需绝对定位的图用 Graphviz）
+   - 用户说「帮我画个流程图」→ 依据场景在 `graphviz-diagram` 与 `plantuml-diagram` 中选择
    - 用户说「帮我写个 commit message」→ 自动激活 `git-commit-spec`
    - 用户说「帮我创建一个 Markdown 文档」→ 自动激活 `markdowncli`
    - 用户说「检查一下这段 TypeScript 代码」→ 自动激活 `ts-lang-spec`
    - 用户说「按 spec 驱动开发来规划这个功能」→ 自动激活 `code-spec`
-3. **多技能组合**：一个任务可能涉及多个技能（如开发 TypeScript 代码同时需要规范 commit），NPC 应同时激活所有相关技能
-4. **激活告知**：NPC 在开始执行任务时，应简要说明已激活哪些技能，例如：「已激活技能：ts-lang-spec、git-commit-spec」
+3. **画图工具职责区分**：当用户请求画图时，必须按以下规则选择工具与技能：
+   - **时序图**（含多角色、嵌套分组、alt/loop 等复杂时序）→ 使用 PlantUML，激活 `plantuml-diagram` 技能
+   - **框图、状态图、架构图、拓扑图、依赖图等需要绝对定位布局的图** → 使用 Graphviz dot，激活 `graphviz-diagram` 技能
+   - 两者均可的简单流程图：优先考虑图的结构复杂度与定位需求，复杂时序交互选 PlantUML，需精确控制节点/布局位置选 Graphviz
+   - 严禁把复杂时序图用 Graphviz 硬画，也严禁把需绝对定位的框图/状态图用 PlantUML 硬凑
+4. **多技能组合**：一个任务可能涉及多个技能（如开发 TypeScript 代码同时需要规范 commit），NPC 应同时激活所有相关技能
+5. **激活告知**：NPC 在开始执行任务时，应简要说明已激活哪些技能，例如：「已激活技能：plantuml-diagram、git-commit-spec」
 
 ---
 
