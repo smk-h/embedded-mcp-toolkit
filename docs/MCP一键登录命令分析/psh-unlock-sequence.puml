@@ -1,0 +1,44 @@
+@startuml PSH 解锁时序
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title PSH 解锁时序（banner → 锁定 → 解锁）
+
+participant "Channel\n(Serial/SSH)" as CH
+participant "状态机\nPshStateMachine" as SM
+participant "PshHandler" as HD
+participant "PSH 设备" as DEV
+
+== 阶段一：banner 判定 ==
+
+DEV --> CH : open() 返回 banner
+CH -> SM : start(banner) 匹配 profile
+SM --> CH : LOCKED (锁定)
+
+== 阶段二：debug → 密钥 → 解锁 ==
+
+SM -> HD : LOCKED 创建 handler
+HD --> CH : unlock() 序列
+CH -> DEV : write('debug')
+DEV --> CH : read()\n→ Challenge + Password:
+CH -> HD : onKeyRequest 获取密钥
+HD --> CH : 发送密钥
+CH -> DEV : write(密钥)
+DEV --> CH : read()\n→ Access Granted
+HD --> CH : READY 解锁成功
+
+@enduml
