@@ -1,0 +1,67 @@
+// per-session 并发控制（SessionMutex 串行化）
+// 渲染: dot -Tsvg session-mutex.dot -o img/session-mutex.svg
+digraph session_mutex {
+    rankdir=LR;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.5;
+    ranksep=0.7;
+    splines=spline;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#555555"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#666666",
+        arrowsize=0.9
+    ];
+
+    // ---- 左侧：并发调用方 ----
+    subgraph cluster_callers {
+        label="同一 session 的并发工具调用";
+        fontname="Noto Sans CJK SC";
+        fontsize=13;
+        style="rounded,filled";
+        fillcolor="#F0F4FA";
+        color="#3B6EA5";
+        labeljust=l;
+
+        call1 [ label="exec", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        call2 [ label="write", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        call3 [ label="read", fillcolor="#D6E4F0", color="#2C5F8A" ];
+    }
+
+    // ---- 中间：互斥锁 ----
+    mutex [
+        label="SessionMutex\n（per-session 独立）",
+        fillcolor="#F5E3C4",
+        color="#B0781E"
+    ];
+
+    // ---- 右侧：共享 Shell ----
+    shell [
+        label="同一 Shell 实例\n（共享 OutputBuffer）",
+        fillcolor="#DCEBDD",
+        color="#4E7A2C"
+    ];
+
+    // ---- 关系 ----
+    call1 -> mutex [ label="withLock 排队" ];
+    call2 -> mutex [ label="withLock 排队" ];
+    call3 -> mutex [ label="withLock 排队" ];
+    mutex -> shell [ label="串行执行\n先到先得" ];
+
+    // ---- 注记 ----
+    note [
+        label="不同 session 的锁互相独立\n互不阻塞",
+        fillcolor="#FFF3CC", color="#B08A1E", shape=note, fontsize=11
+    ];
+    mutex -> note [ style=dashed, constraint=false ];
+}

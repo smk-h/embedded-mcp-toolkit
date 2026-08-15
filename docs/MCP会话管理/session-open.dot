@@ -1,0 +1,69 @@
+// 会话打开与注册流程（生命周期）
+// 渲染: dot -Tsvg session-open.dot -o img/session-open.svg
+digraph session_open {
+    rankdir=TB;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.5;
+    ranksep=0.5;
+    splines=spline;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#555555"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#666666",
+        arrowsize=0.9
+    ];
+
+    // ---- 左侧：open handler 步骤（工具层） ----
+    subgraph cluster_open {
+        label="open / login handler（工具层）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#F0F4FA";
+        color="#3B6EA5";
+        labeljust=l;
+
+        step_device [ label="① 解析 deviceName\nargs.device ?? env.DEVICE ?? \"default\"", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        step_open [ label="② 创建 Transport 实例\nshell.open() 建立连接", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        step_peek [ label="③ peekNextId()\n预览下一个 session_id", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        step_log [ label="④ enableFromEnv()\n用预览 ID 建立日志文件", fillcolor="#D6E4F0", color="#2C5F8A" ];
+    }
+
+    // ---- 右侧：store 与 registry（基础设施层） ----
+    subgraph cluster_infra {
+        label="ShellSessionStore + SessionRegistry（基础设施层）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#EAF5EA";
+        color="#4E7A2C";
+        labeljust=l;
+
+        store_create [ label="⑤ store.create()\n生成 ID + 存实例 + 建锁", fillcolor="#DCEBDD", color="#4E7A2C" ];
+        registry_reg [ label="⑥ registry.register()\n写双向索引 + 日志", fillcolor="#F5E3C4", color="#B0781E" ];
+    }
+
+    // ---- 流程连线 ----
+    step_device -> step_open;
+    step_open -> step_peek;
+    step_peek -> step_log;
+    step_log -> store_create [ label="构造 CreateSessionMeta" ];
+    store_create -> registry_reg [ label="注册元数据", color="#B0781E", fontcolor="#B0781E" ];
+
+    // ---- 返回值 ----
+    result [
+        label="返回 session_id 给调用方\n（如 \"ssh_1\"）",
+        fillcolor="#FFF3CC", color="#B08A1E"
+    ];
+    registry_reg -> result [ style=dashed, constraint=false ];
+}

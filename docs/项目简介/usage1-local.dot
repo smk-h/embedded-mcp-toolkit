@@ -1,0 +1,163 @@
+// 用法一：本地同机部署拓扑
+// 渲染: dot -Tsvg usage1-local.dot -o img/usage1-local.svg
+digraph usage1_local {
+    rankdir=TB;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.4;
+    ranksep=0.55;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#7A93BE"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#555555",
+        arrowsize=0.9
+    ];
+
+    // ============ Windows PC（大容器） ============
+    subgraph cluster_pc {
+        label="Development Host（Windows PC）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#FFFFFF";
+        color="#555555";
+        labeljust=l;
+        margin=16;
+
+        // ---- MCP Host（内含 LLM 与 Client） ----
+        subgraph cluster_host {
+            label="MCP Host（Claude Code / OpenCode / ZCode）";
+            fontname="Noto Sans CJK SC";
+            fontsize=13;
+            style="rounded,filled";
+            fillcolor="#DCE9FB";
+            color="#5B7CBA";
+            labeljust=l;
+            margin=12;
+
+            llm [
+                label="LLM (Agent)",
+                fillcolor="#C9DCF7",
+                color="#2C5F8A"
+            ];
+            client [
+                label="MCP Client\n（1:1 per server）",
+                fillcolor="#FFFFFF",
+                color="#5B7CBA"
+            ];
+            llm -> client [label="tools/call"];
+        }
+
+        // ---- Z:\ 挂载目录（文件编辑通路，绕过 MCP） ----
+        zdrive [
+            label="Z:\\ 挂载目录（文件编辑通路，绕过 MCP）\nSMB / NFS 同步到编译服务器",
+            fillcolor="#FFFFFF",
+            color="#7A93BE"
+        ];
+
+        // ---- stdio transport 边界（虚线节点） ----
+        stdio [
+            label="stdio transport（本地子进程通信）\nHost spawn 子进程 + 注入 env · JSON-RPC 经 stdin/stdout",
+            shape=box,
+            style="rounded,filled,dashed",
+            fillcolor="#FAFAFA",
+            color="#999999",
+            fontsize=11
+        ];
+
+        // ---- MCP Server ----
+        server [
+            label="embedded-mcp-toolkit（Node.js · MCP Server）\nChannels: serial · ssh · adb · powershell",
+            fillcolor="#DDF3E4",
+            color="#4E7A2C"
+        ];
+
+        // ---- 本机 ↔ 外部设备 边界（虚线节点） ----
+        osb [
+            label="本机 ↔ 外部设备（native libs / system calls）\n线以上：node 原生库在本机内核运行；线以下：TCP / COM / USB",
+            shape=box,
+            style="rounded,filled,dashed",
+            fillcolor="#FAFAFA",
+            color="#999999",
+            fontsize=11
+        ];
+    }
+
+    // ============ 外部目标设备 ============
+    subgraph cluster_build {
+        label="Build Server（device: build-srv）";
+        fontname="Noto Sans CJK SC";
+        fontsize=13;
+        style="rounded,filled";
+        fillcolor="#FFF3D6";
+        color="#B08A1E";
+        labeljust=l;
+        margin=12;
+
+        buildsrc [
+            label="① 源码仓库\n（经 Z:\\ 挂载读写）",
+            fillcolor="#FFFBE6",
+            color="#B08A1E"
+        ];
+        buildmake [
+            label="② 编译机\n（make / gcc … 经 ssh）",
+            fillcolor="#FFF3CC",
+            color="#B08A1E"
+        ];
+    }
+
+    board [
+        label="嵌入式 Linux 开发板（board-a / board-b · aarch64 · sshd :22）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+    serial [
+        label="串口控制台（board-a / board-b · UART / U-Boot）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+    android [
+        label="Android 设备（android-1 / android-2 · adb bridge）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+    winhost [
+        label="Windows 本机 OS（device: local · PowerShell）",
+        fillcolor="#FFF3D6",
+        color="#B08A1E"
+    ];
+
+    // ============ 连线 ============
+    // Host 内：LLM 下发工具调用
+    llm -> client [label="tools/call"];
+
+    // 源码编辑通路（LLM 直写 Z:\，绕过 MCP）
+    llm -> zdrive [label="read / write 源码树", color="#2C5F8A", fontcolor="#2C5F8A"];
+
+    // MCP Server 链路：client → stdio → server → osb
+    client -> stdio;
+    stdio -> server;
+    server -> osb;
+
+    // Z:\ 文件同步：绕过 MCP，跨本机与编译服务器
+    zdrive -> buildsrc [label="SMB / NFS 同步", color="#2C5F8A", fontcolor="#2C5F8A"];
+
+    // MCP 各通道连接各自类型的设备
+    osb -> buildmake [label="ssh :22（跑 make）", color="#4E7A2C", fontcolor="#4E7A2C"];
+    osb -> board     [label="ssh 通道", color="#4E7A2C", fontcolor="#4E7A2C"];
+    osb -> serial    [label="serial 通道（COM）", color="#4E7A2C", fontcolor="#4E7A2C"];
+    osb -> android   [label="adb 通道（USB）", color="#4E7A2C", fontcolor="#4E7A2C"];
+    osb -> winhost   [label="powershell 通道（本地）", color="#4E7A2C", fontcolor="#4E7A2C"];
+
+    // 部署闭环：编译产物部署到板卡
+    buildmake -> board [label="deploy / flash\n（经 ssh / serial / adb）", color="#8A4B2C", fontcolor="#8A4B2C"];
+}

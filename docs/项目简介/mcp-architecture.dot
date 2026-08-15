@@ -1,0 +1,95 @@
+// MCP 三大角色与连接关系
+// 渲染: dot -Tsvg mcp-architecture.dot -o img/mcp-architecture.svg
+digraph mcp_architecture {
+    rankdir=TB;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.5;
+    ranksep=0.8;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#5B7CBA"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#555555",
+        arrowsize=0.9
+    ];
+
+    // ---- MCP Host（外层容器，AI 应用） ----
+    subgraph cluster_host {
+        label="MCP Host — AI 应用（Claude Code / OpenCode / ZCode）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#DCE9FB";
+        color="#5B7CBA";
+        labeljust=l;
+        margin=16;
+
+        llm [
+            label="LLM / Agent：决定调用哪个工具、传什么参数",
+            fillcolor="#C9DCF7",
+            color="#2C5F8A"
+        ];
+        client1 [
+            label="MCP Client（1:1 连接 Server · 收发 JSON-RPC）",
+            fillcolor="#FFFFFF",
+            color="#5B7CBA"
+        ];
+        client2 [
+            label="MCP Client（1:1 连接 Server · 收发 JSON-RPC）",
+            fillcolor="#FFFFFF",
+            color="#5B7CBA"
+        ];
+    }
+
+    // ---- Server 层（Host 外部，独立进程） ----
+    server_emb [
+        label="embedded-mcp-toolkit（MCP Server）\n串口 · SSH · ADB · PowerShell · 实现 tools",
+        fillcolor="#FFE6A8",
+        color="#D9A300",
+        fontsize=12
+    ];
+    server_other [
+        label="其他 MCP Server（独立进程）\n文件系统 · 数据库 · … 以 tools 对外暴露",
+        fillcolor="#DDF3E4",
+        color="#6BAF7E",
+        fontsize=12
+    ];
+
+    // 传输方式标注（中间层节点）
+    t_stdio [
+        label="stdio\n本地子进程",
+        shape=box,
+        style="filled,rounded",
+        fillcolor="#FFFBE6",
+        color="#E0B400",
+        fontsize=11
+    ];
+    t_http [
+        label="Streamable HTTP\n远程 · 流式回传",
+        shape=box,
+        style="filled,rounded",
+        fillcolor="#FFFBE6",
+        color="#E0B400",
+        fontsize=11
+    ];
+
+    // ---- Host 内：LLM 下发工具调用到两个 Client ----
+    llm -> client1 [label="tools/call"];
+    llm -> client2 [label="tools/call"];
+
+    // ---- Client 经传输层连到各自 Server（1:1） ----
+    client1 -> t_stdio [label="JSON-RPC 2.0", color="#7A5C00", fontcolor="#7A5C00"];
+    t_stdio -> server_emb [label="数据层 · 与传输无关", color="#7A5C00", fontcolor="#7A5C00"];
+
+    client2 -> t_http [label="JSON-RPC 2.0", color="#7A5C00", fontcolor="#7A5C00"];
+    t_http -> server_other [label="数据层 · 与传输无关", color="#7A5C00", fontcolor="#7A5C00"];
+}

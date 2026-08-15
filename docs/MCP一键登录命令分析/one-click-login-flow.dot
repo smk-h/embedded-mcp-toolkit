@@ -1,0 +1,72 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="MCP 一键登录整体流程（串口 / SSH 通用）", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.6, ranksep=0.8];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  start [label="连接通道\n(SerialShell / SSHShell)", shape=ellipse, fillcolor="#DCE9FB"];
+  banner [label="读取 banner\n(连接后初始输出)"];
+
+  subgraph cluster_login {
+    label="一、用户登录状态机\nUserLoginStateMachine";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE";
+    loginSM [label="状态机探测\nstart(banner) + feed()", fillcolor="#DCE9FB"];
+    loginProbe [label="发探测 echo __SH_STATUS_PROBE__", shape=ellipse, fillcolor="#FFF3D6"];
+    loginEnd [label="判定终态", fillcolor="#FFF3D6"];
+    noLogin [label="NO_LOGIN_REQUIRED\n已登录，进入交互", fillcolor="#DDF3E4"];
+    waitUser [label="WAITING_USERNAME\n走登录序列", fillcolor="#DDF3E4"];
+  }
+
+  subgraph cluster_handler {
+    label="二、UserLoginHandler 登录序列";
+    style="rounded,filled"; fillcolor="#EDF7EE"; color="#5C9E6E";
+    sendUser [label="发 {username}\n期望 Password:", fillcolor="#DDF3E4"];
+    sendPwd [label="发 {password}\nerror=incorrect", fillcolor="#DDF3E4"];
+    sendProbe [label="发 {probe}\n期望回显", fillcolor="#DDF3E4"];
+    loggedIn [label="LOGGED_IN\n登录成功 → 交互", fillcolor="#DDF3E4"];
+    wrongKey [label="WRONG_KEY\n密码错误", fillcolor="#F8D7DA"];
+  }
+
+  subgraph cluster_psh {
+    label="三、PSH 解锁流程\nPshStateMachine + PshHandler";
+    style="rounded,filled"; fillcolor="#FFF9EC"; color="#C99A2E";
+    pshSM [label="PSH 状态机探测\nstart(banner) + feed()", fillcolor="#FFF3D6"];
+    detect [label="detect 状态\nREADY/LOCKED/UNLOCKING/ERROR", fillcolor="#FFF3D6"];
+    ifLocked [label="LOCKED?\n走解锁", shape=diamond, fillcolor="#FFF3D6"];
+    unlockSeq [label="unlock() 序列\nsend 'debug' → 输密钥", fillcolor="#FFF3D6"];
+    unlockOk [label="READY\n解锁成功", fillcolor="#DDF3E4"];
+    unlockErr [label="ERROR\n解锁失败", fillcolor="#F8D7DA"];
+  }
+
+  interactive [label="进入交互式 Shell\ninteractiveLoop()", shape=ellipse, fillcolor="#DCE9FB"];
+
+  // 连接关系
+  start -> banner;
+  banner -> loginSM [label="先做用户登录探测"];
+  loginSM -> loginProbe [label="模糊时"];
+  loginProbe -> loginSM [label="feed 输出"];
+  loginSM -> loginEnd;
+  loginEnd -> noLogin;
+  loginEnd -> waitUser;
+
+  waitUser -> sendUser;
+  sendUser -> sendPwd;
+  sendPwd -> sendProbe [label="密码正确"];
+  sendPwd -> wrongKey [label="incorrect"];
+  sendProbe -> loggedIn [label="回显正常"];
+  sendProbe -> sendUser [label="回显异常\n重试"];
+
+  // PSH 流程（登录后或独立探测）
+  banner -> pshSM [label="或直接做 PSH 探测"];
+  pshSM -> detect;
+  detect -> ifLocked;
+  ifLocked -> unlockSeq [label="是"];
+  ifLocked -> interactive [label="否\n(READY)"];
+  unlockSeq -> unlockOk [label="成功"];
+  unlockSeq -> unlockErr [label="失败"];
+
+  noLogin -> interactive;
+  loggedIn -> interactive;
+}

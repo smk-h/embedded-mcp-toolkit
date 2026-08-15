@@ -1,0 +1,36 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="用户登录状态机（UserLoginStateMachine）状态转变", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.6, ranksep=0.8];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  // 起止节点
+  start [label="连接后\n读取 banner", shape=ellipse, fillcolor="#DCE9FB"];
+  unknown [label="UNKNOWN\n未知", fillcolor="#FFF3D6"];
+
+  // 终态
+  noLogin [label="NO_LOGIN_REQUIRED\n已登录(直接可用)", fillcolor="#DDF3E4"];
+  waitUser [label="WAITING_USERNAME\n等待用户名(UserLoginHandler)", fillcolor="#DDF3E4"];
+  error [label="ERROR\n不可恢复错误", fillcolor="#F8D7DA"];
+
+  // 探测动作占位（非终态，环回）
+  probe [label="发探测\n echo __SH_STATUS_PROBE__", shape=ellipse, fillcolor="#FFF3D6"];
+
+  // start 判定
+  start -> unknown [label="banner 无 login:"];
+  start -> waitUser [label="banner 含 login:\n(终态)"];
+
+  // 首次探测分发
+  unknown -> probe [label="发探测"];
+  probe -> noLogin [label="含 __SH_STATUS_PROBE__\n且无 Password:"];
+  probe -> waitUser [label="含 Password: + login:\n(探测被当密码，短路)"];
+  probe -> unknown [label="含 Password: 无 login:\n(模糊→二次探测)"];
+  probe -> waitUser [label="含 incorrect\n(密码验证失败)"];
+  probe -> error [label="无特征匹配"];
+
+  // 二次探测（probeCount 上限）
+  unknown -> probe [label="probeCount<2\n再次探测", style=dashed, color="#B0B0B0"];
+  unknown -> error [label="probeCount≥2\n(探测次数超限)", color="#C0392B"];
+}

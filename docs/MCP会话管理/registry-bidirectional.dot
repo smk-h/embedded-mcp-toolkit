@@ -1,0 +1,76 @@
+// SessionRegistry 双向索引结构
+// 渲染: dot -Tsvg registry-bidirectional.dot -o img/registry-bidirectional.svg
+digraph registry_bidirectional {
+    rankdir=LR;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.4;
+    ranksep=0.6;
+    splines=spline;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#555555"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#666666",
+        arrowsize=0.9
+    ];
+
+    // ---- 左：正向索引 ----
+    subgraph cluster_meta {
+        label="#metaBySession（正向）";
+        fontname="Noto Sans CJK SC";
+        fontsize=13;
+        style="rounded,filled";
+        fillcolor="#FBF0E2";
+        color="#B0781E";
+        labeljust=l;
+
+        meta_key [ label="session_id → SessionMeta\n（id · device · conn · time · log）", fillcolor="#FFFFFF", color="#B0781E" ];
+    }
+
+    // ---- 中：SessionMeta ----
+    meta_shape [
+        label="SessionMeta\n(唯一副本)",
+        fillcolor="#DCE9FB",
+        color="#2C5F8A"
+    ];
+
+    // ---- 右：反向索引 ----
+    subgraph cluster_bydev {
+        label="#sessionsByDevice（反向）";
+        fontname="Noto Sans CJK SC";
+        fontsize=13;
+        style="rounded,filled";
+        fillcolor="#EAF5EA";
+        color="#4E7A2C";
+        labeljust=l;
+
+        dev_key [ label="deviceName\nSet<session_id>", fillcolor="#FFFFFF", color="#4E7A2C" ];
+    }
+
+    // ---- 关系 ----
+    meta_key -> meta_shape [ label="正向索引\nO(1) 取元数据", color="#B0781E", fontcolor="#B0781E" ];
+    meta_shape -> dev_key [ label="反向索引\n设备名 → 会话集合", color="#4E7A2C", fontcolor="#4E7A2C" ];
+
+    // ---- 查询标注 ----
+    q_session [
+        label="getBySession(\"ssh_1\")",
+        fillcolor="#FFF3CC", color="#B08A1E",
+        fontsize=11, shape=note
+    ];
+    q_device [
+        label="getByDevice(\"board-a\")",
+        fillcolor="#FFF3CC", color="#B08A1E",
+        fontsize=11, shape=note
+    ];
+    q_session -> meta_key [ style=dashed, constraint=false ];
+    q_device -> dev_key [ style=dashed, constraint=false ];
+}

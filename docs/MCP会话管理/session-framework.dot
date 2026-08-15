@@ -1,0 +1,84 @@
+// 会话管理框架总览（双层结构）
+// 渲染: dot -Tsvg session-framework.dot -o img/session-framework.svg
+digraph session_framework {
+    rankdir=TB;
+    bgcolor="transparent";
+    fontname="Noto Sans CJK SC";
+    compound=true;
+    nodesep=0.5;
+    ranksep=0.7;
+    splines=spline;
+
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=12,
+        shape=box,
+        style="rounded,filled",
+        color="#555555"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        color="#666666",
+        arrowsize=0.9
+    ];
+
+    // ---- 顶层：MCP 工具层 ----
+    subgraph cluster_tools {
+        label="MCP 工具层";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#F0F4FA";
+        color="#3B6EA5";
+        labeljust=l;
+
+        ssh_tool [ label="SSH 工具\nopen / login / exec / close", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        serial_tool [ label="串口工具\nopen / login / exec / close", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        adb_tool [ label="ADB 工具\nopen / exec / close", fillcolor="#D6E4F0", color="#2C5F8A" ];
+        pow_tool [ label="PowerShell 工具\nopen / exec / close", fillcolor="#D6E4F0", color="#2C5F8A" ];
+    }
+
+    // ---- 中间层：各通道 ShellSessionStore 实例 ----
+    subgraph cluster_store {
+        label="ShellSessionStore 实例存储层（各通道独立实例）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#EAF5EA";
+        color="#4E7A2C";
+        labeljust=l;
+
+        ssh_store [ label="sshStore\n实例表 + 互斥锁", fillcolor="#DCEBDD", color="#4E7A2C" ];
+        serial_store [ label="serialStore\n实例表 + 互斥锁", fillcolor="#DCEBDD", color="#4E7A2C" ];
+        adb_store [ label="adbStore\n实例表 + 互斥锁", fillcolor="#DCEBDD", color="#4E7A2C" ];
+        power_store [ label="powerStore\n实例表 + 互斥锁", fillcolor="#DCEBDD", color="#4E7A2C" ];
+    }
+
+    // ---- 底层：全局 registry 元数据层 ----
+    subgraph cluster_registry {
+        label="SessionRegistry 元数据层（全局单例）";
+        fontname="Noto Sans CJK SC";
+        fontsize=14;
+        style="rounded,filled";
+        fillcolor="#FBF0E2";
+        color="#B0781E";
+        labeljust=l;
+
+        meta [ label="#metaBySession\nsession_id → SessionMeta", fillcolor="#F5E3C4", color="#B0781E" ];
+        bydev [ label="#sessionsByDevice\ndeviceName → Set<session_id>", fillcolor="#F5E3C4", color="#B0781E" ];
+    }
+
+    // ---- 依赖关系 ----
+    ssh_tool -> ssh_store [ label="调用 create/withLock" ];
+    serial_tool -> serial_store [ label="调用 create/withLock" ];
+    adb_tool -> adb_store [ label="调用 create/withLock" ];
+    pow_tool -> power_store [ label="调用 create/withLock" ];
+
+    ssh_store -> meta [ label="register 元数据", color="#B0781E", fontcolor="#B0781E" ];
+    serial_store -> meta [ label="register", color="#B0781E", fontcolor="#B0781E" ];
+    adb_store -> meta [ label="register", color="#B0781E", fontcolor="#B0781E" ];
+    power_store -> meta [ label="register", color="#B0781E", fontcolor="#B0781E" ];
+
+    meta -> bydev [ label="写双向索引", color="#B0781E", fontcolor="#B0781E", style=dashed, constraint=false ];
+}

@@ -1,0 +1,108 @@
+digraph serial_sequence {
+    // ──── 全局设置：正交折线，箭头横平竖直走直角拐弯 ────
+    graph [
+        rankdir=TB,
+        bgcolor="white",
+        label="串口 serial_exec 命令执行时序",
+        labelloc="t",
+        fontname="Noto Sans CJK SC",
+        fontsize=16,
+        nodesep=0.6,
+        ranksep=0.45,
+        splines=ortho
+    ];
+    node [
+        fontname="Noto Sans CJK SC",
+        fontsize=11,
+        shape=box,
+        style="rounded,filled",
+        color="#555555",
+        margin="0.16,0.09"
+    ];
+    edge [
+        fontname="Noto Sans CJK SC",
+        fontsize=10,
+        color="#666666",
+        arrowsize=0.7
+    ];
+
+    // ══════════════════════════════════════════════════════════
+    // 左列：阶段一 发起与下发 + 阶段二 执行与回显（n1 ~ n10）
+    // ══════════════════════════════════════════════════════════
+    n1  [label="① serial_exec(session, cmd)", fillcolor="#DCE9FB", color="#2C5F8A"];
+    n2  [label="② classifyResident() 选超时与超时动作", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n3  [label="③ drain() 前置冲刷残留输出", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n4  [label="④ write(\"(cmd); echo MARKER:$?\")", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n5  [label="⑤ 经 SerialShell 串口写入 + 换行", fillcolor="#FFF3D6", color="#B08A1E"];
+    n6  [label="⑥ PTY 回显首行（设备→传输层）", fillcolor="#FFF3D6", color="#B08A1E"];
+    n7  [label="⑦ drain() 剥离回显首行", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n8  [label="⑧ loop 轮询 sleep(200ms)+drain() 累积", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n9  [label="⑨ 远端设备执行命令", fillcolor="#FFF3D6", color="#B08A1E"];
+    n10 [label="⑩ 命令输出 + 提示符回传", fillcolor="#FFF3D6", color="#B08A1E"];
+
+    // ══════════════════════════════════════════════════════════
+    // 右列：阶段三 检测与返回（n11 ~ n15）
+    // ══════════════════════════════════════════════════════════
+    n11 [label="⑪ drain() 累积输出返回编排层", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n12 [label="⑫ 结束判定：marker 命中 / 提示符末尾锚定", fillcolor="#DDF3E4", color="#2F6E2F"];
+    n13 [label="⑬ 超时(常驻) sendCtrl(\"c\") 发 Ctrl+C", fillcolor="#FFE0E0", color="#B03030"];
+    n14 [label="⑭ ^C + 提示符（设备→传输层）", fillcolor="#FFF3D6", color="#B08A1E"];
+    n15 [label="⑮ 返回 output + exitCode", fillcolor="#DCE9FB", color="#2C5F8A"];
+
+    // ══════════════════════════════════════════════════════════
+    // 列内顺序固定（invisible 主链，保证各列自上而下不被重排）
+    // ══════════════════════════════════════════════════════════
+    n1 -> n2 -> n3 -> n4 -> n5 -> n6 -> n7 -> n8 -> n9 -> n10 [style=invis];
+    n11 -> n12 -> n13 -> n14 -> n15 [style=invis];
+
+    // ══════════════════════════════════════════════════════════
+    // 主流程（实线）：左列自上而下，跨列到右列，右列自上而下
+    // ══════════════════════════════════════════════════════════
+    n1 -> n2 -> n3 -> n4 -> n5 -> n6 -> n7 -> n8 -> n9 -> n10 [color="#5A5A5A"];
+    n10:e -> n11:w [color="#5A5A5A"];
+    n11 -> n12 [color="#5A5A5A"];
+    n12 -> n15 [color="#5A5A5A"];
+    // 让 n15 与 n12 垂直对齐（同 x），主返回线竖直向下、不擦碰右侧超时分支
+    n12 -> n15 [style=invis];
+
+    // ══════════════════════════════════════════════════════════
+    // 设备侧数据回传（虚线）
+    // ══════════════════════════════════════════════════════════
+    n5 -> n6  [style=dashed, color="#4A6A8A", label="设备回显"];
+    n8 -> n9  [style=dashed, color="#4A6A8A", label="命令下发"];
+    n9 -> n10 [style=dashed, color="#4A6A8A"];
+
+    // ══════════════════════════════════════════════════════════
+    // 超时熔断分支（点线，仅常驻命令）——走右列右侧外缘，避开主链
+    // ══════════════════════════════════════════════════════════
+    n12:e -> n13:w [style=dotted, color="#B03030", label="常驻超时"];
+    n13 -> n14     [style=dotted, color="#B03030"];
+    n14:w -> n15:e [style=dotted, color="#B03030", label="采样后返回"];
+
+    // ══════════════════════════════════════════════════════════
+    // 双列对齐约束：左列与右列对应节点同 rank，使两列横向平齐
+    // ══════════════════════════════════════════════════════════
+    { rank=same; n6;  n12; }
+    { rank=same; n7;  n13; }
+    { rank=same; n8;  n14; }
+    { rank=same; n9;  n15; }
+    { rank=same; n10; n11; }
+
+    // ══════════════════════════════════════════════════════════
+    // 图例（置于右上空白区：n1~n5 右侧，填补上半部分右侧空白）
+    // ══════════════════════════════════════════════════════════
+    subgraph cluster_legend {
+        label="图例";
+        fontname="Noto Sans CJK SC";
+        fontsize=11;
+        style="rounded,dashed,filled";
+        fillcolor="#EDF2F9";
+        color="#8FA8C8";
+        fontcolor="#1A1A1A";
+        lab1 [label="蓝=调用方/返回　绿=编排层　黄=传输层/设备", shape=plaintext, style="", fontsize=10, fontcolor="#1A1A1A"];
+        lab2 [label="实线=主流程　虚线=设备回传　点线=超时分支", shape=plaintext, style="", fontsize=10, fontcolor="#1A1A1A"];
+        lab1 -> lab2 [style=invis];
+    }
+    // 图例锚定到与 n3 同行（上半部分右侧空白带）
+    { rank=same; n3; lab1; }
+}

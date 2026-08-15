@@ -1,1 +1,181 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentStyleType="text/css" data-diagram-type="DESCRIPTION" height="813px" preserveAspectRatio="none" style="width:1082px;height:813px;background:#FFFFFF;" version="1.1" viewBox="0 0 1082 813" width="1082px" zoomAndPan="magnify"><?plantuml 1.2026.6?><defs/><g><!--cluster LX--><g class="cluster" data-qualified-name="LX" data-source-line="26" id="ent0001"><rect fill="#F7F9FC" height="270.88" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="636" x="12" y="12"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" font-weight="700" lengthAdjust="spacing" textLength="64.7639" x="297.6181" y="25.1387">Linux &#26426;&#22120;</text></g><!--cluster host--><g class="cluster" data-qualified-name="LX.host" data-source-line="28" id="ent0002"><rect fill="#DCE9FB" height="81.97" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="294" x="36" y="52"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" font-weight="700" lengthAdjust="spacing" textLength="229.3951" x="68.3025" y="65.1387">AI &#32534;&#31243;&#21161;&#25163;&#65288;Claude Code / ZCode&#65289;</text></g><!--cluster PC--><g class="cluster" data-qualified-name="PC" data-source-line="47" id="ent0010"><rect fill="#F7F9FC" height="332.14" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="588" x="234" y="359.86"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" font-weight="700" lengthAdjust="spacing" textLength="101.1331" x="477.4335" y="372.9987">Windows &#24037;&#20301;&#26426;</text></g><!--entity cfg--><g class="entity" data-qualified-name="LX.cfg" data-source-line="36" id="ent0006"><rect fill="#FAFAFA" height="47.9375" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="452.2637" x="101.87" y="218.94"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="243.3578" x="111.87" y="240.0787">.mcp.json&#65288;&#26725;&#25509; server&#65289;  command: ssh</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="432.2637" x="111.87" y="254.0474">args: -i /.ssh/id_mcp_server &lt;winuser&gt;@&lt;winip&gt; remote-start-mcp.bat</text></g><!--entity filesrc--><g class="entity" data-qualified-name="LX.filesrc" data-source-line="38" id="ent0007"><rect fill="#FFFFFF" height="47.9375" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="216.5067" x="415.75" y="77.02"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="72.0005" x="425.75" y="98.1587">&#25991;&#20214;&#32534;&#36753;&#36890;&#36335;</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="196.5067" x="425.75" y="112.1274">&#65288;AI &#33258;&#24102; read / write&#65292;&#26412;&#26426;&#23436;&#25104;&#65289;</text></g><!--entity llm--><g class="entity" data-qualified-name="LX.host.llm" data-source-line="29" id="ent0003"><rect fill="#F7F9FC" height="33.9688" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="92.4219" x="221.79" y="84"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="72.4219" x="231.79" y="105.1387">LLM (Agent)</text></g><!--entity client--><g class="entity" data-qualified-name="LX.host.client" data-source-line="30" id="ent0004"><rect fill="#F7F9FC" height="33.9688" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="84.5234" x="51.74" y="84"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="64.5234" x="61.74" y="105.1387">MCP Client</text></g><!--entity bat--><g class="entity" data-qualified-name="PC.bat" data-source-line="49" id="ent0011"><rect fill="#FAFAFA" height="33.9688" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="380.3644" x="277.82" y="391.86"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="360.3644" x="287.82" y="412.9987">remote-start-mcp.bat&#65288;&#38170;&#23450; cwd + 5 &#20010; env&#65292;&#26412;&#22320;/&#36828;&#31243;&#20849;&#29992;&#65289;</text></g><!--entity server--><g class="entity" data-qualified-name="PC.server" data-source-line="51" id="ent0012"><rect fill="#DDF3E4" height="33.9688" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="555.3127" x="250.34" y="516.95"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="535.3127" x="260.34" y="538.0887">embedded-mcp-toolkit&#65288;MCP Server &#183; Node.js&#65289; &#183; Channels: serial &#183; ssh &#183; adb &#183; powershell</text></g><!--entity phys--><g class="entity" data-qualified-name="PC.phys" data-source-line="54" id="ent0013"><rect fill="#FAFAFA" height="33.9688" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="270.6703" x="392.66" y="642.03"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="250.6703" x="402.66" y="663.1687">MCP &#8594; &#22806;&#37096;&#35774;&#22791;   native libs / system calls</text></g><!--entity endpoint--><g class="entity" data-qualified-name="endpoint" data-source-line="69" id="ent0017"><rect fill="#FFFBE6" height="61.9063" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="214.1801" x="663.91" y="211.96"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="72.0005" x="673.91" y="233.0987">&#23487;&#20027;&#31471;&#28857;&#25552;&#31034;</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="194.1801" x="673.91" y="247.0674">&#65288;instructions + host_info &#24037;&#20855;&#65289;</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="170.9713" x="673.91" y="261.0362">&#20256;&#36798; username@ip&#65292;&#19981;&#21547;&#20973;&#25454;</text></g><!--entity serial--><g class="entity" data-qualified-name="serial" data-source-line="78" id="ent0022"><rect fill="#F7F9FC" height="47.9375" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="200.9144" x="214.54" y="752"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="60.0005" x="224.54" y="773.1387">&#20018;&#21475;&#25511;&#21046;&#21488;</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="180.9144" x="224.54" y="787.1074">&#65288;serial &#36890;&#36947; &#183; UART / U-Boot&#65289;</text></g><!--entity board--><g class="entity" data-qualified-name="board" data-source-line="79" id="ent0023"><rect fill="#F7F9FC" height="47.9375" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="154.2211" x="450.89" y="752"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="111.9615" x="460.89" y="773.1387">&#23884;&#20837;&#24335; Linux &#24320;&#21457;&#26495;</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="134.2211" x="460.89" y="787.1074">&#65288;ssh &#36890;&#36947; &#183; sshd :22&#65289;</text></g><!--entity android--><g class="entity" data-qualified-name="android" data-source-line="80" id="ent0024"><rect fill="#F7F9FC" height="47.9375" rx="5" ry="5" style="stroke:#7A93BE;stroke-width:1;" width="130.4789" x="639.76" y="752"/><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="74.4728" x="649.76" y="773.1387">Android &#35774;&#22791;</text><text fill="#1F2933" font-family="'Segoe UI'" font-size="12" lengthAdjust="spacing" textLength="110.4789" x="649.76" y="787.1074">&#65288;adb &#36890;&#36947; &#183; USB&#65289;</text></g><g class="entity" data-qualified-name="GMN30" data-source-line="91" id="ent0031"><path d="M840.41,504.83 L840.41,529.93 L805.9,533.93 L840.41,537.93 L840.41,563.0331 A5,5 0 0 0 845.41,568.0331 L1062.5915,568.0331 A5,5 0 0 0 1067.5915,563.0331 L1067.5915,509.83 L1057.5915,499.83 L845.41,499.83 A5,5 0 0 0 840.41,504.83" fill="#FFFBE6" style="stroke:#E0B400;stroke-width:1;"/><path d="M1057.5915,499.83 L1057.5915,507.33 A2.5,2.5 0 0 0 1060.0915,509.83 L1067.5915,509.83 L1057.5915,499.83" fill="#FFFBE6" style="stroke:#E0B400;stroke-width:1;"/><text fill="#5C4A00" font-family="'Segoe UI'" font-size="10" font-weight="700" lengthAdjust="spacing" textLength="89.9999" x="846.41" y="514.1122">&#20026;&#20160;&#20040;&#24517;&#39035;&#36825;&#31181;&#25299;&#25169;</text><text fill="#5C4A00" font-family="'Segoe UI'" font-size="10" lengthAdjust="spacing" textLength="206.1815" x="846.41" y="525.7529">&#29289;&#29702;&#20018;&#21475; / USB / PowerShell &#32465;&#23450; Windows</text><text fill="#5C4A00" font-family="'Segoe UI'" font-size="10" lengthAdjust="spacing" textLength="163.6718" x="846.41" y="537.3935">Linux &#22815;&#19981;&#21040;&#24037;&#20301;&#26426;&#30340; COM3&#12289;USB</text><text fill="#5C4A00" font-family="'Segoe UI'" font-size="10" lengthAdjust="spacing" textLength="181.2986" x="846.41" y="549.0341">&#25925; MCP &#23432;&#22312;&#35774;&#22791;&#26049;&#65292;&#30001; Linux &#36828;&#31243;&#36830;&#23427;</text><text fill="#5C4A00" font-family="'Segoe UI'" font-size="10" lengthAdjust="spacing" textLength="137.4413" x="846.41" y="560.6747">&#65288;ch02 &#31216;&#20043;&#20026; C3 &#38236;&#20687;&#37096;&#32626;&#65289;</text></g><!--link llm to client--><g class="link" data-entity-1="ent0003" data-entity-2="ent0004" data-link-type="dependency" data-source-line="31" id="lnk5"><path d="M221.29,100.99 C194.92,100.99 167.22,100.99 141.57,100.99" fill="none" id="llm-to-client" style="stroke:#5A5A5A;stroke-width:1;"/><polygon fill="#5A5A5A" points="136.57,100.99,145.57,104.99,141.57,100.99,145.57,96.99,136.57,100.99" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="49.167" x="154.53" y="95.2004">tools/call</text></g><!--link client to cfg--><g class="link" data-entity-1="ent0004" data-entity-2="ent0006" data-link-type="dependency" data-source-line="41" id="lnk8"><path d="M121.3,118.31 C162.65,143.04 237.0789,187.5335 284.5289,215.9135" fill="none" id="client-to-cfg" style="stroke:#5A5A5A;stroke-width:1;"/><polygon fill="#5A5A5A" points="288.82,218.48,283.1493,210.4275,284.5289,215.9135,279.0429,217.2932,288.82,218.48" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="21.9998" x="226.01" y="172.6704">&#35835;&#21462;</text></g><!--link llm to filesrc--><g class="link" data-entity-1="ent0003" data-entity-2="ent0007" data-link-type="dependency" data-source-line="42" id="lnk9"><path d="M314.66,100.99 C342.92,100.99 375.23,100.99 410.51,100.99" fill="none" id="llm-to-filesrc" style="stroke:#5A5A5A;stroke-width:1;"/><polygon fill="#5A5A5A" points="415.51,100.99,406.51,96.99,410.51,100.99,406.51,104.99,415.51,100.99" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="65.9995" x="332.48" y="95.2004">&#26412;&#22320;&#32534;&#36753;&#28304;&#30721;</text></g><!--link bat to server--><g class="link" data-entity-1="ent0011" data-entity-2="ent0012" data-link-type="dependency" data-source-line="58" id="lnk14"><path d="M475.97,426.19 C487.44,449.73 506.3198,488.4452 517.8098,512.0252" fill="none" id="bat-to-server" style="stroke:#5A5A5A;stroke-width:1;"/><polygon fill="#5A5A5A" points="520,516.52,519.6535,506.6772,517.8098,512.0252,512.4618,510.1816,520,516.52" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="153.7798" x="497.2" y="467.0404">node bin\... &#183; stdio transport</text></g><!--link server to phys--><g class="link" data-entity-1="ent0012" data-entity-2="ent0013" data-link-type="dependency" data-source-line="59" id="lnk15"><path d="M528,551.28 C528,574.82 528,613.03 528,636.61" fill="none" id="server-to-phys" style="stroke:#5A5A5A;stroke-width:1;"/><polygon fill="#5A5A5A" points="528,641.61,532,632.61,528,636.61,524,632.61,528,641.61" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="43.9997" x="529" y="609.2404">&#26412;&#26426;&#30452;&#35843;</text></g><!--link cfg to bat--><g class="link" data-entity-1="ent0006" data-entity-2="ent0011" data-link-type="dependency" data-source-line="64" id="lnk16"><path d="M346.57,267.2 C362.99,287.63 387.72,318.03 410,343.86 C424.2,360.32 437.5263,374.9981 449.3563,387.7981" fill="none" id="cfg-to-bat" style="stroke:#5A5A5A;stroke-width:1;"/><polygon fill="#5A5A5A" points="452.75,391.47,449.5789,382.1456,449.3563,387.7981,443.7039,387.5755,452.75,391.47" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" font-weight="700" lengthAdjust="spacing" textLength="107.717" x="509.3904" y="315.0704">SSH &#38567;&#36947;&#36716;&#21457; stdio</text><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="148.7953" x="488.8513" y="327.8751">&#65288;JSON-RPC over TCP :22&#65289;</text><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="304.4978" x="411" y="340.6798">&#20813;&#23494;&#65306;Linux id_mcp_server &#8594; Windows authorized_keys</text></g><!--reverse link endpoint to server--><g class="link" data-entity-1="ent0017" data-entity-2="ent0012" data-link-type="dependency" data-source-line="70" id="lnk19"><path d="M761.5865,278.826 C747.6665,326.056 716.28,413.2 659,469.83 C637.46,491.13 607.33,506.33 581.39,516.46" fill="none" id="endpoint-backto-server" style="stroke:#5A5A5A;stroke-width:1;stroke-dasharray:7,7;"/><polygon fill="#5A5A5A" points="763,274.03,756.6188,281.532,761.5865,278.826,764.2925,283.7937,763,274.03" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="127.5096" x="735.31" y="406.5604">&#35299;&#26512; SSH_CONNECTION</text><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="91.7054" x="753.2121" y="419.3651">&#21306;&#20998;&#36828;&#31243;/&#26412;&#22320;&#22330;&#26223;</text></g><!--reverse link llm to endpoint--><g class="link" data-entity-1="ent0003" data-entity-2="ent0017" data-link-type="dependency" data-source-line="71" id="lnk21"><path d="M287.1553,121.8822 C296.3053,130.4722 304.98,136.81 318,141.97 C385.15,168.58 409,141.66 480,154.96 C550.87,168.23 629.06,192.14 686.53,211.53" fill="none" id="llm-backto-endpoint" style="stroke:#5A5A5A;stroke-width:1;stroke-dasharray:7,7;"/><polygon fill="#5A5A5A" points="283.51,118.46,287.3338,127.5363,287.1553,121.8822,292.8094,121.7037,283.51,118.46" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="80.5231" x="612.0532" y="166.1704">AI &#25454;&#27492;&#26500;&#36896; scp</text><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="131.7095" x="586.46" y="178.9751">&#65288;&#29992; Linux &#33258;&#24049;&#30340; shell&#65289;</text></g><!--link serial to board--><!--link board to android--><!--link phys to serial--><g class="link" data-entity-1="ent0013" data-entity-2="ent0022" data-link-type="dependency" data-source-line="86" id="lnk27"><path d="M497.14,676.39 C479.75,685.63 457.64,697.42 438,708 C411.24,722.42 385.6787,736.3243 362.0287,749.2343" fill="none" id="phys-to-serial" style="stroke:#5A5A5A;stroke-width:1;stroke-dasharray:1,3;"/><polygon fill="#5A5A5A" points="357.64,751.63,367.4562,750.8287,362.0287,749.2343,363.6231,743.8068,357.64,751.63" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="80.8993" x="439" y="719.2104">serial : COM &#21475;</text></g><!--link phys to board--><g class="link" data-entity-1="ent0013" data-entity-2="ent0023" data-link-type="dependency" data-source-line="87" id="lnk28"><path d="M528,676.49 C528,696.23 528,724.44 528,746.77" fill="none" id="phys-to-board" style="stroke:#5A5A5A;stroke-width:1;stroke-dasharray:1,3;"/><polygon fill="#5A5A5A" points="528,751.77,532,742.77,528,746.77,524,742.77,528,751.77" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="71.3657" x="529" y="719.2104">ssh : TCP :22</text></g><!--link phys to android--><g class="link" data-entity-1="ent0013" data-entity-2="ent0024" data-link-type="dependency" data-source-line="88" id="lnk29"><path d="M556.81,676.38 C572.42,685.43 591.96,697.03 609,708 C630.7,721.97 650.43,735.6557 668.9,748.8357" fill="none" id="phys-to-android" style="stroke:#5A5A5A;stroke-width:1;stroke-dasharray:1,3;"/><polygon fill="#5A5A5A" points="672.97,751.74,667.9674,743.2562,668.9,748.8357,663.3205,749.7682,672.97,751.74" style="stroke:#5A5A5A;stroke-width:1;stroke-linejoin:miter;stroke-miterlimit:10;"/><text fill="#333333" font-family="'Segoe UI'" font-size="11" lengthAdjust="spacing" textLength="53.9849" x="628.71" y="719.2104">adb : USB</text></g><?plantuml-src hLTjKnDN5FwUNt6g7wfsmglMCRMC8PAf7KN7wBJJqc4ssINPijdDx6wajgE3HI08c5355aGKHK6B0QmrWG2PwKzfz-ucd_mBFVVUtP28dUcCX9cyt3tddkS-vvpdN3uo4r9IWfGYoAhFw9VLbA0BIOWAiVwuhgLLCQGfcWu7m-nLPs4a154RaDKuz0cA8TKzSTrqLTAXjQNkWIZr2Md536kgsIrWq0CHAQv9SFdCWJgZeAvh0sxGOq7wz-v3wkyQjBFN-mmYyeyIjBRMmv9Yfg365Gb-yW5qxZdWyV29S8W-qNHHqjtLuy4JxPrTjTLB2JdMhqg60QsuLWUaDTns0e7mDHwxpNUjBhggcVyLE1pkxFhqtS1TBPr7MreQWnmB7GtMrdYG5WpY-nW-_u0Nkf-LrVGFOCzjafdbjrkpmJD0ye_jJC7vVPNCBTil5zzkJTZtHgtI6sVhNcLdojfuoDS_DFHkJWuSELAFuiYH0o0OSFPhv0mFN6U7u124ipnERZstnyRVRcL2Yf0M9GXf-DOCtz3FjrjZp3-X6IOSF1tgEX7kPEmtR7Nsx3au58nBgdcOMIjAybsJSw4B459aD64MCVQL6Q4n-7KvdZ3z7Uuw1C3KDCLeZWcAWaRNA7IFNUGIcfAnLDFtXgO26PbnPc_Qlws2OII0J6rR9IGvOoyyjMy_1KFIhqWw7eBva_osLHoqDk__CtZ3AYvM5YOmHyxA2YxYTuXfoQIWYfWYkhOvWMiaFs5FlmP1ZnkDvDK0l2SMU3i5AAOUbNe7m2_3zUOcN6YMnLxqxkNsS19RFutVEqxHRtAg0yCaiSRzXYdeff_6YGekQNrnhF8W_VjCaLKfS5em4fBuJbxhwwiwE5ifhFPGb9ZkokWBKdo6jeA8-HtGPLEYzJYtGai5Jvh9UUdkanN9q6CrjS84k9dnerQfD5689G2LrHB9tlCrfD3p3M05hf2vDOx4timvZsxiGujz9Qi8mG1IU6fjJo9op24jhWYdqvcU8VaCFLPsmNamw8mzTt8ZbVmEMHpTrnxR0yDjj0kXFOtsldnYGgftPqb-5c838dm2ny0glW19lS8JWhGrLyfpj3c7rvsxorvUqFD_L82KZ4gYA8aqc9ysKhzC0zQnz5S1kh6xiO9flUAlK49GLKd1EiLIb0M5hj66mWz1ZDAFb3OWwHXCKHWIjteFdZuTRkywollJJrz0m_mzyWkGnNlLeMLEFLHsDfnfRBUCLRmDQKE8Iwr-HSFs1knUq8mes0iZP7MZkarha6taswCVUtO5K0LJlYA18aSDB6dZgc5AIQ2gOJ2KgSHLuts4CGcxHikQCkhLj7kc0CuOLC2ehFRqD3KrCIfCKTR0r0NLI6cwwNCjFKSMXjKx5e9p_tLbRMWVAZqI-GAgiqlL6tUmnErRjrmKLkcsguIazAOwNIQPDQyfaDzAOHak8LU1jZOgUny8WdQvTqZAL01EHZjsSLMsLqXsYkCwsHpjO4BpPUHyj_yYze56ATh5qgEIuKcoEeA7uV0RTP0crsig8MqcD1tdijZRBrqrze5Bf0LJmwNHpgrKoZbtFCyjksHM2dYGM0hiyJ6Kj1eKxhAFqa7oPQjOmY7c_BnXPtFEuYPZJLODKq_7J5bJ3TG3EczxPRLFem93XWkCFslhKMLd1-YqKF7QTqfEeLfOnKcI-vsClhGdywpc9LLCQR9gUXUY1g5moMvAfvewTYrHo9UUsFCvMdAzeVFTtLsXIsVETsF69ZP9PeGhKJFN9O8qpgpwQhvyApe10e248WgypjZpDwk3ZoYVx72eO1xBE88AwxJdcPJG4ltmv79DSExdxKUZN1be8vJdQNBtwBHLlCKRmrxDEakJE25f8PVdSOIJt4t4vwoNoFmuGlIscjYZMVJ2CFeQzx2AOwZRtD1UVa5oKzMxCsHh44aZnI5qPSfWZusIxSVOAVRq4pAA2CRi1mls_LVEPdaV2yiglYBP9_Rj9P9vGx9hZ7XNpFaXgP1T3bwyX49vsT-fQQOtLRXLGv7-EK66dvAjhASqU2I4_w3CTyN1iBib_XBT5kSpIXDqiNwpe2hgcYm2fudjG6TA7QX8f-SiS5jQ50aPPvWAd5QU8Aw3o5zbSDYU6i4B2oayEyJX7mO_fkFb8HQU_Y3PFmwvsntskKJul-MxVkTTLZXOzhxtOGqCooBJmUiTte24sgWCGEZyEGptfD6ERyhiaA-0fuIDHcu8V4mf2L0gV3xsBmu30LgVEvLmNg7qMiLDgpHeRMH8URYwKAgKPx24xV4xzjWKrLyquXSUNWiqqP5EVBz0PtU4DXmufIbwwt3R0XtS12y-f4AIMQlr2UrHF5SxtfKfA01xUfZDThnUOMEvDV_h3NfTlhlkjJTJ2jfw-I5qmKp74Yrju2ojMHlZ21v2xL2TdYD3MTgmswze9wAIi7_gVFy2?></g></svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: usage2_remote Pages: 1 -->
+<svg width="839pt" height="712pt"
+ viewBox="0.00 0.00 838.50 712.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 708)">
+<title>usage2_remote</title>
+<g id="clust1" class="cluster">
+<title>cluster_linux</title>
+<path fill="#eaf2fb" stroke="#3b6ea5" d="M136.5,-395C136.5,-395 627.5,-395 627.5,-395 633.5,-395 639.5,-401 639.5,-407 639.5,-407 639.5,-684 639.5,-684 639.5,-690 633.5,-696 627.5,-696 627.5,-696 136.5,-696 136.5,-696 130.5,-696 124.5,-690 124.5,-684 124.5,-684 124.5,-407 124.5,-407 124.5,-401 130.5,-395 136.5,-395"/>
+<text text-anchor="middle" x="252" y="-680.8" font-family="Noto Sans CJK SC" font-size="14.00">Linux 机器（AI 客户端 + 文件编辑）</text>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_ai</title>
+<path fill="#dce9fb" stroke="#5b7cba" d="M152.5,-487C152.5,-487 379.5,-487 379.5,-487 385.5,-487 391.5,-493 391.5,-499 391.5,-499 391.5,-645 391.5,-645 391.5,-651 385.5,-657 379.5,-657 379.5,-657 152.5,-657 152.5,-657 146.5,-657 140.5,-651 140.5,-645 140.5,-645 140.5,-499 140.5,-499 140.5,-493 146.5,-487 152.5,-487"/>
+<text text-anchor="middle" x="266" y="-642.6" font-family="Noto Sans CJK SC" font-size="13.00">AI 编程助手（Claude Code / ZCode）</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_win</title>
+<path fill="#fbeaf2" stroke="#a53b6e" d="M164.5,-76C164.5,-76 751.5,-76 751.5,-76 757.5,-76 763.5,-82 763.5,-88 763.5,-88 763.5,-343 763.5,-343 763.5,-349 757.5,-355 751.5,-355 751.5,-355 164.5,-355 164.5,-355 158.5,-355 152.5,-349 152.5,-343 152.5,-343 152.5,-88 152.5,-88 152.5,-82 158.5,-76 164.5,-76"/>
+<text text-anchor="middle" x="336.5" y="-339.8" font-family="Noto Sans CJK SC" font-size="14.00">Windows 工位机（MCP Server 留守，握着物理设备）</text>
+</g>
+<!-- llm -->
+<g id="node1" class="node">
+<title>llm</title>
+<path fill="#c9dcf7" stroke="#2c5f8a" d="M365,-623C365,-623 300,-623 300,-623 294,-623 288,-617 288,-611 288,-611 288,-599 288,-599 288,-593 294,-587 300,-587 300,-587 365,-587 365,-587 371,-587 377,-593 377,-599 377,-599 377,-611 377,-611 377,-617 371,-623 365,-623"/>
+<text text-anchor="middle" x="332.5" y="-601.9" font-family="Noto Sans CJK SC" font-size="12.00">LLM (Agent)</text>
+</g>
+<!-- client -->
+<g id="node2" class="node">
+<title>client</title>
+<path fill="#ffffff" stroke="#5b7cba" d="M359.5,-535C359.5,-535 303.5,-535 303.5,-535 297.5,-535 291.5,-529 291.5,-523 291.5,-523 291.5,-511 291.5,-511 291.5,-505 297.5,-499 303.5,-499 303.5,-499 359.5,-499 359.5,-499 365.5,-499 371.5,-505 371.5,-511 371.5,-511 371.5,-523 371.5,-523 371.5,-529 365.5,-535 359.5,-535"/>
+<text text-anchor="middle" x="331.5" y="-513.9" font-family="Noto Sans CJK SC" font-size="12.00">MCP Client</text>
+</g>
+<!-- llm&#45;&gt;client -->
+<g id="edge1" class="edge">
+<title>llm&#45;&gt;client</title>
+<path fill="none" stroke="#555555" d="M305.47,-586.91C299.04,-581.4 293.03,-574.7 289.5,-567 285.31,-557.88 289.2,-549.14 296.02,-541.63"/>
+<polygon fill="#555555" stroke="#555555" points="298.56,-543.57 302.96,-535.11 294.25,-538.98 298.56,-543.57"/>
+<text text-anchor="middle" x="314.5" y="-558.2" font-family="Noto Sans CJK SC" font-size="11.00">tools/call</text>
+</g>
+<!-- filesrc -->
+<g id="node4" class="node">
+<title>filesrc</title>
+<path fill="#ffffff" stroke="#7a93be" d="M611,-535C611,-535 416,-535 416,-535 410,-535 404,-529 404,-523 404,-523 404,-511 404,-511 404,-505 410,-499 416,-499 416,-499 611,-499 611,-499 617,-499 623,-505 623,-511 623,-511 623,-523 623,-523 623,-529 617,-535 611,-535"/>
+<text text-anchor="middle" x="513.5" y="-520.4" font-family="Noto Sans CJK SC" font-size="12.00">文件编辑通路</text>
+<text text-anchor="middle" x="513.5" y="-507.4" font-family="Noto Sans CJK SC" font-size="12.00">（AI 自带 read / write，本机完成）</text>
+</g>
+<!-- llm&#45;&gt;filesrc -->
+<g id="edge3" class="edge">
+<title>llm&#45;&gt;filesrc</title>
+<path fill="none" stroke="#2c5f8a" d="M368.69,-586.8C397.64,-573.05 438.36,-553.7 469.25,-539.03"/>
+<polygon fill="#2c5f8a" stroke="#2c5f8a" points="470.9,-541.73 477.68,-535.02 468.2,-536.04 470.9,-541.73"/>
+<text text-anchor="middle" x="472" y="-558.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#2c5f8a">本地编辑源码</text>
+</g>
+<!-- cfg -->
+<g id="node3" class="node">
+<title>cfg</title>
+<path fill="#fafafa" stroke="#999999" stroke-dasharray="5,2" d="M601,-447C601,-447 152,-447 152,-447 146,-447 140,-441 140,-435 140,-435 140,-423 140,-423 140,-417 146,-411 152,-411 152,-411 601,-411 601,-411 607,-411 613,-417 613,-423 613,-423 613,-435 613,-435 613,-441 607,-447 601,-447"/>
+<text text-anchor="middle" x="376.5" y="-432.2" font-family="Noto Sans CJK SC" font-size="11.00">.mcp.json（桥接 server）</text>
+<text text-anchor="middle" x="376.5" y="-420.2" font-family="Noto Sans CJK SC" font-size="11.00">command: ssh &#45;i ~/.ssh/id_mcp_server &lt;winuser&gt;@&lt;winip&gt; remote&#45;start&#45;mcp.bat</text>
+</g>
+<!-- client&#45;&gt;cfg -->
+<g id="edge2" class="edge">
+<title>client&#45;&gt;cfg</title>
+<path fill="none" stroke="#2c5f8a" d="M340.61,-498.6C347.11,-486.16 355.97,-469.23 363.26,-455.3"/>
+<polygon fill="#2c5f8a" stroke="#2c5f8a" points="366.18,-456.52 367.56,-447.08 360.6,-453.6 366.18,-456.52"/>
+<text text-anchor="middle" x="370.5" y="-470.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#2c5f8a">读取</text>
+</g>
+<!-- bat -->
+<g id="node5" class="node">
+<title>bat</title>
+<path fill="#fafafa" stroke="#999999" stroke-dasharray="5,2" d="M489.5,-316C489.5,-316 263.5,-316 263.5,-316 257.5,-316 251.5,-310 251.5,-304 251.5,-304 251.5,-292 251.5,-292 251.5,-286 257.5,-280 263.5,-280 263.5,-280 489.5,-280 489.5,-280 495.5,-280 501.5,-286 501.5,-292 501.5,-292 501.5,-304 501.5,-304 501.5,-310 495.5,-316 489.5,-316"/>
+<text text-anchor="middle" x="376.5" y="-301.2" font-family="Noto Sans CJK SC" font-size="11.00">remote&#45;start&#45;mcp.bat</text>
+<text text-anchor="middle" x="376.5" y="-289.2" font-family="Noto Sans CJK SC" font-size="11.00">（锚定 cwd + 5 个 env，本地/远程共用）</text>
+</g>
+<!-- cfg&#45;&gt;bat -->
+<g id="edge4" class="edge">
+<title>cfg&#45;&gt;bat</title>
+<path fill="none" stroke="#a53b6e" d="M375.48,-410.85C375.09,-403.51 374.69,-394.84 374.5,-387 373.99,-366.25 374.59,-342.74 375.26,-325.24"/>
+<polygon fill="#a53b6e" stroke="#a53b6e" points="378.41,-325.32 375.63,-316.2 372.11,-325.06 378.41,-325.32"/>
+<text text-anchor="middle" x="529" y="-378.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#a53b6e">SSH 隧道转发 stdio（JSON&#45;RPC over TCP :22）</text>
+<text text-anchor="middle" x="529" y="-366.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#a53b6e">免密：Linux id_mcp_server → Windows authorized_keys</text>
+</g>
+<!-- server -->
+<g id="node6" class="node">
+<title>server</title>
+<path fill="#ddf3e4" stroke="#4e7a2c" d="M516.5,-228C516.5,-228 236.5,-228 236.5,-228 230.5,-228 224.5,-222 224.5,-216 224.5,-216 224.5,-204 224.5,-204 224.5,-198 230.5,-192 236.5,-192 236.5,-192 516.5,-192 516.5,-192 522.5,-192 528.5,-198 528.5,-204 528.5,-204 528.5,-216 528.5,-216 528.5,-222 522.5,-228 516.5,-228"/>
+<text text-anchor="middle" x="376.5" y="-213.4" font-family="Noto Sans CJK SC" font-size="12.00">embedded&#45;mcp&#45;toolkit（MCP Server · Node.js）</text>
+<text text-anchor="middle" x="376.5" y="-200.4" font-family="Noto Sans CJK SC" font-size="12.00">Channels: serial · ssh · adb · powershell</text>
+</g>
+<!-- bat&#45;&gt;server -->
+<g id="edge5" class="edge">
+<title>bat&#45;&gt;server</title>
+<path fill="none" stroke="#555555" d="M376.5,-279.6C376.5,-267.39 376.5,-250.87 376.5,-237.09"/>
+<polygon fill="#555555" stroke="#555555" points="379.65,-237.08 376.5,-228.08 373.35,-237.08 379.65,-237.08"/>
+<text text-anchor="middle" x="444.5" y="-251.2" font-family="Noto Sans CJK SC" font-size="11.00">node … · stdio transport</text>
+</g>
+<!-- phys -->
+<g id="node7" class="node">
+<title>phys</title>
+<path fill="#fafafa" stroke="#999999" stroke-dasharray="5,2" d="M428,-128C428,-128 181,-128 181,-128 175,-128 169,-122 169,-116 169,-116 169,-104 169,-104 169,-98 175,-92 181,-92 181,-92 428,-92 428,-92 434,-92 440,-98 440,-104 440,-104 440,-116 440,-116 440,-122 434,-128 428,-128"/>
+<text text-anchor="middle" x="304.5" y="-113.2" font-family="Noto Sans CJK SC" font-size="11.00">MCP → 外部设备（native libs / system calls）</text>
+<text text-anchor="middle" x="304.5" y="-101.2" font-family="Noto Sans CJK SC" font-size="11.00">本机直调</text>
+</g>
+<!-- server&#45;&gt;phys -->
+<g id="edge6" class="edge">
+<title>server&#45;&gt;phys</title>
+<path fill="none" stroke="#555555" d="M363.96,-191.93C352.57,-176.43 335.63,-153.37 322.74,-135.83"/>
+<polygon fill="#555555" stroke="#555555" points="325.01,-133.59 317.14,-128.2 319.93,-137.32 325.01,-133.59"/>
+</g>
+<!-- endpoint -->
+<g id="node8" class="node">
+<title>endpoint</title>
+<path fill="#fffbe6" stroke="#e0b400" stroke-dasharray="5,2" d="M735.5,-128C735.5,-128 481.5,-128 481.5,-128 475.5,-128 469.5,-122 469.5,-116 469.5,-116 469.5,-104 469.5,-104 469.5,-98 475.5,-92 481.5,-92 481.5,-92 735.5,-92 735.5,-92 741.5,-92 747.5,-98 747.5,-104 747.5,-104 747.5,-116 747.5,-116 747.5,-122 741.5,-128 735.5,-128"/>
+<text text-anchor="middle" x="608.5" y="-113.2" font-family="Noto Sans CJK SC" font-size="11.00">宿主端点提示（instructions + host_info 工具）</text>
+<text text-anchor="middle" x="608.5" y="-101.2" font-family="Noto Sans CJK SC" font-size="11.00">传达 username@ip，不含凭据</text>
+</g>
+<!-- server&#45;&gt;endpoint -->
+<g id="edge10" class="edge">
+<title>server&#45;&gt;endpoint</title>
+<path fill="none" stroke="#555555" stroke-dasharray="5,2" d="M380.7,-191.77C385.03,-177.77 393.22,-158.66 407.5,-148 417.49,-140.54 437.14,-134.39 460.4,-129.39"/>
+<polygon fill="#555555" stroke="#555555" points="461.29,-132.42 469.47,-127.53 460.02,-126.25 461.29,-132.42"/>
+<text text-anchor="middle" x="473" y="-163.2" font-family="Noto Sans CJK SC" font-size="11.00">解析 SSH_CONNECTION</text>
+<text text-anchor="middle" x="473" y="-151.2" font-family="Noto Sans CJK SC" font-size="11.00">区分远程/本地场景</text>
+</g>
+<!-- serial -->
+<g id="node9" class="node">
+<title>serial</title>
+<path fill="#fff3d6" stroke="#b08a1e" d="M187,-36C187,-36 12,-36 12,-36 6,-36 0,-30 0,-24 0,-24 0,-12 0,-12 0,-6 6,0 12,0 12,0 187,0 187,0 193,0 199,-6 199,-12 199,-12 199,-24 199,-24 199,-30 193,-36 187,-36"/>
+<text text-anchor="middle" x="99.5" y="-21.4" font-family="Noto Sans CJK SC" font-size="12.00">串口控制台</text>
+<text text-anchor="middle" x="99.5" y="-8.4" font-family="Noto Sans CJK SC" font-size="12.00">（serial 通道 · UART / U&#45;Boot）</text>
+</g>
+<!-- phys&#45;&gt;serial -->
+<g id="edge7" class="edge">
+<title>phys&#45;&gt;serial</title>
+<path fill="none" stroke="#4e7a2c" d="M265.46,-91.86C231.69,-77.03 182.77,-55.56 146.79,-39.76"/>
+<polygon fill="#4e7a2c" stroke="#4e7a2c" points="147.9,-36.81 138.4,-36.08 145.37,-42.58 147.9,-36.81"/>
+<text text-anchor="middle" x="251" y="-59.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#4e7a2c">serial : COM 口</text>
+</g>
+<!-- board -->
+<g id="node10" class="node">
+<title>board</title>
+<path fill="#fff3d6" stroke="#b08a1e" d="M368.5,-36C368.5,-36 240.5,-36 240.5,-36 234.5,-36 228.5,-30 228.5,-24 228.5,-24 228.5,-12 228.5,-12 228.5,-6 234.5,0 240.5,0 240.5,0 368.5,0 368.5,0 374.5,0 380.5,-6 380.5,-12 380.5,-12 380.5,-24 380.5,-24 380.5,-30 374.5,-36 368.5,-36"/>
+<text text-anchor="middle" x="304.5" y="-21.4" font-family="Noto Sans CJK SC" font-size="12.00">嵌入式 Linux 开发板</text>
+<text text-anchor="middle" x="304.5" y="-8.4" font-family="Noto Sans CJK SC" font-size="12.00">（ssh 通道 · sshd :22）</text>
+</g>
+<!-- phys&#45;&gt;board -->
+<g id="edge8" class="edge">
+<title>phys&#45;&gt;board</title>
+<path fill="none" stroke="#4e7a2c" d="M304.5,-91.65C304.5,-78.57 304.5,-60.42 304.5,-45.53"/>
+<polygon fill="#4e7a2c" stroke="#4e7a2c" points="307.65,-45.3 304.5,-36.3 301.35,-45.3 307.65,-45.3"/>
+<text text-anchor="middle" x="340.5" y="-59.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#4e7a2c">ssh : TCP :22</text>
+</g>
+<!-- android -->
+<g id="node11" class="node">
+<title>android</title>
+<path fill="#fff3d6" stroke="#b08a1e" d="M527.5,-36C527.5,-36 421.5,-36 421.5,-36 415.5,-36 409.5,-30 409.5,-24 409.5,-24 409.5,-12 409.5,-12 409.5,-6 415.5,0 421.5,0 421.5,0 527.5,0 527.5,0 533.5,0 539.5,-6 539.5,-12 539.5,-12 539.5,-24 539.5,-24 539.5,-30 533.5,-36 527.5,-36"/>
+<text text-anchor="middle" x="474.5" y="-21.4" font-family="Noto Sans CJK SC" font-size="12.00">Android 设备</text>
+<text text-anchor="middle" x="474.5" y="-8.4" font-family="Noto Sans CJK SC" font-size="12.00">（adb 通道 · USB）</text>
+</g>
+<!-- phys&#45;&gt;android -->
+<g id="edge9" class="edge">
+<title>phys&#45;&gt;android</title>
+<path fill="none" stroke="#4e7a2c" d="M337.61,-91.96C351.77,-84.63 368.47,-75.94 383.5,-68 400.39,-59.07 418.96,-49.1 434.9,-40.49"/>
+<polygon fill="#4e7a2c" stroke="#4e7a2c" points="436.56,-43.18 442.98,-36.13 433.56,-37.63 436.56,-43.18"/>
+<text text-anchor="middle" x="433" y="-59.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#4e7a2c">adb : USB</text>
+</g>
+<!-- endpoint&#45;&gt;llm -->
+<g id="edge11" class="edge">
+<title>endpoint&#45;&gt;llm</title>
+<path fill="none" stroke="#b08a1e" d="M617.35,-128.15C648,-190.21 742.7,-406.22 646.5,-535 630.26,-556.74 620.03,-557.8 594.5,-567 525.46,-591.89 440.56,-600.12 386.47,-602.8"/>
+<polygon fill="#b08a1e" stroke="#b08a1e" points="386.25,-599.65 377.41,-603.21 386.54,-605.95 386.25,-599.65"/>
+<text text-anchor="middle" x="759" y="-378.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#b08a1e">AI 据此构造 scp</text>
+<text text-anchor="middle" x="759" y="-366.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#b08a1e">（用 Linux 自己的 shell）</text>
+</g>
+</g>
+</svg>
