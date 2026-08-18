@@ -1476,7 +1476,6 @@ export async function serialUbootStateHandler(args: {
     }
     if (action === "set") {
       markUbootSession(args.session_id);
-      logger.info(`[serial_uboot_state] mark forced: set`);
       return {
         content: [
           text(
@@ -1490,7 +1489,6 @@ export async function serialUbootStateHandler(args: {
     }
     if (action === "clear") {
       clearUbootSession(args.session_id);
-      logger.info(`[serial_uboot_state] mark forced: clear`);
       return {
         content: [
           text(

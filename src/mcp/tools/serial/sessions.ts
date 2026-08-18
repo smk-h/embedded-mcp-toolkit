@@ -10,6 +10,7 @@
 
 import { ShellSessionStore } from "../../sessions/index.js";
 import { SerialShell } from "../../../transports/serial.js";
+import { logger } from "../../../shared/logger.js";
 
 /** @brief Serial 会话存储实例（前缀 "serial" → 生成 serial_1、serial_2 ...） */
 export const serialStore = new ShellSessionStore<SerialShell>("serial");
@@ -35,6 +36,7 @@ const ubootSessions = new Set<string>();
 /** @brief 标记会话当前处于 U-Boot 命令行 */
 export function markUbootSession(sessionId: string): void {
   ubootSessions.add(sessionId);
+  logger.info(`[serial] U-Boot mark set for session ${sessionId}`);
 }
 
 /** @brief 判定会话是否处于 U-Boot 命令行（serial_exec 据此决定 marker 包装风格） */
@@ -45,6 +47,7 @@ export function isUbootSession(sessionId: string): boolean {
 /** @brief 清除会话的 U-Boot 标记（会话关闭时调用） */
 export function clearUbootSession(sessionId: string): void {
   ubootSessions.delete(sessionId);
+  logger.info(`[serial] U-Boot mark cleared for session ${sessionId}`);
 }
 
 /**
