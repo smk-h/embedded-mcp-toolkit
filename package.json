@@ -10,8 +10,10 @@
   "scripts": {
     "build": "tsc",
     "build:minify": "node scripts/minify.mjs",
-    "clean": "rimraf out",
-    "clean-log": "rimraf --glob ./.embedded/log/**/*.log",
+    "clean:all": "npm run clean:out && npm run clean:exe && npm run clean:log",
+    "clean:out": "rimraf out",
+    "clean:exe": "rimraf exe-out",
+    "clean:log": "rimraf --glob ./.embedded/log/**/*.log",
     "dev": "tsc --watch",
     "start": "node out/cli/index.js",
     "inspector": "npm run inspector:win",
