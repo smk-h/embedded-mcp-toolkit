@@ -16,11 +16,13 @@
  *   修改任何模板文件（.mcp.json / .claude/** / .embedded/configs/** /
  *   remote-start-mcp.bat 等）或调整 init.ts 的拷贝任务清单后执行一次。
  *
- * 清单与 init.ts 的 taskGroups 保持一致（新增模板时两处同步维护）：
+ * 清单与 init.ts 的 taskGroups 对应，但 exe 模式的 claude 目录刻意只保留
+ * settings.local.json：CLAUDE.md、skills/、*.tmp 启动脚本不内嵌（避免把仓库
+ * 个人工作流文件扩散到目标目录），npm 模式的磁盘模板不受影响：
  *   - json     : .mcp.json / .opencode/opencode.json（exe 模式写出时另行 patch 命令）
- *   - files    : 逐文件复制的模板
- *   - patterns : 目录内通配匹配（.claude/*.tmp、.embedded/configs/*.txt）
- *   - dirs     : 递归整目录（.claude/skills）
+ *   - files    : 逐文件复制的模板（claude 目录仅 settings.local.json）
+ *   - patterns : 目录内通配匹配（.embedded/configs/*.txt）
+ *   - dirs     : 递归整目录（当前为空）
  */
 
 import {
@@ -51,22 +53,18 @@ const OUT_FILE = join(
 const MANIFEST = {
   /** JSON 类模板：内容原样内嵌，exe 模式 init 写出时 patch 命令与 DEVICE */
   json: [".mcp.json", ".opencode/opencode.json"],
-  /** 单文件模板 */
+  /** 单文件模板（claude 目录仅保留 settings.local.json，详见文件头注释） */
   files: [
     ".claude/settings.local.json",
-    ".claude/CLAUDE.md",
     ".embedded/configs/config.example.yaml",
     ".embedded/configs/config.yaml",
     ".embedded/configs/devices/board-example.yaml",
     "remote-start-mcp.bat",
   ],
   /** 目录内通配匹配 */
-  patterns: [
-    { dir: ".claude", suffix: ".tmp" },
-    { dir: ".embedded/configs", suffix: ".txt" },
-  ],
-  /** 递归整目录 */
-  dirs: [".claude/skills"],
+  patterns: [{ dir: ".embedded/configs", suffix: ".txt" }],
+  /** 递归整目录（当前为空） */
+  dirs: [],
 };
 
 /** 递归收集目录下全部文件（相对路径） */
@@ -124,13 +122,26 @@ function collect() {
   return collected;
 }
 
+/**
+ * 把模板内容渲染为按行书写的字符串数组（每行源文件 = 生成文件中的一行），
+ * join("") 后与原文逐字节一致；行尾换行（含 \r\n）以转义序列原样保留，
+ * 不受 git 换行符转换影响。
+ */
+function renderContent(content) {
+  // (?<=\n) 在每个换行符之后切分并保留行尾换行；结尾多余空串剔除
+  const chunks = content.split(/(?<=\n)/).filter((c) => c !== "");
+  return chunks.map((c) => `      ${JSON.stringify(c)},`).join("\n");
+}
+
 /** 生成 init-templates.ts 内容 */
 function render(templates) {
   const lines = [];
   for (const t of templates) {
     lines.push(`  {`);
     lines.push(`    dest: ${JSON.stringify(t.dest)},`);
-    lines.push(`    content: ${JSON.stringify(t.content)},`);
+    lines.push(`    content: [`);
+    lines.push(renderContent(t.content));
+    lines.push(`    ].join(""),`);
     lines.push(`  },`);
   }
 
@@ -143,8 +154,9 @@ function render(templates) {
  *
  * 用途：打包成单文件 exe 后没有磁盘模板目录，init 改为运行时把这些内嵌
  * 模板写出（见 init.ts 的 writeEmbeddedTemplates）。内容与仓库根目录下的
- * 同名模板文件逐字节一致；.mcp.json / opencode.json / remote-start-mcp.bat
- * 在写出时会适配 exe 入口（命令替换为 embedded-mcp-toolkit.exe）。
+ * 同名模板文件逐字节一致（content 按源文件行逐行书写，join("") 还原，
+ * 便于阅读与 diff）；.mcp.json / opencode.json / remote-start-mcp.bat 在
+ * 写出时会适配 exe 入口（命令替换为 embedded-mcp-toolkit.exe）。
  */
 
 /** 内嵌模板条目：dest 为相对目标目录的写出路径，content 为文件内容 */

@@ -290,10 +290,13 @@ interface TaskGroup {
  * @brief 在目标目录写出内嵌模板（单文件 exe 场景）
  * @details 打包成 .exe 后没有磁盘模板目录，把 init-templates.ts 中的内嵌模板
  *          （由 scripts/gen-init-templates.mjs 从仓库模板生成）按路径写出。
- *          与磁盘模式的差异仅有两处入口适配，其余行为保持一致：
+ *          与磁盘模式的差异：
  *            - .mcp.json / opencode.json 的 MCP 命令替换为 ./embedded-mcp-toolkit.exe
  *              （复用 patchToolkitJsonContent，DEVICE 注入逻辑与磁盘模式相同）；
- *            - remote-start-mcp.bat 的启动行由 node 脚本替换为 exe。
+ *            - remote-start-mcp.bat 的启动行由 node 脚本替换为 exe；
+ *            - .claude/ 目录仅写出 settings.local.json（CLAUDE.md、skills/、
+ *              *.tmp 不内嵌，见 gen-init-templates.mjs 的清单注释）。
+ *          其余行为保持一致。
  *
  * @param target 目标目录（绝对路径）
  * @param opts   force / claudeOnly / opencodeOnly / device（与磁盘模式共享）

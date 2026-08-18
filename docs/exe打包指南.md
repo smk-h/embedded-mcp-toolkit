@@ -59,12 +59,13 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 ### 1. 初始化与启动
 
 1. `embedded-mcp-toolkit.exe` 与 `prebuilds/` 放入目标目录；
-2. 执行 `embedded-mcp-toolkit.exe init`，一键生成 `.embedded/` 数据目录、`.mcp.json` / `.opencode/opencode.json`、`.claude/` 模板与 `remote-start-mcp.bat`；
+2. 执行 `embedded-mcp-toolkit.exe init`，一键生成 `.embedded/` 数据目录、`.mcp.json` / `.opencode/opencode.json`、`.claude/settings.local.json` 与 `remote-start-mcp.bat`；
 3. 生成的 `.mcp.json` / bat 中 MCP 命令已自动适配为 `./embedded-mcp-toolkit.exe`，免 Node 启动 MCP 服务器。
 
 ### 2. 内嵌模板机制
 
 - 单文件 exe 使用内嵌模板（[src/cli/commands/init-templates.ts](../src/cli/commands/init-templates.ts)），由 [scripts/gen-init-templates.mjs](../scripts/gen-init-templates.mjs) 从仓库模板自动生成（`npm run gen:init-templates`），与仓库文件保持单一事实来源；
+- 内嵌清单刻意收窄：exe 模式下 `.claude/` 目录仅写出 `settings.local.json`，CLAUDE.md、skills/、*.tmp 启动脚本不内嵌（避免把仓库个人工作流文件扩散到目标目录），npm 模式的磁盘模板不受影响；
 - init 运行时优先使用磁盘模板（npm / 源码模式），仅磁盘模板缺失（exe 场景）时才走内嵌写出，两套流程共用同一份 patch 逻辑（[src/cli/commands/init.ts](../src/cli/commands/init.ts)）。
 
 ### 3. 配置与日志
