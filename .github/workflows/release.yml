@@ -51,6 +51,7 @@ jobs:
             | 文件 | 适用场景 |
             |------|---------|
             | `embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-offline.tar.gz` | 离线包（含预编译 out/ + 生产 node_modules），**无网**环境 |
+            | `embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-binary.tar.tgz` | Windows 免 Node 单文件 exe（含串口原生绑定） |
 
             ### 离线环境（offline 包）
 
@@ -63,6 +64,18 @@ jobs:
             ```
 
             > 离线包已预编译 `out/`，并内置生产 `node_modules`（serialport 的 prebuilds 已覆盖 linux/darwin/win32/arm 全平台 `.node`），无需 `npm install`，开箱即用。
+
+            ### Windows exe（binary 包）
+
+            下载 `embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-binary.tar.tgz`，在 Windows 上解压后得到 `embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-binary/` 目录：
+
+            ```bash
+            tar -xzf embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-binary.tar.tgz
+            cd embedded-mcp-toolkit-${{ steps.meta.outputs.version }}-binary
+            ./embedded-mcp-toolkit.exe init
+            ```
+
+            > exe 与 `prebuilds/` 目录必须一起拷贝使用（串口功能依赖 win32-x64 原生绑定）；无需安装 Node.js，仅 Windows x64 支持串口。
 
   # ─────────────────────────────────────────────────────────────
   # 2. 构建：基于 npm 发布内容 + 精简 node_modules 打出全平台离线包
@@ -135,11 +148,69 @@ jobs:
           files: ${{ steps.pack.outputs.archive }}
 
   # ─────────────────────────────────────────────────────────────
-  # 3. 全部产物上传完毕，把草稿 Release 正式发布
+  # 3. 构建 Windows 免 Node 单文件 exe 并打包发布（binary 包）
+  #    exe 由 Bun --compile 产出（scripts/build-exe.mjs），串口原生绑定走
+  #    @dimava 分支 win32-x64 预编译；仅 Windows x64 支持串口，故用 windows runner。
+  #    包内顶层目录名 = 包名去掉 .tar.tgz 后缀（embedded-mcp-toolkit-<版本>-binary/）。
+  # ─────────────────────────────────────────────────────────────
+  build-exe:
+    name: Build Windows exe bundle
+    needs: release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash # Windows runner 默认 PowerShell，统一改用 Git Bash 跑 cp/tar
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies (含 dev，打包 exe 需要)
+        run: npm ci
+
+      - name: Build exe (scripts/build-exe.mjs)
+        run: npm run pack:exe:win
+
+      - name: Verify exe-out
+        run: |
+          ls -lh exe-out/
+          find exe-out -type f
+
+      - name: Pack binary bundle
+        id: pack
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          PKG_DIR="embedded-mcp-toolkit-${VERSION}-binary"
+          ARCHIVE="${PKG_DIR}.tar.tgz"
+
+          # exe 与 prebuilds/ 一起打包；解压后目录名 = 包名去 .tar.tgz 后缀
+          mkdir -p "$PKG_DIR"
+          cp -a exe-out/embedded-mcp-toolkit.exe "$PKG_DIR/"
+          cp -a exe-out/prebuilds "$PKG_DIR/"
+          tar -czf "$ARCHIVE" "$PKG_DIR"
+          ls -lh "$ARCHIVE"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload binary bundle
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          draft: true
+          files: ${{ steps.pack.outputs.archive }}
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. 全部产物上传完毕，把草稿 Release 正式发布
   # ─────────────────────────────────────────────────────────────
   publish:
     name: Publish Release
-    needs: [release, build]
+    needs: [release, build, build-exe]
     runs-on: ubuntu-latest
     steps:
       - name: Mark release as published (undraft)
