@@ -32,3 +32,6 @@ tsconfig.json
 tsconfig.prod.json
 
 eslint.config.mjs
+
+# 自动生成文件（npm run gen:init-templates 重新生成，不做格式化）
+src/cli/commands/init-templates.ts

@@ -2,7 +2,13 @@
  * @file src/cli/commands/init.ts
  * @brief embedded-mcp-toolkit init 命令
  *
- * 在任意目录执行，从 npm 包安装目录拷贝模板文件，自动初始化 Claude Code / OpenCode 的 MCP 配置。
+ * 在任意目录执行，自动初始化 Claude Code / OpenCode 的 MCP 配置。
+ * 支持两种模板来源：
+ *   1. 磁盘模板（npm 包 / 源码树）—— 从包根目录复制模板文件（传统方式）；
+ *   2. 内嵌模板（单文件 exe）—— 打包成 .exe 后无磁盘包目录，改用运行时写出的
+ *      内嵌模板（见 init-templates.ts，由 scripts/gen-init-templates.mjs 生成）。
+ *      把 exe 放进任意空目录执行 init，即可一键生成 .embedded/ 数据目录、
+ *      模板配置与 remote-start-mcp.bat。
  */
 
 import {
@@ -18,6 +24,7 @@ import {
 import { resolve, join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 import { createInterface } from "readline";
+import { EMBEDDED_TEMPLATES } from "./init-templates.js";
 
 // ============================================================
 // 选项
@@ -135,39 +142,28 @@ function isToolkitServer(cmdParts: unknown[]): boolean {
 }
 
 /**
- * @brief 复制并修补 JSON 配置文件（.mcp.json / opencode.json）
- * @details 读取模板 JSON，将其中 **toolkit 自有 server** 的占位命令替换为实际二进制路径，
- *          同时注入 DEVICE 环境变量；模板中携带的其它 server（如 file_utils_remote）
- *          原样保留。自动适配 Claude Code（.mcp.json）和 OpenCode（opencode.json）两种格式。
+ * @brief 修补 JSON 配置内容中的 toolkit 自有 server（字符串进、字符串出）
+ * @details 把模板里 toolkit server 的占位命令替换为实际二进制路径，同时注入
+ *          DEVICE 环境变量；模板中携带的其它 server（如 file_utils_remote）原样
+ *          保留。自动适配 Claude Code（.mcp.json）和 OpenCode（opencode.json）两种
+ *          格式。磁盘复制（copyAndPatchJson）与内嵌模板写出（writeEmbeddedTemplates）
+ *          两条路径共用本函数，保证两种模式的 patch 行为一致。
  *
- * @param src        模板 JSON 文件路径
- * @param dest       目标 JSON 文件路径
- * @param force      是否覆盖已存在的文件
+ * @param raw        模板 JSON 原文
+ * @param isMcpJson  是否为 Claude Code 的 .mcp.json 格式（否则按 OpenCode 处理）
  * @param device     设备名称（写入 DEVICE 环境变量）
- * @param binCommand npm 二进制命令路径
- * @param binArgs    npm 二进制命令参数列表
- * @returns `true` — 复制并修补成功；`false` — 跳过或失败
+ * @param binCommand MCP server 启动命令
+ * @param binArgs    启动命令参数列表
+ * @returns 修补并格式化后的 JSON 字符串（带尾换行）
  */
-function copyAndPatchJson(
-  src: string,
-  dest: string,
-  force: boolean,
+function patchToolkitJsonContent(
+  raw: string,
+  isMcpJson: boolean,
   device: string,
   binCommand: string,
   binArgs: string[]
-): boolean {
-  if (!existsSync(src)) {
-    console.log(`  ⚠️  模板不存在: ${src}`);
-    return false;
-  }
-  if (!force && existsSync(dest)) {
-    console.log(`  ⏭  跳过（已存在）: ${dest}`);
-    return false;
-  }
-
-  const raw = readFileSync(src, "utf-8");
+): string {
   const json = JSON.parse(raw);
-  const isMcpJson = basename(dest) === ".mcp.json";
 
   if (isMcpJson) {
     const servers: Record<string, Record<string, unknown>> = ((
@@ -199,8 +195,50 @@ function copyAndPatchJson(
     }
   }
 
+  return JSON.stringify(json, null, 2) + "\n";
+}
+
+/**
+ * @brief 复制并修补 JSON 配置文件（.mcp.json / opencode.json）
+ * @details 读取磁盘模板 JSON，修补 toolkit server 后写出（patch 逻辑见
+ *          patchToolkitJsonContent）。
+ *
+ * @param src        模板 JSON 文件路径
+ * @param dest       目标 JSON 文件路径
+ * @param force      是否覆盖已存在的文件
+ * @param device     设备名称（写入 DEVICE 环境变量）
+ * @param binCommand npm 二进制命令路径
+ * @param binArgs    npm 二进制命令参数列表
+ * @returns `true` — 复制并修补成功；`false` — 跳过或失败
+ */
+function copyAndPatchJson(
+  src: string,
+  dest: string,
+  force: boolean,
+  device: string,
+  binCommand: string,
+  binArgs: string[]
+): boolean {
+  if (!existsSync(src)) {
+    console.log(`  ⚠️  模板不存在: ${src}`);
+    return false;
+  }
+  if (!force && existsSync(dest)) {
+    console.log(`  ⏭  跳过（已存在）: ${dest}`);
+    return false;
+  }
+
+  const raw = readFileSync(src, "utf-8");
+  const content = patchToolkitJsonContent(
+    raw,
+    basename(dest) === ".mcp.json",
+    device,
+    binCommand,
+    binArgs
+  );
+
   ensureDir(dirname(dest));
-  writeFileSync(dest, JSON.stringify(json, null, 2) + "\n", "utf-8");
+  writeFileSync(dest, content, "utf-8");
   console.log(`  ✅ 创建: ${dest}`);
   return true;
 }
@@ -245,6 +283,96 @@ interface TaskGroup {
 }
 
 // ============================================================
+// 内嵌模板写出（单文件 exe 模式）
+// ============================================================
+
+/**
+ * @brief 在目标目录写出内嵌模板（单文件 exe 场景）
+ * @details 打包成 .exe 后没有磁盘模板目录，把 init-templates.ts 中的内嵌模板
+ *          （由 scripts/gen-init-templates.mjs 从仓库模板生成）按路径写出。
+ *          与磁盘模式的差异仅有两处入口适配，其余行为保持一致：
+ *            - .mcp.json / opencode.json 的 MCP 命令替换为 ./embedded-mcp-toolkit.exe
+ *              （复用 patchToolkitJsonContent，DEVICE 注入逻辑与磁盘模式相同）；
+ *            - remote-start-mcp.bat 的启动行由 node 脚本替换为 exe。
+ *
+ * @param target 目标目录（绝对路径）
+ * @param opts   force / claudeOnly / opencodeOnly / device（与磁盘模式共享）
+ */
+function writeEmbeddedTemplates(
+  target: string,
+  opts: {
+    force: boolean;
+    claudeOnly: boolean;
+    opencodeOnly: boolean;
+    device: string;
+  }
+): void {
+  const { force, claudeOnly, opencodeOnly, device } = opts;
+  const doClaude = !opencodeOnly;
+  const doOpencode = !claudeOnly;
+
+  console.log(`📦 [内嵌模板] 写出全部模板`);
+
+  let count = 0;
+  for (const entry of EMBEDDED_TEMPLATES) {
+    // 按客户端开关过滤 Claude / OpenCode 专属配置（与磁盘模式 taskGroups 对应）
+    if (entry.dest === ".mcp.json" && !doClaude) continue;
+    if (entry.dest.startsWith(".claude/") && !doClaude) continue;
+    if (entry.dest === ".opencode/opencode.json" && !doOpencode) continue;
+
+    // 入口适配：JSON 走与磁盘模式相同的 patch（命令替换 + DEVICE 注入），
+    // bat 仅把 node 启动行换成 exe（DEVICE 等其余内容与磁盘模式一致，不改动）
+    let content = entry.content;
+    if (
+      entry.dest === ".mcp.json" ||
+      entry.dest === ".opencode/opencode.json"
+    ) {
+      content = patchToolkitJsonContent(
+        content,
+        entry.dest === ".mcp.json",
+        device,
+        "./embedded-mcp-toolkit.exe",
+        []
+      );
+    } else if (entry.dest === "remote-start-mcp.bat") {
+      content = content.replace(
+        /^node bin\\embedded-mcp-toolkit-cli\.js.*$/m,
+        "embedded-mcp-toolkit.exe"
+      );
+    }
+
+    const destPath = join(target, entry.dest);
+    if (!force && existsSync(destPath)) {
+      console.log(`  ⏭  跳过（已存在）: ${entry.dest}`);
+      continue;
+    }
+    ensureDir(dirname(destPath));
+    writeFileSync(destPath, content, "utf-8");
+    console.log(`  ✅ 创建: ${entry.dest}`);
+    count++;
+  }
+
+  // 日志目录（磁盘模式由模板携带 config 目录结构，这里显式确保）
+  ensureDir(join(target, ".embedded", "log"));
+  console.log(`  ✅ 创建: .embedded/log/`);
+
+  console.log(
+    `\n✅ 初始化完成！共写出 ${count} 个文件（MCP 入口已适配为单文件 exe）`
+  );
+  console.log(`\n下一步:`);
+  console.log(
+    `  1. 编辑 .embedded/configs/devices/board-example.yaml, 修改为你的实际设备信息`
+  );
+  console.log(
+    `  2. 如需新增设备, 在 .embedded/configs/devices/ 下复制并修改 yaml 文件`
+  );
+  console.log(
+    `  3. 在 Claude Code / OpenCode 中, MCP 服务器 "embedded-board" 将自动启用`
+  );
+  console.log(`  4. 开始使用！例如：让 AI 帮你 "查看板卡系统状态"`);
+}
+
+// ============================================================
 // 主流程
 // ============================================================
 
@@ -270,17 +398,6 @@ export function runInit(opts: InitOptions): void {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   const PKG_ROOT = resolve(__dirname, "..", "..", "..");
-
-  // 单文件 exe 模式守卫：exe 内代码位于 Bun 虚拟文件系统（$bunfs），PKG_ROOT
-  // 及模板文件不在磁盘上，基于磁盘拷贝的 init 流程不可用。给出明确提示而非裸栈。
-  if (!existsSync(PKG_ROOT)) {
-    console.error(
-      "[init] 单文件 exe 模式暂不支持 init：模板文件不在磁盘上。\n" +
-        "请先用 npm 安装方式执行一次初始化（npx embedded-mcp-toolkit init）生成配置目录，\n" +
-        "之后即可在该目录直接使用 exe 运行 MCP 服务器。"
-    );
-    process.exit(1);
-  }
 
   /*
    * 根据实际执行命令判断本地安装 vs 全局安装
@@ -313,9 +430,20 @@ export function runInit(opts: InitOptions): void {
     binArgs = [];
   }
 
+  /*
+   * 模板来源判定：磁盘模板（npm 包 / 源码树）优先；打包成单文件 exe 后包目录
+   * 不存在于磁盘（代码位于 Bun 虚拟文件系统 $bunfs），改用 init-templates.ts
+   * 的内嵌模板运行时写出。检测依据：标志文件 remote-start-mcp.bat 是否在包根目录。
+   */
+  const diskTemplateAvailable = existsSync(
+    join(PKG_ROOT, "remote-start-mcp.bat")
+  );
+
   console.log(`
 🚀 embedded-mcp-toolkit 初始化`);
-  console.log(`   模板源: ${PKG_ROOT}`);
+  console.log(
+    `   模板来源: ${diskTemplateAvailable ? `磁盘包目录 (${PKG_ROOT})` : "内嵌模板（单文件 exe）"}`
+  );
   console.log(`   目标目录: ${target}`);
   console.log(`   默认设备: ${device}`);
   console.log(
@@ -323,6 +451,17 @@ export function runInit(opts: InitOptions): void {
   );
 
   ensureDir(target);
+
+  // ---- 单文件 exe 模式：写出内嵌模板后收尾 ----
+  if (!diskTemplateAvailable) {
+    writeEmbeddedTemplates(target, {
+      force,
+      claudeOnly,
+      opencodeOnly,
+      device,
+    });
+    return;
+  }
 
   // ---- 拷贝任务定义 ----
   const taskGroups: TaskGroup[] = [

@@ -37,6 +37,7 @@ export default defineConfig([
       ".idea/", // JetBrains IDE 配置目录
       "explorations/", // 实验性代码目录
       "dts-build/packages", // DTS 构建产物目录
+      "src/cli/commands/init-templates.ts", // 自动生成的内嵌模板（gen-init-templates.mjs）
     ],
   },
 ]);

@@ -221,23 +221,38 @@ function main() {
   console.log(`\n📦 embedded-mcp-toolkit v${VERSION} → 单文件可执行打包`);
   console.log(`  Bun: ${bunCheck.stdout.trim()}   目标平台: ${target}`);
 
-  // 1. 编译 TypeScript（与 node 用法共用 out/）
-  console.log("\n① 编译 TypeScript...");
+  // 1. 刷新 init 内嵌模板（exe 的 init 依赖内嵌模板，必须在 tsc 前刷新确保编译进
+  //    out/；若刷新后 git 出现差异，说明模板变更后未重新生成，请一并提交）
+  console.log("\n① 刷新 init 内嵌模板...");
+  execSync("node scripts/gen-init-templates.mjs", {
+    cwd: PROJECT_ROOT,
+    stdio: "inherit",
+  });
+
+  // 2. 编译 TypeScript（与 node 用法共用 out/）
+  console.log("\n② 编译 TypeScript...");
   execSync("npm run build", { cwd: PROJECT_ROOT, stdio: "inherit" });
 
-  // 1.5 修补 Bun 空模块打包 bug（详见 patchTypeOnlyModules 注释）
+  // 2.5 修补 Bun 空模块打包 bug（详见 patchTypeOnlyModules 注释）
   patchTypeOnlyModules();
 
-  // 2. 准备输出目录
-  rmSync(DIST_DIR, { recursive: true, force: true });
+  // 3. 准备输出目录（目录本身被其它进程占用（如以其为 CWD）时仅清空内容）
+  try {
+    rmSync(DIST_DIR, { recursive: true, force: true });
+  } catch {
+    console.warn("  ⚠ 旧 exe-out 目录被占用无法删除，改为清空其内容后继续");
+    for (const entry of readdirSync(DIST_DIR)) {
+      rmSync(join(DIST_DIR, entry), { recursive: true, force: true });
+    }
+  }
   mkdirSync(DIST_DIR, { recursive: true });
 
-  // 3. Bun 打包单文件可执行
+  // 4. Bun 打包单文件可执行
   //    - serialport 的 JS 全部打进 exe（不加 --external），避免运行时从磁盘
   //      解析 node_modules 的不确定性；
   //    - package.json 通过 define 注入（globalThis 成员表达式，node 下自然为
   //      undefined 并走磁盘读取分支，见 src/shared/package-info.ts）。
-  console.log("\n② Bun 打包单文件可执行...");
+  console.log("\n④ Bun 打包单文件可执行...");
   const define = `globalThis.__PACKAGE_JSON__=${JSON.stringify(JSON.stringify(PKG))}`;
   const exeOut = join(DIST_DIR, EXE_NAME);
   const args = [
@@ -254,12 +269,12 @@ function main() {
     process.exit(res.status ?? 1);
   }
 
-  // 4. 拷贝串口原生绑定
-  console.log("\n③ 拷贝串口原生绑定...");
+  // 5. 拷贝串口原生绑定
+  console.log("\n⑤ 拷贝串口原生绑定...");
   copyNativeBindings(tuple);
 
-  // 5. 汇总产物
-  console.log("\n④ 产物清单：");
+  // 6. 汇总产物
+  console.log("\n⑥ 产物清单：");
   if (existsSync(exeOut)) {
     const exeSize = (statSync(exeOut).size / 1024 / 1024).toFixed(1);
     console.log(`  ✔ ${EXE_NAME}  (${exeSize} MB)`);

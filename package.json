@@ -30,6 +30,7 @@
     "pack:project": "node scripts/pack-project.mjs",
     "pack:exe": "node scripts/build-exe.mjs",
     "pack:exe:win": "node scripts/build-exe.mjs --win",
+    "gen:init-templates": "node scripts/gen-init-templates.mjs",
     "ccstatusline": "ccstatusline setup --config .claude/ccstatusline-settings.json",
     "win:node-list": "tasklist | findstr node.exe",
     "win:node-kill": "taskkill /f /im node.exe",
