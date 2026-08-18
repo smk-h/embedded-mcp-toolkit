@@ -29,7 +29,45 @@ serialport 官方 `@serialport/bindings-cpp` 的原生绑定在 Windows 下用 `
 - [oven-sh/bun#23192](https://github.com/oven-sh/bun/issues/23192)：N-API 插件用 `uv_default_loop` 回调不触发，改用 `napi_get_uv_event_loop` 修复；
 - [serialport/node-serialport#2707](https://github.com/serialport/node-serialport/issues/2707)：serialport 在 Bun 下"打开但不发 data"。
 
+#### 2.2  怎么修复
+
 官方包至今（13.0.1）未修复。修复方案：exe 打包时**绑定取自社区分支** `@dimava/serialport-bindings-cpp`（devDependency，仅构建期需要），其 C++ 把 `serialport_win.cpp` 的 `uv_async_init` 改为 `napi_get_uv_event_loop(env, &loop)`（失败回退 `uv_default_loop`），Node 与 Bun 下均正常。
+
+该分支的出处与复现信息如下（`@dimava` 只是 npm 发布 scope，与仓库名不一致，直接按包名搜 GitHub 找不到源码）：
+
+- npm 包：[@dimava/serialport-bindings-cpp](https://www.npmjs.com/package/@dimava/serialport-bindings-cpp)——只发布 `win32-x64` 预编译绑定；
+- 源码仓库：[Dimava/node-serialport](https://github.com/Dimava/node-serialport)——官方 [serialport/node-serialport](https://github.com/serialport/node-serialport) 的个人 fork；
+- 关键修复提交：[779d9dd](https://github.com/Dimava/node-serialport/commit/779d9dd48752555b20924c98e42251c2fd7f22be)——`serialport_win.cpp` 的 `uv_async_init` 改用 `napi_get_uv_event_loop`，失败回退 `uv_default_loop`；
+
+改动本身很小，完整 diff 如下（写入 `Write` 与读取 `Read` 两处各一次，仓库不可用时可直接按此对官方源码打补丁）：
+
+```diff
+// src/serialport_win.cpp
+@@ -424,7 +424,9 @@ Napi::Value Write(const Napi::CallbackInfo& info) {
+   baton->complete = false;
+ 
+   uv_async_t* async = new uv_async_t;
+-  uv_async_init(uv_default_loop(), async, EIO_AfterWrite);
++  uv_loop_t* loop = uv_default_loop();
++  napi_status uvst = napi_get_uv_event_loop(env, &loop);
++  uv_async_init(loop, async, EIO_AfterWrite);
+   async->data = baton;
+   // WriteFileEx requires a thread that can block. Create a new thread to
+   // run the write operation, saving the handle so it can be deallocated later.
+@@ -611,7 +613,9 @@ Napi::Value Read(const Napi::CallbackInfo& info) {
+   baton->complete = false;
+ 
+   uv_async_t* async = new uv_async_t;
+-  uv_async_init(uv_default_loop(), async, EIO_AfterRead);
++  uv_loop_t* loop = uv_default_loop();
++  napi_status uvst = napi_get_uv_event_loop(env, &loop);
++  uv_async_init(loop, async, EIO_AfterRead);
+   async->data = baton;
+  baton->hThread = CreateThread(NULL, 0, ReadThread, async, 0, NULL);
+  // ReadFileEx requires a thread that can block. Create a new thread to
+```
+
+该仓库为社区个人维护，存在停止维护或删除的风险。若包或仓库不可用：按上述提交对官方源码打同一补丁，`npm run build` 自产 `.node` 后走同样的覆盖/拷贝流程即可复现；本地 `exe-out/prebuilds/win32-x64/` 已构建好的 `.node` 也可作临时备份。
 
 - **node 模式不受影响**：依赖仍是官方 `@serialport/bindings-cpp`（全平台 prebuilds），dimava 包只是 devDependency，不进 npm 发布产物；
 - **exe 模式（本地运行）**：exe 运行时 node-gyp-build 会优先加载磁盘 `node_modules/@serialport/bindings-cpp/prebuilds/win32-x64/` 下的官方绑定（有 bug）。故 `scripts/build-exe.mjs` 额外用 `patchWinPrebuildBindings` 把 @dimava 的 `.node` **覆盖到该官方预编译位置**，exe 加载的即是修复版绑定；`npm ci` 重装后需重跑 `pack:exe` 才会再次生效。
