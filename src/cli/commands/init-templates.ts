@@ -109,7 +109,7 @@ export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
       "      \"mcp__embedded-board__serial_exec\",\n",
       "      \"mcp__embedded-board__network_scan_tool\",\n",
       "      \"mcp__embedded-board__port_scan_tool\",\n",
-      "      \"mcp__embedded-board__serial_list\",\n",
+      "      \"mcp__embedded-board__session_info\",\n",
       "      \"mcp__embedded-board__serial_enter_uboot\"\n",
       "    ]\n",
       "  },\n",
