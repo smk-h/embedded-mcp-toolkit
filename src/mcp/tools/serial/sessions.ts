@@ -23,6 +23,31 @@ export const serialStore = new ShellSessionStore<SerialShell>("serial");
 export const portToSession = new Map<string, string>();
 
 /**
+ * @brief U-Boot 态会话集合
+ *
+ * serial_enter_uboot 成功进入 U-Boot 后标记对应 session_id，serial_exec
+ * 据此把 marker 包装切为 plain 风格（去掉子 shell 括号——U-Boot 的 hush
+ * shell 不支持该语法；`; echo` 无条件执行，1级 marker 检测照常生效）。
+ * 会话关闭时由 serial_close / disposeAllSerialSessions 清理。
+ */
+const ubootSessions = new Set<string>();
+
+/** @brief 标记会话当前处于 U-Boot 命令行 */
+export function markUbootSession(sessionId: string): void {
+  ubootSessions.add(sessionId);
+}
+
+/** @brief 判定会话是否处于 U-Boot 命令行（serial_exec 据此决定 marker 包装风格） */
+export function isUbootSession(sessionId: string): boolean {
+  return ubootSessions.has(sessionId);
+}
+
+/** @brief 清除会话的 U-Boot 标记（会话关闭时调用） */
+export function clearUbootSession(sessionId: string): void {
+  ubootSessions.delete(sessionId);
+}
+
+/**
  * @brief 关闭所有活跃的串口会话
  *
  * 在 MCP Server 进程退出时调用，确保所有串口连接被正确关闭，
@@ -31,4 +56,5 @@ export const portToSession = new Map<string, string>();
 export async function disposeAllSerialSessions(): Promise<void> {
   await serialStore.disposeAll("serial_dispose");
   portToSession.clear();
+  ubootSessions.clear();
 }

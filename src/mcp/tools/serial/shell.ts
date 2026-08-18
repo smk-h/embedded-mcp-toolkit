@@ -24,7 +24,13 @@ import {
   UserLoginStatus,
 } from "../../../services/user-login.js";
 import { KeyProvider } from "../../../services/key-provider.js";
-import { serialStore, portToSession } from "./sessions.js";
+import {
+  serialStore,
+  portToSession,
+  isUbootSession,
+  markUbootSession,
+  clearUbootSession,
+} from "./sessions.js";
 import {
   CONTROL_CHAR_MAP,
   type ControlChar,
@@ -240,6 +246,7 @@ export async function serialCloseHandler(args: { session_id: string }) {
   if (port) {
     portToSession.delete(port);
   }
+  clearUbootSession(args.session_id);
 
   return { content: [text(`Session ${args.session_id} closed.`)] };
 }
@@ -468,8 +475,6 @@ export async function serialExecHandler(args: {
   const shell = result.shell;
   const deviceName = resolveDeviceName();
 
-  const promptDetector = new PromptDetector(getPromptPattern(deviceName));
-
   const execTimeoutConfig = getExecTimeoutConfig(deviceName);
 
   const sendCtrl = (key: ControlChar): void => {
@@ -477,6 +482,17 @@ export async function serialExecHandler(args: {
   };
 
   return serialStore.withLock(args.session_id, async () => {
+    const wasUboot = isUbootSession(args.session_id);
+
+    // U-Boot 态的 2级回落检测用默认提示符正则，而非设备 promptPattern：
+    // promptPattern 是为 Linux PS1 配置的，在 U-Boot 态（=> 提示符）可能永不
+    // 命中——marker 失败的场景（hush 解析错误、无 echo）会等满兜底超时。
+    // 默认正则同时覆盖 U-Boot 与常见 Linux/Android 提示符：留在 U-Boot 时
+    // 锚定 => ，离开 U-Boot 落到 Linux 提示符时也能尽快返回（配合下方自校正）。
+    const promptDetector = new PromptDetector(
+      wasUboot ? undefined : getPromptPattern(deviceName)
+    );
+
     const execResult = await runExec({
       shell,
       command: args.command,
@@ -487,7 +503,38 @@ export async function serialExecHandler(args: {
       sendCtrl,
       logPrefix: "[serial_exec]",
       execTimeoutConfig,
+      // U-Boot 态会话（serial_enter_uboot 标记）marker 用 plain 风格：
+      // 去掉子 shell 括号（hush 无该语法），`; echo` 仍无条件执行，
+      // 1级 marker 检测照常生效
+      markerStyle: wasUboot ? "plain" : "subshell",
     });
+
+    // U-Boot 态执行后自校正标记：若本次执行表明已离开 U-Boot，清除会话标记，
+    // 后续 serial_exec 恢复 subshell 包装。覆盖两类离开场景：
+    //   1. reset/boot/bootm 等离开 U-Boot：输出出现内核启动特征（任意完成路径均可命中）
+    //   2. 设备自动重启回到内核：exec 经 2级提示符锚定正常结束，且末尾提示符
+    //      已非 U-Boot 提示符。注意仅限 completedBy=prompt——marker 完成的输出
+    //      截断于 marker、不含末尾提示符，无法据此判定环境（此时标记保留：
+    //      plain 包装在 Linux 下同样可用，仅失去子 shell 防护，无功能性破坏）
+    if (wasUboot) {
+      let leftUboot = false;
+      try {
+        const ubootDetector = new UbootDetector(getUbootConfig(deviceName));
+        leftUboot =
+          ubootDetector.matchKernelBoot(execResult.output) ||
+          (execResult.completedBy === "prompt" &&
+            !ubootDetector.matchPrompt(execResult.output));
+      } catch (err) {
+        // uboot 配置含非法正则时不应阻断 exec 主流程，跳过本次自校正
+        logger.warn(
+          `[serial_exec] uboot detector config error, skip self-correction: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+      if (leftUboot) {
+        clearUbootSession(args.session_id);
+        logger.info(`[serial_exec] left U-Boot detected, cleared session mark`);
+      }
+    }
 
     let output = execResult.output;
     if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
@@ -1218,6 +1265,7 @@ export async function serialEnterUbootHandler(args: {
         logger.info(
           `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
         );
+        markUbootSession(args.session_id);
         return {
           content: [
             text(
@@ -1247,6 +1295,7 @@ export async function serialEnterUbootHandler(args: {
           logger.info(
             "[serial_enter_uboot] verify key matched (via verify), entered U-Boot"
           );
+          markUbootSession(args.session_id);
           return {
             content: [
               text(

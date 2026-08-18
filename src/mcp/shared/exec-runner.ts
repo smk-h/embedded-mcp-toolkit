@@ -14,9 +14,18 @@
  *
  *   底层轮询骨架（sleep + drain 累积 + deadline）借鉴 ssh_build 已验证的模式，
  *   结束检测采用两级策略：
- *     - 1级 marker 注入（确定性，首选）：拼接 (cmd); echo "MARKER:$?"，
+ *     - 1级 marker 注入（确定性，首选）：命令尾部拼 echo "MARKER:$?"，
  *       marker 出现即命令结束，附带退出码，不受刷屏影响
  *     - 2级 末尾锚定（快路径）：提示符正则锚定输出末尾，无刷屏设备秒判
+ *
+ *   marker 包装按环境分两种风格（markerStyle，默认 subshell）：
+ *     - subshell：POSIX shell（Linux/Android），(cmd); echo "MARKER:$?"——
+ *       子 shell 兜住 exit/exec、尾部 & 等会破坏外层 echo 的命令，
+ *       并隔离 fd/PS1 等 shell 状态对长生命周期会话的污染
+ *     - plain：U-Boot hush，cmd; echo "MARKER:$?"——hush 无子 shell /
+ *       后台任务语法，上述威胁不存在，去括号即可；; 为无条件分隔，
+ *       echo 必然执行，1级 marker 检测照常生效（hush 展开 $? 得退出码，
+ *       老 simple parser 不展开时按字面量 "$?" 匹配，exitCode 为 null）
  * ======================================================
  */
 
@@ -67,12 +76,20 @@ function generateMarker(): string {
 /**
  * @brief 构造 marker 检测正则
  *
- * 匹配 `<marker>:<digits>`，捕获退出码。
+ * 匹配 `(?<!")<marker>:(\d+|\$\?)`，捕获退出码：
+ *   - \d+  ：POSIX shell / U-Boot hush 展开的真实退出码
+ *   - \$\? ：U-Boot 老 simple parser 不做变量展开，原样输出字面量 "$?"
+ *            （此时无法得知退出码，调用方按 null 处理）
+ *
+ * 负向后行断言 (?<!") 排除 PTY 回显行里的字面 marker：注入的命令是
+ * `echo "<marker>:$?"`，回显行中 marker 前紧邻双引号；而真实输出的
+ * marker 前是行首/换行/其他输出字符。这样即使回显剥离（stripEcho）
+ * 失败、回显行残留在 buffer 中，也不会把回显行误判为命令完成。
  * @param marker - 唯一标记字符串
  * @returns 匹配 marker 及退出码的正则
  */
 function buildMarkerRegex(marker: string): RegExp {
-  return new RegExp(`${marker}:(\\d+)`);
+  return new RegExp(`(?<!")${marker}:(\\d+|\\$\\?)`);
 }
 
 /**
@@ -99,6 +116,18 @@ export interface ExecTimeoutConfig {
   /** 兜底超时时长（毫秒），普通命令用，未配置默认 300000（5 分钟） */
   readonly fallbackTimeoutMs?: number;
 }
+
+/**
+ * @brief marker 注入的包装风格
+ *
+ * - subshell：POSIX shell（Linux/Android）用。`(cmd); echo ...` 的子 shell
+ *   兜住 exit/logout/exec 这类会杀掉/替换外层 shell 的命令、尾部 &（拼接后
+ *   `cmd &; echo` 是语法错误，整行被拒），并隔离 fd 劫持、PS1 修改等
+ *   shell 状态污染长生命周期会话
+ * - plain：U-Boot hush 用。hush 无子 shell / 后台任务（&）语法，上述威胁
+ *   不存在，去括号直接 `cmd; echo ...` 即为同等安全等级的等价写法
+ */
+export type MarkerStyle = "subshell" | "plain";
 
 /**
  * @brief 统一 exec 的输入参数
@@ -130,6 +159,13 @@ export interface ExecInput {
   readonly logPrefix: string;
   /** 是否剥离 PTY 回显的首行（提示符+命令回显），默认 true */
   readonly stripEcho?: boolean;
+  /**
+   * marker 包装风格（默认 "subshell"）。
+   * U-Boot 等无子 shell 语法的环境传 "plain"：去掉括号直接拼
+   * `cmd; echo "MARKER:$?"`，1级 marker 检测照常生效；simple parser
+   * 不展开 $? 时按字面量匹配，exitCode 为 null。
+   */
+  readonly markerStyle?: MarkerStyle;
   /** 设备级 exec 超时配置（常驻命令扩展名单 + 采样/兜底时长），由 handler 注入 */
   readonly execTimeoutConfig?: ExecTimeoutConfig;
 }
@@ -156,10 +192,19 @@ export interface ExecInput {
 export interface ExecResult {
   /** 累积的全部输出文本 */
   readonly output: string;
-  /** 命令退出码（marker 检测命中时可获取，其他场景为 null） */
+  /** 命令退出码（marker 检测命中且目标 shell 展开了 $? 时可获取，其他场景为 null） */
   readonly exitCode: number | null;
   /** 是否因异常被中断（保留字段，当前实现恒为 false） */
   readonly interrupted: boolean;
+  /**
+   * 完成路径：
+   *   - marker ：1级 marker 命中（确定性；输出截断于 marker，不含其后的提示符）
+   *   - prompt ：2级 提示符末尾锚定命中（输出末尾即提示符）
+   *   - timeout：超时熔断（采样/兜底）
+   * 调用方可据此区分输出末尾的语义：marker 完成时末尾无提示符，
+   * 不能凭输出末尾判断当前所处 shell 环境（如 U-Boot 标记自校正）。
+   */
+  readonly completedBy: "marker" | "prompt" | "timeout";
   /** 超时类型（取代单纯布尔 timedOut 的语义载体，none 表示未超时） */
   readonly timeoutKind: ExecTimeoutKind;
   /** 是否超时（= timeoutKind !== "none"，派生布尔，保持向后兼容） */
@@ -206,6 +251,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
   const clear: number = input.clear ?? 1;
   const minDelay: number = input.delay ?? DEFAULT_MIN_DELAY_MS;
   const stripEcho: boolean = input.stripEcho ?? true;
+  const markerStyle: MarkerStyle = input.markerStyle ?? "subshell";
 
   // ── 0. 常驻分类：据此选超时时长与超时动作（spec F1/F3/F4） ──
   const verdict: ResidentVerdict = classifyResident(
@@ -238,14 +284,22 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     );
   }
 
-  // ── 2. 发命令（拼接 marker） ──
-  // 子 shell 包裹原始命令 + echo marker:$?，命令结束后 marker 必然出现
-  //   (cmd); echo "MARKER:$?"
-  // 子 shell 保证 cmd 中的 | && ; 不影响外层 echo 的执行
+  // ── 2. 发命令（尾部拼 marker，包装风格按环境二选一） ──
+  // ; 为无条件顺序分隔，echo 必然执行，两种风格 marker 都生效：
+  //   subshell（POSIX shell）：(cmd); echo "MARKER:$?"
+  //     子 shell 兜住 exit/exec、尾部 & 等会破坏外层 echo 的命令，
+  //     并隔离 fd/PS1 等 shell 状态对会话的污染
+  //   plain（U-Boot hush）：cmd; echo "MARKER:$?"
+  //     hush 无子 shell / 后台任务语法，上述威胁不存在，去括号即等价
   const marker: string = generateMarker();
   const markerRegex: RegExp = buildMarkerRegex(marker);
-  const fullCommand: string = `(${input.command}); echo "${marker}:$?"`;
-  logger.info(`${input.logPrefix} command with marker: ${fullCommand}`);
+  const fullCommand: string =
+    markerStyle === "plain"
+      ? `${input.command}; echo "${marker}:$?"`
+      : `(${input.command}); echo "${marker}:$?"`;
+  logger.info(
+    `${input.logPrefix} command (${markerStyle} marker): ${fullCommand}`
+  );
   input.shell.write(fullCommand, clear);
 
   // ── 3. PTY 回显剥离：丢弃首行（提示符 + 命令回显） ──
@@ -294,21 +348,29 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     accumulated += input.shell.drain();
 
     // ── 1级：marker 检测（确定性，首选） ──
-    const markerMatch = accumulated.match(markerRegex);
+    const markerMatch: RegExpMatchArray | null =
+      accumulated.match(markerRegex);
     if (markerMatch) {
-      const exitCode: number = parseInt(markerMatch[1], 10);
+      // hush/POSIX shell 展开为数字；simple parser 原样输出字面量 "$?"（退出码未知）
+      const rawExit: string = markerMatch[1];
+      const exitCode: number | null =
+        rawExit === "$?" ? null : parseInt(rawExit, 10);
       const elapsedMs: number = Date.now() - startTime;
-      // 截断 marker 及其后的内容，只返回命令输出（marker 行本身也去掉）
-      const markerIdx = accumulated.indexOf(marker);
-      const cleanOutput = accumulated.substring(0, markerIdx).trimEnd();
+      // 截断 marker 及其后的内容，只返回命令输出（marker 行本身也去掉）。
+      // 用正则命中位置截断（而非 indexOf(marker)）：正则的 (?<!") 已排除
+      // 回显行里的字面 marker，命中位置必是真实输出中的 marker
+      const cleanOutput = accumulated
+        .substring(0, markerMatch.index ?? 0)
+        .trimEnd();
       logger.info(
-        `${input.logPrefix} marker detected, exitCode=${exitCode}, returning after ${elapsedMs}ms`
+        `${input.logPrefix} marker detected${exitCode === null ? " (literal $?, exit code unknown)" : `, exitCode=${exitCode}`}, returning after ${elapsedMs}ms`
       );
       return {
         output: cleanOutput,
         exitCode,
         interrupted: false,
         timeoutKind: "none",
+        completedBy: "marker",
         timedOut: false,
         elapsedMs,
       };
@@ -325,6 +387,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
         exitCode: null,
         interrupted: false,
         timeoutKind: "none",
+        completedBy: "prompt",
         timedOut: false,
         elapsedMs,
       };
@@ -345,6 +408,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
       exitCode: null,
       interrupted: false,
       timeoutKind: "sampling",
+      completedBy: "timeout",
       timedOut: true,
       elapsedMs: Date.now() - startTime,
     };
@@ -360,6 +424,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     exitCode: null,
     interrupted: false,
     timeoutKind: "fallback",
+    completedBy: "timeout",
     timedOut: true,
     elapsedMs: Date.now() - startTime,
   };
