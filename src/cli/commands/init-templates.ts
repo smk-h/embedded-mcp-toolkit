@@ -8,8 +8,10 @@
  * 用途：打包成单文件 exe 后没有磁盘模板目录，init 改为运行时把这些内嵌
  * 模板写出（见 init.ts 的 writeEmbeddedTemplates）。内容与仓库根目录下的
  * 同名模板文件逐字节一致（content 按源文件行逐行书写，join("") 还原，
- * 便于阅读与 diff）；.mcp.json / opencode.json / remote-start-mcp.bat 在
- * 写出时会适配 exe 入口（命令替换为 embedded-mcp-toolkit.exe）。
+ * 便于阅读与 diff）。例外：.opencode/opencode.json 在生成时剔除了
+ * instructions 字段（exe 模式不生成其指向的 .claude/CLAUDE.md）。
+ * .mcp.json / opencode.json / remote-start-mcp.bat 在写出时会适配 exe
+ * 入口（命令替换为 embedded-mcp-toolkit.exe）。
  */
 
 /** 内嵌模板条目：dest 为相对目标目录的写出路径，content 为文件内容 */
@@ -18,7 +20,7 @@ export interface EmbeddedTemplate {
   content: string;
 }
 
-/** 全部内嵌模板（生成时间戳：2026-08-18T01:24:38.080Z） */
+/** 全部内嵌模板（生成时间戳：2026-08-18T01:57:11.769Z） */
 export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
   {
     dest: ".mcp.json",
@@ -57,11 +59,13 @@ export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
     content: [
       "{\n",
       "  \"$schema\": \"https://opencode.ai/config.json\",\n",
-      "  \"instructions\": [\".claude/CLAUDE.md\"],\n",
       "  \"mcp\": {\n",
       "    \"embedded-board\": {\n",
       "      \"type\": \"local\",\n",
-      "      \"command\": [\"node\", \"./bin/embedded-mcp-toolkit-cli.js\"],\n",
+      "      \"command\": [\n",
+      "        \"node\",\n",
+      "        \"./bin/embedded-mcp-toolkit-cli.js\"\n",
+      "      ],\n",
       "      \"enabled\": true,\n",
       "      \"timeout\": 600000,\n",
       "      \"environment\": {\n",
@@ -76,8 +80,10 @@ export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
       "      \"type\": \"local\",\n",
       "      \"command\": [\n",
       "        \"ssh\",\n",
-      "        \"-i\", \"~/.ssh/id_file_utils_remote\",\n",
-      "        \"-o\", \"ServerAliveInterval=60\",\n",
+      "        \"-i\",\n",
+      "        \"~/.ssh/id_file_utils_remote\",\n",
+      "        \"-o\",\n",
+      "        \"ServerAliveInterval=60\",\n",
       "        \"sumu@192.168.164.128\",\n",
       "        \"PATH=$HOME/.npm-global/bin:$PATH file-utils-mcp-toolkit\"\n",
       "      ],\n",

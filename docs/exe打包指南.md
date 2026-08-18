@@ -66,6 +66,7 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 - 单文件 exe 使用内嵌模板（[src/cli/commands/init-templates.ts](../src/cli/commands/init-templates.ts)），由 [scripts/gen-init-templates.mjs](../scripts/gen-init-templates.mjs) 从仓库模板自动生成（`npm run gen:init-templates`），与仓库文件保持单一事实来源；
 - 内嵌清单刻意收窄：exe 模式下 `.claude/` 目录仅写出 `settings.local.json`，CLAUDE.md、skills/、*.tmp 启动脚本不内嵌（避免把仓库个人工作流文件扩散到目标目录），npm 模式的磁盘模板不受影响；
+- 内嵌的 `.opencode/opencode.json` 模板在生成时已剔除 `instructions` 字段（其指向的 `.claude/CLAUDE.md` 在 exe 模式下不再生成），npm 模式保留该字段；
 - init 运行时优先使用磁盘模板（npm / 源码模式），仅磁盘模板缺失（exe 场景）时才走内嵌写出，两套流程共用同一份 patch 逻辑（[src/cli/commands/init.ts](../src/cli/commands/init.ts)）。
 
 ### 3. 配置与日志

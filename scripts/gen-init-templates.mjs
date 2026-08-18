@@ -16,9 +16,12 @@
  *   修改任何模板文件（.mcp.json / .claude/** / .embedded/configs/** /
  *   remote-start-mcp.bat 等）或调整 init.ts 的拷贝任务清单后执行一次。
  *
- * 清单与 init.ts 的 taskGroups 对应，但 exe 模式的 claude 目录刻意只保留
- * settings.local.json：CLAUDE.md、skills/、*.tmp 启动脚本不内嵌（避免把仓库
- * 个人工作流文件扩散到目标目录），npm 模式的磁盘模板不受影响：
+ * 清单与 init.ts 的 taskGroups 对应，但 exe 模式刻意收窄（npm 模式的磁盘模板
+ * 不受影响）：
+ *   - claude 目录仅保留 settings.local.json：CLAUDE.md、skills/、*.tmp 启动
+ *     脚本不内嵌，避免把仓库个人工作流文件扩散到目标目录；
+ *   - opencode.json 内嵌时剔除 instructions 字段（其指向的 .claude/CLAUDE.md
+ *     在 exe 模式下不再生成）；
  *   - json     : .mcp.json / .opencode/opencode.json（exe 模式写出时另行 patch 命令）
  *   - files    : 逐文件复制的模板（claude 目录仅 settings.local.json）
  *   - patterns : 目录内通配匹配（.embedded/configs/*.txt）
@@ -51,7 +54,7 @@ const OUT_FILE = join(
 
 /** 模板清单（与 init.ts 的 taskGroups 对应；dest 即相对目标目录的写出路径） */
 const MANIFEST = {
-  /** JSON 类模板：内容原样内嵌，exe 模式 init 写出时 patch 命令与 DEVICE */
+  /** JSON 类模板：内嵌 opencode.json 时剔除 instructions；exe 模式 init 写出时 patch 命令与 DEVICE */
   json: [".mcp.json", ".opencode/opencode.json"],
   /** 单文件模板（claude 目录仅保留 settings.local.json，详见文件头注释） */
   files: [
@@ -117,7 +120,15 @@ function collect() {
       console.warn(`  ⚠ 模板不存在，跳过: ${item.dest}`);
       continue;
     }
-    collected.push({ dest: item.dest, content: readFileSync(src, "utf8") });
+    let content = readFileSync(src, "utf8");
+    // exe 模式不生成 .claude/CLAUDE.md，opencode.json 的 instructions 字段
+    // （指向该文件）在内嵌时直接剔除，init 运行时无需再处理
+    if (item.dest === ".opencode/opencode.json") {
+      const json = JSON.parse(content);
+      delete json.instructions;
+      content = JSON.stringify(json, null, 2) + "\n";
+    }
+    collected.push({ dest: item.dest, content });
   }
   return collected;
 }
@@ -155,8 +166,10 @@ function render(templates) {
  * 用途：打包成单文件 exe 后没有磁盘模板目录，init 改为运行时把这些内嵌
  * 模板写出（见 init.ts 的 writeEmbeddedTemplates）。内容与仓库根目录下的
  * 同名模板文件逐字节一致（content 按源文件行逐行书写，join("") 还原，
- * 便于阅读与 diff）；.mcp.json / opencode.json / remote-start-mcp.bat 在
- * 写出时会适配 exe 入口（命令替换为 embedded-mcp-toolkit.exe）。
+ * 便于阅读与 diff）。例外：.opencode/opencode.json 在生成时剔除了
+ * instructions 字段（exe 模式不生成其指向的 .claude/CLAUDE.md）。
+ * .mcp.json / opencode.json / remote-start-mcp.bat 在写出时会适配 exe
+ * 入口（命令替换为 embedded-mcp-toolkit.exe）。
  */
 
 /** 内嵌模板条目：dest 为相对目标目录的写出路径，content 为文件内容 */
