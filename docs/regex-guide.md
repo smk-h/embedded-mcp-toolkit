@@ -268,7 +268,22 @@ Hit\s+Ctrl\+u\s+to\s+stop\s+autoboot
 - `Hit Ctrl+u to stop autoboot` ✅
 - `Hit Ctrl+u  to  stop autoboot` ✅（多空格）
 
-【**注意**】本项目中，`autobootPrompts` 数组里**含 `Ctrl+u` 字样**的条目（正则源码里是 `Ctrl\+u`）会自动发送 `\x15`（即 Ctrl+u），其余条目发送换行。这是约定行为，无需额外配置。
+【**注意**】本项目中，`autobootPrompts` 数组里**含 `Ctrl+c` 字样**的条目（正则源码里是 `Ctrl\+c`）会自动发送 `\x03`（即 Ctrl+C）；**含 `Ctrl+u` 字样**的条目（`Ctrl\+u`）自动发送 `\x15`（即 Ctrl+u）；其余条目发送换行。这是约定行为，无需额外配置。
+
+#### 1.3 Rockchip 厂商 Ctrl+C 文案
+
+Rockchip 定制 U-Boot 的提示是 `Hit key to stop autoboot('CTRL+C')`，中断键为 Ctrl+C（`\x03`）。正则写法：
+
+```yaml
+autobootPrompts:
+  - "Hit\\s+key\\s+to\\s+stop\\s+autoboot.*CTRL\\+C"
+```
+
+最终匹配：
+
+- `Hit key to stop autoboot('CTRL+C'): 3` ✅
+
+【**注意**】条目里包含 `Ctrl+c` 字样（`Ctrl\+c`，大小写不敏感）时，工具会自动发送 `\x03`（Ctrl+C）中断 autoboot——这正是 Rockchip 板卡需要的按键。
 
 ### 2. 命令提示符（prompt 字段）
 
@@ -466,7 +481,7 @@ embedded-mcp-toolkit regex-verify board-example -v
 - 你的自定义提示是否成功合并到 autoboot 列表
 - prompt 联合正则有没有冗余（去重是否生效）
 - verifyKeys 是否包含了你期望的所有键
-- autoboot 条目的中断键（`\x15` 还是 `\n`）是否正确
+- autoboot 条目的中断键（`\x03` / `\x15` 还是 `\n`）是否正确
 
 ### 2. 浏览器开发者工具
 

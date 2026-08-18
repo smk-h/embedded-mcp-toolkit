@@ -1165,7 +1165,7 @@ export const serialEnterUbootConfig = {
  *   1. 从设备配置读 serial.uboot 构造 UbootDetector；配置非法立即返回错误
  *   2. 发送 reboot 重启设备
  *   3. 阶段 1 — autoboot 提示检测：命中配置的 autobootPrompts 即发对应中断键
- *      （含 "Ctrl+u" 字样发 \x15，否则发换行）
+ *      （含 "Ctrl+c" 字样发 \x03，含 "Ctrl+u" 字样发 \x15，否则发换行）
  *   4. 阶段 2 — 主层：中断后窗口内，命中命令提示符即成功返回（via prompt）；
  *      内核启动特征则立即失败
  *   5. 阶段 3 — 验证层：主层窗口耗尽，发 printenv 一次，命中环境变量键即成功
@@ -1229,7 +1229,8 @@ export async function serialEnterUbootHandler(args: {
         const key = detector.matchAutoboot(allOutput);
         if (key) {
           shell.sendRaw(key, 1);
-          interruptKey = key === "\x15" ? "Ctrl+u" : "Enter";
+          interruptKey =
+            key === "\x03" ? "Ctrl+C" : key === "\x15" ? "Ctrl+u" : "Enter";
           interruptedAt = Date.now();
           allOutput = ""; // 重置，接下来只收集 U-Boot 阶段输出
           logger.info(

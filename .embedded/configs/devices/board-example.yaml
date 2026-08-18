@@ -87,7 +87,7 @@ serial:
   # 不配置整个 uboot 子段时，三组规则回退到内置默认值（行为等价改动前实现）。
   uboot:
     # autoboot 提示正则数组，按数组顺序匹配；构造时自动带 i 标志（大小写不敏感）。
-    # 含 "Ctrl+u" 字样的条目 → 发送 \x15；其余 → 发送换行。
+    # 含 "Ctrl+c" 字样 → 发送 \x03；含 "Ctrl+u" → 发送 \x15；其余 → 发送换行。
     autobootPrompts:
       - "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot"
       - "Hit\\s+any\\s+key\\s+to\\s+stop\\s+autoboot"

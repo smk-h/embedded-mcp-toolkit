@@ -41,6 +41,7 @@ export interface RegexVerifyOptions {
 type SampleCategory =
   | "autoboot-anykey"
   | "autoboot-ctrlu"
+  | "autoboot-ctrlc"
   | "kernel"
   | "prompt"
   | "verify"
@@ -77,6 +78,11 @@ const STANDARD_SAMPLES: ReadonlyArray<{
     category: "autoboot",
     input: "Hit Ctrl+u to stop autoboot",
     expect: "autoboot-ctrlu",
+  },
+  {
+    category: "autoboot",
+    input: "Hit key to stop autoboot('CTRL+C'): 3",
+    expect: "autoboot-ctrlc",
   },
   {
     category: "autoboot",
@@ -205,7 +211,11 @@ export function runRegexVerify(opts: RegexVerifyOptions): void {
     console.log(`     autoboot 正则（按数组顺序匹配，命中即返回对应中断键）：`);
     state.autobootPatterns.forEach((p, i) => {
       const keyDesc =
-        p.interruptKey === "\x15" ? "\\x15 (Ctrl+u)" : "\\n (换行)";
+        p.interruptKey === "\x03"
+          ? "\\x03 (Ctrl+C)"
+          : p.interruptKey === "\x15"
+            ? "\\x15 (Ctrl+u)"
+            : "\\n (换行)";
       const flagsDesc = p.flags ? ` / flags: "${p.flags}"` : "";
       console.log(
         `       [${i}] /${p.source}/${flagsDesc}  →  中断键: ${keyDesc}`
@@ -339,8 +349,9 @@ function listDevices(devicesDir: string): string[] {
  * @returns 识别分类
  */
 function classify(detector: UbootDetector, input: string): SampleCategory {
-  if (detector.matchAutoboot(input) === "\n") return "autoboot-anykey";
+  if (detector.matchAutoboot(input) === "\x03") return "autoboot-ctrlc";
   if (detector.matchAutoboot(input) === "\x15") return "autoboot-ctrlu";
+  if (detector.matchAutoboot(input) === "\n") return "autoboot-anykey";
   if (detector.matchKernelBoot(input)) return "kernel";
   if (detector.matchPrompt(input)) return "prompt";
   if (detector.matchVerifyKey(input)) return "verify";
