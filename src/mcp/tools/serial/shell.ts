@@ -1338,6 +1338,231 @@ export async function serialEnterUbootHandler(args: {
   });
 }
 
+// ── serial_uboot_state ────────────────────────────────────────
+
+/**
+ * @brief serial_uboot_state 工具配置
+ *
+ * 查询 / 主动检测 / 强制设置会话的 U-Boot 标记。标记决定 serial_exec 在该
+ * 会话的 marker 包装风格（U-Boot 态用 plain 无子 shell，其余用 subshell）。
+ *
+ * @param session_id  由 serial_open 返回的会话 ID
+ * @param action      detect（默认）/ set / clear / status
+ */
+export const serialUbootStateConfig = {
+  description:
+    "Query, detect, or force-set the U-Boot mark of a serial session. " +
+    "The mark decides serial_exec's marker wrapping (U-Boot sessions use plain style without subshell). " +
+    "Actions: 'detect' (default) — classify the live environment from buffered tail evidence first " +
+    "(zero side effects); if inconclusive, send a bare Enter to redraw the prompt. " +
+    "Conclusive results sync the mark automatically. " +
+    "WARNING: do NOT detect while a command may still be running or waiting for interactive input (e.g. Y/N) — " +
+    "the probe Enter could answer it. " +
+    "'set'/'clear' — force the mark when auto-detection is out of sync; " +
+    "'status' — read the mark only, no device I/O.",
+  inputSchema: fromJsonSchema<{
+    session_id: string;
+    action?: "detect" | "set" | "clear" | "status";
+  }>({
+    type: "object",
+    properties: {
+      session_id: {
+        type: "string",
+        description: "The session ID returned by serial_open",
+      },
+      action: {
+        type: "string",
+        enum: ["detect", "set", "clear", "status"],
+        description:
+          "detect (default) = probe live environment and sync mark; set/clear = force mark; status = read mark only",
+      },
+    },
+    required: ["session_id"],
+  }),
+};
+
+/**
+ * @brief 环境分类结论
+ *
+ * detect 动作对一段累积输出的分类结果：
+ *   - uboot   ：末尾停靠在 U-Boot 提示符
+ *   - system  ：末尾停靠在非 U-Boot 的 shell 提示符（Linux/Android）
+ *   - login   ：末尾停靠在 login:/Password: 登录提示（系统侧，未登录）
+ *   - booting ：输出含内核启动特征（过渡态）
+ *   - autoboot：输出含 autoboot 倒计时提示（过渡态）
+ */
+type UbootEnvKind = "uboot" | "system" | "login" | "booting" | "autoboot";
+
+/** @brief 尾部锚定的登录提示符（getty login: / Password:），判定"当前停在登录提示" */
+const TAIL_LOGIN_PROMPT_RE = /(?:login|password):\s*$/i;
+
+/**
+ * @brief 对一段累积输出做环境分类
+ *
+ * 判定顺序即优先级：先看输出末尾的「当前停靠点」（U-Boot 提示符 → 登录提示 →
+ * 通用提示符），末尾无提示符再看「过程特征」（内核启动 → autoboot 倒计时），
+ * 均未命中返回 null（无结论）。
+ * @param detector      U-Boot 检测器（提示符/内核特征/autoboot）
+ * @param promptDetector 通用提示符检测器（默认正则，覆盖 Linux/Android）
+ * @param output        累积输出
+ * @returns 环境分类；无结论返回 null
+ */
+function classifyUbootEnv(
+  detector: UbootDetector,
+  promptDetector: PromptDetector,
+  output: string
+): UbootEnvKind | null {
+  if (output === "") {
+    return null;
+  }
+  if (detector.matchPrompt(output)) {
+    return "uboot";
+  }
+  if (TAIL_LOGIN_PROMPT_RE.test(output)) {
+    return "login";
+  }
+  if (promptDetector.detect(output)) {
+    return "system";
+  }
+  if (detector.matchKernelBoot(output)) {
+    return "booting";
+  }
+  if (detector.matchAutoboot(output)) {
+    return "autoboot";
+  }
+  return null;
+}
+
+/** @brief 标记状态文本 */
+function ubootMarkText(marked: boolean, note: string): string {
+  return `U-Boot mark: ${marked ? "set" : "clear"} (${note})`;
+}
+
+/**
+ * @brief serial_uboot_state 处理函数
+ *
+ * 四个动作：
+ *   - status：只读标记，无设备 I/O
+ *   - set / clear：强制覆盖标记（自动检测失同步时的权威手动入口）
+ *   - detect：分类当前真实环境并同步标记。两级策略：
+ *     1. 被动优先——缓冲区未消费内容的尾部就是设备最近输出，命中即零副作用判定
+ *     2. 主动兜底——发空回车让设备重绘提示符（500ms × 3 轮轮询）
+ *   结论性结果（uboot/system/login）同步标记；过渡态（booting/autoboot）与
+ *   无结论（unknown，可能命令仍在跑）不动标记。
+ *
+ * @param args 工具参数，包含 session_id 和可选 action
+ * @return MCP 响应，包含环境分类结论与标记状态
+ */
+export async function serialUbootStateHandler(args: {
+  session_id: string;
+  action?: "detect" | "set" | "clear" | "status";
+}) {
+  const action = args.action ?? "detect";
+  logger.info(
+    `[serial_uboot_state] session_id=${args.session_id} action=${action}`
+  );
+  const result = serialStore.getOrNotFound(args.session_id);
+  if (!result.ok) {
+    return result.response;
+  }
+  const shell = result.shell;
+
+  return serialStore.withLock(args.session_id, async () => {
+    const wasMarked = isUbootSession(args.session_id);
+
+    if (action === "status") {
+      return { content: [text(ubootMarkText(wasMarked, "queried, no device I/O"))] };
+    }
+    if (action === "set") {
+      markUbootSession(args.session_id);
+      logger.info(`[serial_uboot_state] mark forced: set`);
+      return {
+        content: [
+          text(
+            ubootMarkText(
+              true,
+              "forced set — serial_exec will use plain marker (no subshell)"
+            )
+          ),
+        ],
+      };
+    }
+    if (action === "clear") {
+      clearUbootSession(args.session_id);
+      logger.info(`[serial_uboot_state] mark forced: clear`);
+      return {
+        content: [
+          text(
+            ubootMarkText(
+              false,
+              "forced clear — serial_exec will use subshell marker wrapper"
+            )
+          ),
+        ],
+      };
+    }
+
+    // ── detect ──
+    let detector: UbootDetector;
+    try {
+      detector = new UbootDetector(getUbootConfig(shell.getDeviceName()));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`[serial_uboot_state] config error: ${msg}`);
+      return {
+        content: [
+          text(`Failed to build U-Boot detector (config error): ${msg}`),
+        ],
+      };
+    }
+    const promptDetector = new PromptDetector();
+
+    // 1. 被动：缓冲区未消费内容的尾部即设备最近输出
+    let kind: UbootEnvKind | null = classifyUbootEnv(
+      detector,
+      promptDetector,
+      shell.read(0)
+    );
+    let source = "buffer";
+    // 2. 主动：发空回车重绘提示符（可能回答挂起的交互提示，见工具描述警告）
+    if (!kind) {
+      shell.write("", 0);
+      source = "probe";
+      for (let i = 0; i < 3 && !kind; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        kind = classifyUbootEnv(detector, promptDetector, shell.read(0));
+      }
+    }
+
+    // 结论性结果同步标记；booting/autoboot 过渡态与 unknown 不动标记
+    let markChanged = false;
+    if (kind === "uboot") {
+      markUbootSession(args.session_id);
+      markChanged = !wasMarked;
+    } else if (kind === "system" || kind === "login") {
+      clearUbootSession(args.session_id);
+      markChanged = wasMarked;
+    }
+
+    const lines: string[] = [`Environment: ${kind ?? "unknown"} (via ${source})`];
+    if (!kind) {
+      lines.push(
+        "(no conclusive evidence within probe window — shell may be busy running a command)"
+      );
+    }
+    const nowMarked = isUbootSession(args.session_id);
+    lines.push(
+      markChanged
+        ? `U-Boot mark: ${nowMarked ? "set" : "clear"} (was ${wasMarked ? "set" : "clear"}, synced from detection)`
+        : `U-Boot mark: ${nowMarked ? "set" : "clear"} (unchanged)`
+    );
+    logger.info(
+      `[serial_uboot_state] detected=${kind ?? "unknown"} via=${source} mark=${nowMarked ? "set" : "clear"}`
+    );
+    return { content: [text(lines.join("\n"))] };
+  });
+}
+
 /** 注册 session（复用已有或新建），返回统一的 MCP 响应 */
 function registerSession(
   shell: SerialShell,

@@ -19,6 +19,8 @@ import {
   serialShellLoginHandler,
   serialEnterUbootConfig,
   serialEnterUbootHandler,
+  serialUbootStateConfig,
+  serialUbootStateHandler,
 } from "./shell.js";
 import {
   serialUploadConfig,
@@ -53,6 +55,11 @@ export const mcpSerialTools: ToolEntry[] = [
     "serial_enter_uboot",
     serialEnterUbootConfig,
     serialEnterUbootHandler
+  ),
+  mcpDefineTool(
+    "serial_uboot_state",
+    serialUbootStateConfig,
+    serialUbootStateHandler
   ),
   mcpDefineTool("serial_upload", serialUploadConfig, serialUploadHandler),
   mcpDefineTool("serial_download", serialDownloadConfig, serialDownloadHandler),
