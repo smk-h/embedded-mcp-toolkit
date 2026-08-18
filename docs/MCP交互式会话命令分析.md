@@ -62,15 +62,21 @@
 
 ### 3. 发送命令与 marker 注入
 
-将原始命令用子 shell 包裹并注入完成标记：
+在原始命令尾部注入完成标记，包装风格按目标环境二选一：
 
 ```sh
+# subshell（POSIX shell：Linux / Android，默认）
 (cmd); echo "___MCP_EXEC_DONE_<rand>___:$?"
+
+# plain（U-Boot hush，serial_enter_uboot 标记的会话自动切换）
+cmd; echo "___MCP_EXEC_DONE_<rand>___:$?"
 ```
 
-- 子 shell 保证 `cmd` 中的 `|`、`&&`、`;` 不影响外层 `echo` 执行
+- 子 shell 包装兜住 `exit`/`exec`、尾部 `&` 等会破坏外层 `echo` 的命令，并隔离 fd/PS1 等 shell 状态污染；hush 无子 shell / 后台任务语法，这些威胁不存在，去括号即为等价写法
+- `;` 为无条件顺序分隔，两种风格下 `echo` 都必然执行
 - marker 带随机后缀，避免命令输出中偶然出现相同字符串导致误判
-- marker 后跟退出码 `$?`，可附带命令退出状态
+- marker 后跟退出码 `$?`：POSIX shell 与 hush 都展开为数字；U-Boot 老 simple parser 不展开，按字面量 `"$?"` 匹配（此时退出码未知）
+- 检测正则带负向后行断言 `(?<!")`，排除 PTY 回显行（`echo "<marker>:$?"`）里的字面 marker，避免回显剥离失败时误判完成
 
 ### 4. PTY 回显剥离
 
@@ -88,17 +94,17 @@ PTY 模式下设备会原样回显输入的命令行（如 `rk3568:/ $ echo hi`�
 
 ### 1. 一级检测：marker 注入（确定性，首选）
 
-命令尾部拼接的 `echo "MARKER:$?"` 在命令结束后必然输出，因此**子串匹配到 marker 即命令结束**，这是最可靠的判定方式：
+命令尾部拼接的 `echo "MARKER:$?"` 在命令结束后必然输出，因此**匹配到 marker 即命令结束**，这是最可靠的判定方式：
 
-- 不受刷屏影响（子串匹配天然免疫后台日志干扰）
-- 附带退出码（从 `<marker>:<digits>` 中解析）
+- 不受刷屏影响（匹配天然免疫后台日志干扰）
+- 附带退出码（从 `<marker>:<digits>` 中解析；simple parser 输出字面量 `"$?"` 时退出码为 null）
 - 对常驻命令（marker 永不出现）天然不会误判
 
 命中后截断 marker 及其后内容，只返回命令输出。
 
 ### 2. 二级检测：提示符末尾锚定（快路径）
 
-当未注入 marker 或尚未出现 marker 时，用 `PromptDetector.detect()` 判定累积输出**是否以提示符结尾**。PTY 回显的命令行本身不以提示符结尾，只有命令执行完返回到交互态时才会出现提示符，因此「末尾锚定」可判定命令结束。
+当 marker 尚未出现时（hush 解析错误整行被拒、设备无 echo、常驻命令采样中），用 `PromptDetector.detect()` 判定累积输出**是否以提示符结尾**。PTY 回显的命令行本身不以提示符结尾，只有命令执行完返回到交互态时才会出现提示符，因此「末尾锚定」可判定命令结束。
 
 默认提示符正则锚定输出末尾，覆盖常见 prompt：
 
@@ -106,7 +112,7 @@ PTY 模式下设备会原样回显输入的命令行（如 `rk3568:/ $ echo hi`�
 - Linux：`$`、`#`、`>`
 - U-Boot：`=>`、`U-Boot>`
 
-提示符正则可通过设备配置 `promptPattern` 覆盖，以应对自定义 `PS1`。未命中时由超时熔断兜底。
+提示符正则可通过设备配置 `promptPattern` 覆盖，以应对自定义 `PS1`。serial 通道在 U-Boot 态（`serial_enter_uboot` 标记的会话）例外：二级检测固定用默认正则而非 `promptPattern`——`promptPattern` 是为 Linux PS1 配置的，在 U-Boot 态可能永不命中；默认正则同时覆盖 U-Boot 与常见 Linux/Android 提示符，离开 U-Boot 落到 Linux 提示符时也能尽快返回。未命中时由超时熔断兜底。
 
 ### 3. 超时熔断兜底
 
