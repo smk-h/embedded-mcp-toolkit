@@ -26,9 +26,15 @@
  *
  * 注意：
  *   - 需要已安装 Bun（npm i -g bun 或 https://bun.sh）；
- *   - npm 包自带全平台 prebuilds（win32-x64/linux-x64/...），拷贝与宿主平台无关，
- *     因此在 Linux CI 上执行 --win 也能产出正确的 win32-x64 绑定目录；
- *     只是产出的 .exe 无法在 Linux 上本机验证运行。
+ *   - exe 的串口原生绑定取自 @dimava/serialport-bindings-cpp（devDependency，
+ *     Bun 下修复 uv_default_loop 事件循环 bug，见 docs/exe打包指南.md 二.2.1）。
+ *     node 模式仍用官方 @serialport/bindings-cpp（全平台 prebuilds，不受影响）。
+ *     @dimava 分支只发布 win32-x64 预编译绑定，故本脚本默认目标即 Windows x64；
+ *     Linux CI 上执行 --win 也可产出正确的 win32-x64 绑定目录（只是 .exe 无法在
+ *     Linux 上本机验证运行）。其他打包目标会因找不到 prebuilds 而串口不可用。
+ *   - 打包时会把 @dimava 的 .node 覆盖到 node_modules 里官方 win32-x64 预编译
+ *     位置（patchWinPrebuildBindings）：exe 运行时 node-gyp-build 优先加载磁盘
+ *     node_modules 的绑定，不覆盖则 exe 会加载有 bug 的官方绑定（见该函数注释）。
  */
 
 import { execSync, spawnSync } from "child_process";
@@ -63,12 +69,17 @@ const DIST_DIR = join(PROJECT_ROOT, "exe-out");
 /** exe 文件名（与 native-bootstrap 的 nearby 判定约定的目录布局保持一致） */
 const EXE_NAME = "embedded-mcp-toolkit.exe";
 
-/** 串口原生绑定源目录（node_modules 内，npm 包自带全平台 prebuilds/） */
+/**
+ * 串口原生绑定源目录：@dimava/serialport-bindings-cpp（devDependency）的 prebuilds/。
+ * 该分支在 Bun 下修复了官方绑定 uv_default_loop 事件循环 bug（Windows 下串口 data
+ * 事件不触发），但只发布 win32-x64 预编译绑定。node 模式不受影响（官方
+ * @serialport/bindings-cpp 仍为全平台 prebuilds，见 package.json）。
+ */
 const BINDINGS_SRC = join(
   PROJECT_ROOT,
   "node_modules",
-  "@serialport",
-  "bindings-cpp",
+  "@dimava",
+  "serialport-bindings-cpp",
   "prebuilds"
 );
 
@@ -166,6 +177,48 @@ function copyNativeBindings(tuple) {
   console.log(
     `  ✔ 串口原生绑定: prebuilds/${tuple}/ 下 ${nodeFiles.length} 个 .node`
   );
+}
+
+/**
+ * @brief 用 @dimava 分支的 win32-x64 绑定覆盖官方 @serialport/bindings-cpp 预编译
+ *
+ * 背景：Bun 编译的 exe 在运行时通过 node-gyp-build（require.addon）解析串口原生
+ * 绑定，其解析顺序优先于 exe-out 旁的 nearby 兜底目录——若开发机 node_modules 里
+ * 存在官方 `@serialport/bindings-cpp` 的 win32-x64 预编译，exe 会直接加载磁盘上
+ * 官方（有 uv_default_loop bug 的）绑定，导致串口 data 事件不触发。
+ *
+ * 因此打包时把 @dimava 分支的 .node 覆盖到官方 win32-x64 预编译位置：
+ *   - exe 本地运行时（node_modules 在场）加载该位置 → 命中修复版绑定；
+ *   - 分发场景（无 node_modules）→ node-gyp-build 兜底到 exe-out/prebuilds，同样是
+ *     @dimava 绑定（copyNativeBindings 已拷贝）；
+ *   - node 模式用 @dimava 绑定同样正常（该分支只是改进了事件循环获取方式，
+ *     Node 下行为与官方一致）；
+ *   - 非 win32-x64 平台不受影响（官方预编译保留，node 模式全平台可用）。
+ *
+ * 幂等：每次 pack 都会重新覆盖；`npm ci` 重装后需重跑 pack:exe 才会再次生效。
+ */
+function patchWinPrebuildBindings(tuple) {
+  if (tuple !== "win32-x64") return;
+  const src = join(
+    BINDINGS_SRC,
+    "win32-x64",
+    "@dimava+serialport-bindings-cpp.node"
+  );
+  const dst = join(
+    PROJECT_ROOT,
+    "node_modules",
+    "@serialport",
+    "bindings-cpp",
+    "prebuilds",
+    "win32-x64",
+    "@serialport+bindings-cpp.node"
+  );
+  if (!existsSync(src) || !existsSync(dst)) {
+    console.warn("  ⚠ 未找到 @dimava/@serialport 的 win32-x64 预编译，跳过覆盖");
+    return;
+  }
+  cpSync(src, dst, { force: true });
+  console.log("  ✔ 已用 @dimava 分支覆盖官方 win32-x64 预编译（exe 加载修复版绑定）");
 }
 
 /**
@@ -269,9 +322,10 @@ function main() {
     process.exit(res.status ?? 1);
   }
 
-  // 5. 拷贝串口原生绑定
+  // 5. 拷贝串口原生绑定 + 覆盖 node_modules 里的 win32-x64 预编译
   console.log("\n⑤ 拷贝串口原生绑定...");
   copyNativeBindings(tuple);
+  patchWinPrebuildBindings(tuple);
 
   // 6. 汇总产物
   console.log("\n⑥ 产物清单：");

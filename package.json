@@ -58,6 +58,7 @@
     "@types/ssh2": "^1.15.0",
     "adm-zip": "^0.6.0",
     "ccstatusline": "^2.2.19",
+    "@dimava/serialport-bindings-cpp": "13.0.2",
     "esbuild": "^0.25.0",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
