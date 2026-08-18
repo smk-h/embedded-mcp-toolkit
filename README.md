@@ -4,14 +4,15 @@
 
 `embedded-mcp-toolkit` 是一个基于 MCP（Model Context Protocol）协议的嵌入式板卡远程管理工具，通过多个 MCP 工具提供嵌入式设备交互能力。支持以下功能：
 
-- **串口管理**：打开/关闭串口连接、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、进入 U-Boot 命令行
-- **SSH 管理**：打开/关闭 SSH 会话、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、查看远端设备活跃连接
+- **串口管理**：打开/关闭串口连接、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、进入 U-Boot 命令行、U-Boot 会话标记管理、经 ZMODEM 上传/下载文件
+- **SSH 管理**：打开/关闭 SSH 会话、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、查看远端设备活跃连接、远程编译（结构化错误/警告反馈）、经 SFTP 上传/下载文件
+- **ADB 管理**：一次性 adb 命令（`adb install` / `adb push` 等）、交互式 ADB shell 会话、设备列表扫描
 - **本地 PowerShell**：打开/关闭本地 PowerShell 会话、发送命令、读取输出，方便在对话中直接操作 Windows 环境
-- **Windows 系统扫描**：扫描可用 COM/LPT 端口、扫描本机网络适配器与 IP 配置
-- **基础信息**：查询 MCP 服务器版本、获取当前设备配置信息
-- **多会话管理**：同时保持多个串口、SSH、PowerShell 会话，支持独立读写
+- **Windows 系统扫描**：扫描可用 COM/LPT 端口、扫描本机网络适配器与 IP 配置、目标 IP 子网可达性分析
+- **基础信息**：查询 MCP 服务器版本、获取设备配置信息（单台或全部）、跨连接类型查询活跃会话元数据、查询 MCP 宿主端点
+- **多会话管理**：同时保持多个串口、SSH、ADB、PowerShell 会话，支持独立读写
 - **KeyProvider 密钥管理**：支持文件 IPC 和终端交互两种方式，自动处理 PSH 动态口令生成的密钥
-- **进程退出自动清理**：客户端断开或进程终止时自动释放所有串口、SSH、PowerShell 连接
+- **进程退出自动清理**：客户端断开或进程终止时自动释放所有串口、SSH、ADB、PowerShell 连接
 
 ### 2. 为什么需要它？
 
@@ -138,7 +139,11 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | 工具名称 | 功能说明 | 常用提示词 |
 |---|---|---|
 | `version_tool` | 获取 MCP 服务器版本和工具包信息 | `当前MCP版本是什么` |
-| `device_info_tool` | 获取当前设备配置（SSH、串口、KeyProvider） | `当前设备信息是什么` / `列出默认的设备` |
+| `device_info_tool` | 获取设备配置；不传 `device` 用默认设备，传 `all` 列出全部设备 | `当前设备信息是什么` / `列出所有可用设备` |
+| `session_info` | 查询活跃会话元数据（串口/SSH/ADB 通用）：按 `session_id`、按 `device` 或全部，返回连接信息与原始日志路径 | `当前有哪些会话` / `列出 board-a 的会话` |
+| `host_info` | 查询 MCP 宿主端点（username@ip），供跨机部署下构造 scp 命令；本地启动返回 local | `宿主端点是什么` |
+| `notify_demo_tool` | 演示 server 主动通知（logging 日志 / tool_list_changed 刷新工具列表） | — |
+| `greet_tool` | 演示用打招呼工具 | — |
 
 #### 5.2 串口工具
 
@@ -148,10 +153,10 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `serial_close` | 关闭串口会话，释放端口资源 | `关闭串口` / `退出串口 serial_1` |
 | `serial_write` | 向串口会话发送命令 | `向串口发送命令` / `在串口执行 whoami` |
 | `serial_read` | 读取串口会话的输出数据 | `读取串口输出` / `看看串口返回了什么` |
-| `serial_list` | 列出所有活跃的串口会话 | `列出串口会话` / `当前有哪些串口连接` |
-| `serial_exec` | 向串口发送命令并等待输出（write + delay + read） | `在串口执行 uname -a` / `让串口运行命令 xxx` |
+| `serial_exec` | 向串口发送命令并等待输出（write + delay + read，含常驻命令识别与双超时机制） | `在串口执行 uname -a` / `让串口运行命令 xxx` |
 | `serial_shell_login` | 一键串口登录，自动检测 PSH 状态并解锁 | `串口一键登录` / `串口登录 board-test` |
 | `serial_enter_uboot` | 重启设备并进入 U-Boot 命令行 | `重启进入 uboot` / `进入 U-Boot 命令行` |
+| `serial_uboot_state` | 查询/检测/强制设置串口会话的 U-Boot 标记（detect/set/clear/status），标记决定 exec 的 marker 包装风格 | `检测当前是否在 U-Boot` / `标记为 U-Boot 会话` |
 | `serial_send_ctrl` | 向串口会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `串口发 Ctrl+C` / `中断串口命令` |
 | `serial_upload` | 经 ZMODEM 上传二进制文件到设备（复用串口会话，不释放端口；设备需有 lrzsz） | `串口上传固件` / `把 update.bin 传到设备` |
 | `serial_download` | 经 ZMODEM 从设备下载二进制文件（复用串口会话，不释放端口；设备需有 lrzsz） | `串口拉取日志` / `下载 /tmp/dmesg.log` |
@@ -177,11 +182,13 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `ssh_shell_close` | 关闭 SSH shell 会话，释放连接 | `关闭 SSH` / `退出 ssh_1` |
 | `ssh_shell_write` | 向 SSH 会话发送命令 | `SSH 发送命令` / `在 ssh 里执行 ls` |
 | `ssh_shell_read` | 读取 SSH 会话的输出数据 | `读取 SSH 输出` / `SSH 返回了什么` |
-| `ssh_shell_list` | 列出所有活跃的 SSH 会话 | `列出 SSH 会话` / `当前有哪些 SSH 连接` |
-| `ssh_shell_exec` | 向 SSH 发送命令并等待输出（write + delay + read） | `SSH 执行 ifconfig` / `在 SSH 运行命令 xxx` |
+| `ssh_shell_exec` | 向 SSH 发送命令并等待输出（write + delay + read，含常驻命令识别与双超时机制） | `SSH 执行 ifconfig` / `在 SSH 运行命令 xxx` |
 | `ssh_shell_connection` | 检查远端板卡上活跃的 SSH 连接 | `查看设备上的 SSH 连接` / `谁连到了这台设备` |
 | `ssh_shell_login` | 一键 SSH 登录，自动检测 PSH 状态并解锁 | `SSH 一键登录` / `SSH 登录 board-test` |
 | `ssh_shell_send_ctrl` | 向 SSH 会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `SSH 发 Ctrl+C` / `中断 SSH 命令` |
+| `ssh_build` | 在远端执行编译命令，等待完成并结构化分类错误/警告/信息（每个会话同一时刻只跑一个编译） | `远程编译内核` / `make -j8 编译并分析结果` |
+| `ssh_sftp_upload` | 复用 SSH 会话经 SFTP 上传本地文件到远端（流式传输，适合大文件） | `上传文件到板卡` / `把 build.sh 传到 /tmp` |
+| `ssh_sftp_download` | 复用 SSH 会话经 SFTP 从远端下载文件到本地 | `从板卡下载文件` / `拉取 /var/log/dmesg` |
 
 #### 5.5 Windows 工具
 
@@ -189,11 +196,11 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 |---|---|---|
 | `port_scan_tool` | 扫描 Windows 设备管理器中的 COM / LPT 端口 | `扫描可用串口` / `查看有哪些 COM 口` |
 | `network_scan_tool` | 扫描 Windows 网络适配器和 IP 配置 | `扫描网络适配器` / `查看本机网卡信息` |
+| `subnet_check_tool` | 分析目标 IP 的子网信息（网络地址/广播地址/可用范围/CIDR），判断是否与本机同子网可达 | `检查 192.168.16.1 是否可达` / `子网分析` |
 | `power_shell_open` | 打开本地 PowerShell 交互式会话 | `打开 PowerShell` / `启动本地 PowerShell` |
 | `power_shell_close` | 关闭 PowerShell 会话并终止进程 | `关闭 PowerShell` / `退出 power_1` |
 | `power_shell_write` | 向 PowerShell 会话发送命令 | `PowerShell 执行命令` / `执行 ps 命令 xxx` |
 | `power_shell_read` | 读取 PowerShell 会话的输出数据 | `读取 PowerShell 输出` / `PowerShell 返回了什么` |
-| `power_shell_list` | 列出所有活跃的 PowerShell 会话 | `列出 PowerShell 会话` / `当前有哪些 ps 会话` |
 | `power_shell_exec` | 向 PowerShell 发送命令并等待输出（write + delay + read） | `PowerShell 执行 ipconfig` / `用 ps 运行 xxx` |
 
 #### <a id="section_exec_timeout">5.6 重要机制：exec 的常驻命令识别与双超时策略</a>
@@ -271,9 +278,9 @@ execTimeout:
       "mcp__embedded-board__serial_exec",
       "mcp__embedded-board__version_tool",
       "mcp__embedded-board__ssh_shell_exec",
-      "mcp__embedded-board__serial_list",
+      "mcp__embedded-board__session_info",
       "mcp__embedded-board__serial_read",
-      "mcp__embedded-board__ssh_shell_list"
+      "mcp__embedded-board__ssh_shell_read"
     ]
   },
   "enabledMcpjsonServers": [
@@ -571,10 +578,12 @@ claude
   1 server
 
     Project MCPs (D:\Temp\aaa\.mcp.json)
-  ❯ embedded-board · ✔ connected · 18 tools
+  ❯ embedded-board · ✔ connected · 44 tools
 ```
 
 `embedded-board` 前面的 `✔ connected` 即表示连接成功。
+
+> 旧版每个通道各有一个 `serial_list` / `ssh_shell_list` / `power_shell_list` 列会话工具，现已统一合并为 `session_info`（跨连接类型查询，见 [5.1 基础工具](#51-基础工具)）。
 
 
 ### 2. 常用提示词
@@ -582,6 +591,10 @@ claude
 ```powershell
 # 获取当前设备信息
 ❯ 当前设备信息是什么
+
+# 列出/查看会话（跨串口、SSH、ADB）
+❯ 当前有哪些会话
+❯ 列出 board-a 的所有会话
 
 # 登录设备，没有xxx的话是会用默认设备
 ❯ ssh一键登录xxx设备
