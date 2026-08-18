@@ -271,6 +271,17 @@ export function runInit(opts: InitOptions): void {
   const __dirname = dirname(__filename);
   const PKG_ROOT = resolve(__dirname, "..", "..", "..");
 
+  // 单文件 exe 模式守卫：exe 内代码位于 Bun 虚拟文件系统（$bunfs），PKG_ROOT
+  // 及模板文件不在磁盘上，基于磁盘拷贝的 init 流程不可用。给出明确提示而非裸栈。
+  if (!existsSync(PKG_ROOT)) {
+    console.error(
+      "[init] 单文件 exe 模式暂不支持 init：模板文件不在磁盘上。\n" +
+        "请先用 npm 安装方式执行一次初始化（npx embedded-mcp-toolkit init）生成配置目录，\n" +
+        "之后即可在该目录直接使用 exe 运行 MCP 服务器。"
+    );
+    process.exit(1);
+  }
+
   /*
    * 根据实际执行命令判断本地安装 vs 全局安装
    * 判断依据：process.argv[1]（node 实际执行的 .js 路径）是否以目标目录的 node_modules 开头

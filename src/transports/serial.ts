@@ -1,4 +1,4 @@
-import { SerialPort } from "serialport";
+import type { SerialPort } from "serialport";
 
 import { interactiveLoop } from "./loop.js";
 import { BaseShell } from "./base-shell.js";
@@ -6,6 +6,10 @@ import { sanitize } from "../utils/terminal-sanitizer.js";
 import { PshState, PshStateMachine } from "../services/psh.js";
 import { KeyProvider } from "../services/key-provider.js";
 import { getKeyProviderConfig } from "../shared/config.js";
+import {
+  ensureSerialNativeBindings,
+  serialBindingsMissingMessage,
+} from "../shared/native-bootstrap.js";
 import {
   UserLoginStatus,
   UserLoginResult,
@@ -156,6 +160,14 @@ export class SerialShell extends BaseShell {
    * https://serialport.io/docs/guide-usage
    */
   protected async acquire(): Promise<void> {
+    // 懒加载 serialport：先确认原生绑定（.node）可被 node-gyp-build 找到，
+    // 再动态 import（serialport 模块顶层会立即加载原生绑定）。这样：
+    //   - npm/源码模式行为不变（首次使用串口时才加载，而非进程启动时）；
+    //   - 单文件 exe 模式下绑定缺失时能给出明确的中文指引
+    if (!ensureSerialNativeBindings()) {
+      throw new Error(serialBindingsMissingMessage());
+    }
+    const { SerialPort } = await import("serialport");
     const serialPort = new SerialPort({
       path: this.#config.port,
       baudRate: this.#config.baudRate ?? 115200,

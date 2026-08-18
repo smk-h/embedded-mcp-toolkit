@@ -1,17 +1,9 @@
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { readFileSync } from "fs";
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
+import { pkg } from "../../../shared/package-info.js";
 
-// ── 读取 package.json 获取版本信息 ──
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const pkg = JSON.parse(
-  readFileSync(resolve(__dirname, "../../../../package.json"), "utf-8")
-);
+// ── 版本信息来自 package-info（npm/源码模式读磁盘，exe 模式用注入字面量） ──
 
 // ── 声明 ──
 

@@ -28,6 +28,8 @@
     "pack:tgz": "npm pack",
     "pack:list": "tar -tzf smai-kit-embedded-mcp-toolkit-%npm_package_version%.tgz",
     "pack:project": "node scripts/pack-project.mjs",
+    "pack:exe": "node scripts/build-exe.mjs",
+    "pack:exe:win": "node scripts/build-exe.mjs --win",
     "ccstatusline": "ccstatusline setup --config .claude/ccstatusline-settings.json",
     "win:node-list": "tasklist | findstr node.exe",
     "win:node-kill": "taskkill /f /im node.exe",

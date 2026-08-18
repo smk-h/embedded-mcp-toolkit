@@ -39,6 +39,9 @@ log/
 *embedded-mcp-toolkit*.tgz
 *embedded-mcp-toolkit*.zip
 
+# ---- exe 单文件打包产物（仅本地/CI 生成，不随 npm 包发布）----
+exe-out
+
 # ---- SSH 依赖与本地密钥（不随包发布）----
 .embedded/ssh
 

@@ -10,6 +10,9 @@ out
 *.o
 *.out
 
+# ---- exe 单文件打包产物（scripts/build-exe.mjs，不提交）----
+exe-out
+
 # ---- 环境变量与密钥（含认证信息，禁止提交）----
 # 注：.env 不带前导斜杠，会匹配所有层级的 .env 文件（含 .claude/.env）
 .env

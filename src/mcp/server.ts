@@ -2,14 +2,12 @@
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { readFileSync } from "fs";
 import * as os from "os";
 import { resolveHostEndpoint } from "./shared/host-endpoint.js";
 import { buildRoutingInstructions } from "./shared/build-routing.js";
-import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
 
 import { logger } from "../shared/logger.js";
+import { pkg } from "../shared/package-info.js";
 import { mcpBasicTools } from "./tools/basic/index.js";
 import { mcpSshTools } from "./tools/ssh/index.js";
 import { mcpSerialTools } from "./tools/serial/index.js";
@@ -17,12 +15,7 @@ import { mcpWinTools } from "./tools/win/index.js";
 import { mcpAdbTools } from "./tools/adb/index.js";
 
 // ── package info ───────────────────────────────────────────
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const pkg = JSON.parse(
-  readFileSync(resolve(__dirname, "../../package.json"), "utf-8")
-);
+// 经由 package-info 统一读取：npm/源码模式读磁盘，单文件 exe 模式用打包期注入的字面量
 
 // ── server 实例 ────────────────────────────────────────────
 
@@ -191,7 +184,12 @@ export async function startMcpServer() {
   // 缺失表示非 ssh 会话启动（如本地直启）；显式记录 "(unset)" 以区分"未设置"与"空值"。
   const sshEnv = {
     // 登录用户名：优先 os.userInfo()（跨平台可靠），回退到环境变量
-    USER: os.userInfo().username || process.env.USERNAME || process.env.USER || process.env.LOGNAME || "(unknown)",
+    USER:
+      os.userInfo().username ||
+      process.env.USERNAME ||
+      process.env.USER ||
+      process.env.LOGNAME ||
+      "(unknown)",
     SSH_CONNECTION: process.env.SSH_CONNECTION ?? "(unset)",
     SSH_CLIENT: process.env.SSH_CLIENT ?? "(unset)",
     SSH_TTY: process.env.SSH_TTY ?? "(unset)",
@@ -202,7 +200,3 @@ export async function startMcpServer() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
-
-
-
-
