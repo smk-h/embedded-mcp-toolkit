@@ -322,7 +322,6 @@ function formatAbortedSummary(
  * @param session_id    由 serial_open 返回的会话 ID
  * @param local_path    本地源文件路径
  * @param remote_name   远端文件名（默认取 local_path basename）
- * @param remote_dir    远端目录提示（仅提示用，rz 默认写当前目录）
  * @param recv_cmd      设备端接收命令（默认 "rz"，可传 "rz -e" 等）
  * @param idle_timeout  空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15）
  * @param timeout       总时长超时秒数，兜底防无限挂起（默认 300）
@@ -331,6 +330,11 @@ export const serialUploadConfig = {
   description:
     "Upload a binary file to the device over ZMODEM via an existing serial session. " +
     "The device must have lrzsz installed (rz command). " +
+    "IMPORTANT: this tool triggers the device-side rz by itself (via recv_cmd); " +
+    "do NOT manually run rz (or serial_exec/write rz) on the session beforehand — " +
+    "a pre-started rz enters its own waiting state that breaks the tool's ZMODEM handshake. " +
+    "Just call this tool and pass recv_cmd when a working directory change is needed " +
+    '(e.g. "cd /home && rz"). ' +
     "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
     "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
     "timeout caps total duration and reports a suggested value if still progressing.",
@@ -338,7 +342,6 @@ export const serialUploadConfig = {
     session_id: string;
     local_path: string;
     remote_name?: string;
-    remote_dir?: string;
     recv_cmd?: string;
     idle_timeout?: number;
     timeout?: number;
@@ -358,15 +361,13 @@ export const serialUploadConfig = {
         description:
           "Remote file name (default: basename of local_path). The device rz will name the file accordingly.",
       },
-      remote_dir: {
-        type: "string",
-        description:
-          "Remote directory hint (the rz command writes to its current dir by default; cd before rz if needed)",
-      },
       recv_cmd: {
         type: "string",
         description:
-          "Device receive command (default: 'rz'). e.g. 'rz -e' to escape control chars",
+          "Device receive command (default: 'rz'). The tool runs this command itself on the device " +
+          "after disabling flow control — do NOT start rz manually beforehand. " +
+          'Use it for directory changes or options, e.g. "cd /home && rz -e" to receive into /home, ' +
+          "or 'rz -e' to escape control chars",
       },
       idle_timeout: {
         type: "number",
@@ -404,7 +405,6 @@ export async function serialUploadHandler(args: {
   session_id: string;
   local_path: string;
   remote_name?: string;
-  remote_dir?: string;
   recv_cmd?: string;
   idle_timeout?: number;
   timeout?: number;
@@ -528,6 +528,15 @@ export const serialDownloadConfig = {
   description:
     "Download a binary file from the device over ZMODEM via an existing serial session. " +
     "The device must have lrzsz installed (sz command). " +
+    "IMPORTANT: this tool triggers the device-side sz by itself (via send_cmd); " +
+    "do NOT manually run sz (or serial_exec/write sz) on the session beforehand — " +
+    "a pre-started sz enters its own sending state that breaks the tool's ZMODEM handshake. " +
+    "Just call this tool and pass send_cmd when a directory change is needed " +
+    '(e.g. "cd /home && sz {remote}"). ' +
+    "remote_path resolves on the device relative to the shell's current working directory — " +
+    "prefer an absolute path, or combine send_cmd with a cd to pin the directory. " +
+    "If the remote file does not exist or is unreadable, sz errors out and the transfer fails " +
+    "(a partial local file, if any, is removed on failure). " +
     "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
     "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
     "timeout caps total duration and reports a suggested value if still progressing.",
@@ -547,7 +556,11 @@ export const serialDownloadConfig = {
       },
       remote_path: {
         type: "string",
-        description: "Remote source file path on the device",
+        description:
+          "Remote source file path on the device. Resolved relative to the shell's current working " +
+          "directory — prefer an absolute path, or pin the directory via send_cmd (e.g. " +
+          '"cd /home && sz {remote}"). The file must exist and be readable; otherwise sz errors ' +
+          "out and the transfer fails.",
       },
       local_path: {
         type: "string",
@@ -556,7 +569,9 @@ export const serialDownloadConfig = {
       send_cmd: {
         type: "string",
         description:
-          "Device send command template (default: 'sz {remote}'). {remote} is replaced by remote_path",
+          "Device send command template (default: 'sz {remote}'). {remote} is replaced by remote_path. " +
+          "The tool runs this command itself on the device — do NOT start sz manually beforehand. " +
+          'Use it for directory changes, e.g. "cd /home && sz {remote}"',
       },
       idle_timeout: {
         type: "number",
