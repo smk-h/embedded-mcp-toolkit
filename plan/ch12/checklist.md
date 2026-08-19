@@ -4,7 +4,7 @@
 
 ## 实现完整性
 
-- [ ] **[F1] serial_upload 工具已注册且可被调用**（验证：启动 MCP server，工具列表中出现 `serial_upload`，schema 含 session_id/local_path 必填项及 remote_name/remote_dir/recv_cmd/timeout 选填项）
+- [ ] **[F1] serial_upload 工具已注册且可被调用**（验证：启动 MCP server，工具列表中出现 `serial_upload`，schema 含 session_id/local_path 必填项及 remote_name/recv_cmd/timeout 选填项）
 - [ ] **[F2] serial_download 工具已注册且可被调用**（验证：工具列表中出现 `serial_download`，schema 含 session_id/remote_path/local_path 必填项及 send_cmd/timeout 选填项）
 - [ ] **[F3] 字节旁路通路存在且默认不启用**（验证：读 `src/transports/serial.ts`，存在 `writeBuffer(buf: Buffer)` 和 `attachRawReceiver(cb)` 方法；`#rawReceiver` 默认为 null，data 监听在 null 时只走 `appendData` 原路径）
 - [ ] **[F4] 超时参数生效**（验证：传 `timeout=2` 上传大文件，2 秒内返回失败结果；不传 timeout 时默认 300 秒生效）

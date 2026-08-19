@@ -916,7 +916,6 @@ export async function serialUploadHandler(args: {
   session_id: string;
   local_path: string;
   remote_name?: string;
-  remote_dir?: string;
   recv_cmd?: string;
   idle_timeout?: number;
   timeout?: number;
@@ -932,7 +931,6 @@ export async function serialUploadHandler(args: {
 - `session_id`：由 `serial_open` 返回的会话 ID
 - `local_path`：本地源文件路径
 - `remote_name`：远端文件名（默认取 `local_path` 的 basename）
-- `remote_dir`：远端目录提示（仅提示用，rz 默认写当前目录）
 - `recv_cmd`：设备端接收命令（默认 `"rz"`，可传 `"rz -e"` 等）
 - `idle_timeout`：空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15，最小 3）
 - `timeout`：总时长超时秒数，兜底防无限挂起（默认 300）

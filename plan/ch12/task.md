@@ -139,7 +139,7 @@
 
 **步骤：**
 1. 文件顶部 import：`fromJsonSchema`、`text`、`logger`、`serialStore`（`./sessions.js`）、`zmodemSend`/`zmodemReceive`（`../../../services/zmodem/index.js`）、`formatTransferSummary`（`../../../shared/transfer-result.js`）、`stat`（`fs/promises`）、`basename`（`path`）
-2. 定义 `serialUploadConfig`（description + inputSchema，字段：session_id 必填、local_path 必填、remote_name 选填、remote_dir 选填、recv_cmd 选填、timeout 选填）
+2. 定义 `serialUploadConfig`（description + inputSchema，字段：session_id 必填、local_path 必填、remote_name 选填、recv_cmd 选填、timeout 选填）
 3. 实现 `serialUploadHandler`：
    - `logger.info` 记录入参
    - `serialStore.getOrNotFound(session_id)`，未命中返回 not-found 响应

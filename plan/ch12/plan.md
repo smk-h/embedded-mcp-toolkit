@@ -315,7 +315,6 @@ export const serialUploadConfig = {
     session_id: string;
     local_path: string;
     remote_name?: string;
-    remote_dir?: string;
     recv_cmd?: string;
     timeout?: number;
   }>({
@@ -324,7 +323,6 @@ export const serialUploadConfig = {
       session_id: { type: "string", description: "The session ID returned by serial_open" },
       local_path: { type: "string", description: "Local source file path" },
       remote_name: { type: "string", description: "Remote file name (default: basename of local_path)" },
-      remote_dir: { type: "string", description: "Remote directory hint (default: current dir of rz)" },
       recv_cmd: { type: "string", description: "Device receive command (default: 'rz'). e.g. 'rz -e'" },
       timeout: { type: "number", description: "Timeout in seconds (default: 300)" },
     },
