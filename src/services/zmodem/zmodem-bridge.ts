@@ -594,6 +594,17 @@ class RetransmitController {
   /** 主循环发送某子包前调用，缓存该子包（按起始 offset 索引） */
   record(offset: number, data: number[]): void {
     this.pieces.set(offset, data);
+    // 顺带清理已被 retransmitEnd 覆盖的旧块：这些块已被对端确认收到，
+    // 不再可能收到针对它们的 ZRPOS，驻留只会让内存随文件大小线性膨胀
+    // （10MB 文件 = 2 万个条目直到传输结束）。正常路径 retransmitEnd 恒
+    // 等于发送水位，此循环无操作；仅在 ZRPOS 回退后重新发送时批量回收。
+    if (this.retransmitEnd > 0) {
+      for (const pieceOffset of this.pieces.keys()) {
+        if (pieceOffset < this.retransmitEnd) {
+          this.pieces.delete(pieceOffset);
+        }
+      }
+    }
   }
 
   /** 收到 ZRPOS：复位 ZDATA 发送态并从 offset 起重发缓存块 */
@@ -601,6 +612,13 @@ class RetransmitController {
     logger.info(
       `[zmodem] received ZRPOS offset=${offset}, retransmitting ${this.pieces.size} cached pieces`
     );
+    // 丢弃 offset 之前的缓存块：对端已确认收到，后续 ZRPOS 水位只会单调
+    // 前移（ZMODEM 续传语义），这些块不再需要
+    for (const pieceOffset of this.pieces.keys()) {
+      if (pieceOffset < offset) {
+        this.pieces.delete(pieceOffset);
+      }
+    }
     // _sent_ZDATA 为 true 时 _send_file_part 不再发 ZDATA 头，续传会因缺头
     // 无法对齐；复位为 false + _file_offset=offset，让下一次 send 重新发
     // ZDATA(offset) 头，对端据此定位续传起点。
