@@ -34,6 +34,7 @@ import { readFile, stat, unlink } from "node:fs/promises";
 import Zmodem, {
   type ZmodemSession,
   type SendSession,
+  type ReceiveSession,
   type Offer as ReceiveOffer,
   type Octets,
   type ZmodemHeader,
@@ -92,6 +93,16 @@ const UPLOAD_CHUNK_SIZE = 512;
  *  避免连续大块突发挤爆 Windows 串口驱动/设备 UART RX 缓冲。
  *  参照 MobaXterm 的做法：小包 + 节奏化发送，而不是一次写完一大块。 */
 const SEND_THROTTLE_MS = 50;
+
+/**
+ * @brief 下载方向单次传输允许的最大 CRC 失败重试次数
+ *
+ * 裸串口上内核日志/噪声污染子包导致 CRC 失败时，桥接层主动发 ZRPOS 请求
+ * 对端 sz 续传（见 zmodemReceive 的 CRC 恢复逻辑）。若链路持续污染，无限
+ * 重试只会空转，故设上限：超限后放弃恢复、交由上层 idle/整体超时兜底。
+ * 参考 zmodem.js 内部注释（"say, 10 ZRPOS headers then send ZABORT"）。
+ */
+const MAX_CRC_RETRIES = 10;
 
 /** @brief 等待设备端 rz/sz 发出首帧（ZRINIT/ZRQINIT）的轮询间隔 */
 const HANDSHAKE_POLL_MS = 100;
@@ -413,6 +424,9 @@ async function abortDeviceSession(shell: SerialShell): Promise<void> {
  * @param startCmd   可选：挂完字节旁路后立即发送的设备端命令（如 "rz" / "sz xxx"）。
  *                   必须在 rawReceiver 挂载后发，否则设备回的 ZRINIT/ZRQINIT 首帧
  *                   会进文本态 OutputBuffer 而非预缓冲区，导致 parse 失败。
+ * @param onConsumeError 可选：session.consume 抛错时的钩子。返回 true 表示已处理
+ *                   （如下载方向对 CRC 失败发 ZRPOS 续传），返回 false/undefined
+ *                   则沿用默认行为（吞掉，避免逃出串口 data 事件导致进程崩溃）。
  * @returns 建立成功的会话对象 + 卸载旁路的 detach 句柄
  * @throws 超时或建链失败时抛出
  */
@@ -420,7 +434,8 @@ async function establishSession(
   shell: SerialShell,
   onOutput: (octets: Octets) => void,
   timeoutMs: number,
-  startCmd?: string
+  startCmd?: string,
+  onConsumeError?: (err: unknown, sess: ZmodemSession) => boolean
 ): Promise<{ session: ZmodemSession; detach: () => void }> {
   // 预缓冲区：在 parse 出会话前累积接收字节
   const preBuffer: number[] = [];
@@ -431,10 +446,14 @@ async function establishSession(
     if (session) {
       // abort 后 session.consume 会抛 already_aborted；该回调由串口 data 事件触发，
       // 抛错会逃出事件循环导致进程崩溃。吞掉：abort 已让主流程走 catch/finally。
+      // 下载方向可注入 onConsumeError 钩子，在 CRC 失败时主动发 ZRPOS 续传。
       try {
         session.consume(Array.from(buf.values()));
-      } catch {
-        /* session 已 abort，忽略后续到达的字节 */
+      } catch (err) {
+        const handled = onConsumeError ? onConsumeError(err, session) : false;
+        if (!handled) {
+          /* 不可恢复错误 / 会话已 abort，忽略后续到达的字节 */
+        }
       }
     } else {
       for (const b of buf.values()) preBuffer.push(b);
@@ -841,7 +860,7 @@ export async function zmodemReceive(
 ): Promise<TransferResult> {
   const start = Date.now();
 
-  let session: ZmodemSession | null = null;
+  let session: ReceiveSession | null = null;
   let detach: (() => void) | null = null;
   // session_end 的 Promise，用于 await 整个接收完成
   let resolveEnd: () => void;
@@ -865,6 +884,39 @@ export async function zmodemReceive(
     timer: null,
   };
 
+  // ── 下载 CRC 失败恢复 ──────────────────────────────────────
+  // zmodem.js 在子包 CRC 校验失败时直接抛 Zmodem.Error("crc")，且不主动发
+  // ZRPOS（它假设可靠传输）。裸串口有内核日志/噪声污染子包，触发该错误后
+  // 会话进入死态（_input_buffer 已前进、子包处理器仍挂着），对端 sz 等不到
+  // 确认只能超时。恢复策略（与上传方向 RetransmitController 对称）：
+  //   捕获 CRC 错误 → 发 ZRPOS(_file_offset) 请 sz 从上次正确位置续传 →
+  //   清空输入缓冲、还原 accept 阶段保存的 ZDATA 处理器，重新同步协议态机。
+  let acceptHandler: Record<string, (hdr: ZmodemHeader) => void> | null = null;
+  let crcRetries = 0;
+  const recoverFromCrcError = (err: unknown, sess: ZmodemSession): boolean => {
+    // 只处理子包 CRC 校验错误；其余错误沿用默认吞掉行为
+    if (!(err instanceof Zmodem.Error)) return false;
+    if ((err as { type?: string }).type !== "crc") return false;
+    // 仅数据阶段（已 accept 且子包处理器挂着）才恢复；握手/文件间阶段不动
+    const rs = sess as ReceiveSession;
+    if (!acceptHandler || !rs._accepted_offer || !rs._next_subpacket_handler) {
+      return false;
+    }
+    if (crcRetries >= MAX_CRC_RETRIES) return false;
+    crcRetries += 1;
+    logger.warn(
+      `[zmodem] subpacket CRC error during receive (retry ${crcRetries}/${MAX_CRC_RETRIES}), sending ZRPOS(${rs._file_offset}) to request retransmission`
+    );
+    // 请对端从上次正确接收位置续传
+    rs._send_header("ZRPOS", rs._file_offset);
+    // 复位协议态机：丢弃被污染缓冲，还原 accept 的 ZDATA 处理器，
+    // 等待对端重发 ZDATA(offset) 头后从 _file_offset 继续
+    rs._input_buffer = [];
+    rs._next_subpacket_handler = null;
+    rs._next_header_handler = acceptHandler;
+    return true;
+  };
+
   try {
     // 建链：establishSession 挂完字节旁路后发出 sendCmd（sz xxx），
     // 确保设备回的 ZRQINIT 进 preBuffer 而非文本态 OutputBuffer
@@ -872,9 +924,10 @@ export async function zmodemReceive(
       shell,
       (octets: Octets) => shell.rawWrite(Buffer.from(octets)),
       HANDSHAKE_TIMEOUT_MS,
-      sendCmd
+      sendCmd,
+      recoverFromCrcError
     );
-    session = established.session;
+    session = established.session as ReceiveSession;
     detach = established.detach;
 
     // 注意：此处不再立即启动心跳（门控心跳）。握手期（session.start→offer）无心跳保护，
@@ -908,6 +961,10 @@ export async function zmodemReceive(
           opts?.onProgress?.({ bytes: received, total: offerSize });
         },
       });
+      // 保存 accept 阶段设置的 ZDATA 头处理器（{ ZDATA: on_ZDATA } 闭包）。
+      // xfer.accept 同步调用会话 _accept 设置 _next_header_handler，此后遇到
+      // 子包 CRC 失败时用它还原协议态机、重新等待对端 ZDATA 头续传。
+      acceptHandler = session?._next_header_handler ?? null;
     });
 
     // 中止信号监听：超时/外部 abort 时让 zmodem.js 进入 aborted 态并解除 sessionEnd 等待。
