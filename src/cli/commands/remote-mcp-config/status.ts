@@ -23,27 +23,57 @@ import { getAtPath, getValueAtPath } from "./json-mutate.js";
 // ============================================================
 
 /**
- * @brief 构造本次的 SSH 桥接 server 对象
+ * @brief 构造本次的 SSH 桥接 server 对象（逻辑定义，与客户端写法无关）
  * @details server 的 command 固定为 ssh，args 为专用密钥 + <user>@<ip> + bat 路径。
- *          zcode 落点额外带 type:"stdio" / enabled:true。
- * @param withTypeEnabled 是否带 type/enabled（zcode:true）
- * @param sshUser         Windows ssh 用户名（来自 collectConnectionInfo）
- * @param primaryIp       Windows 主 IP（来自 collectConnectionInfo）
- * @param batPath         remote-start-mcp.bat 绝对路径（正斜杠）
+ *          具体写入文件的形态（command+args 分体 / command 数组、type/enabled）由
+ *          TargetFile.serverStyle / serverType 决定，见 renderServerObject。
+ * @param sshUser   Windows ssh 用户名（来自 collectConnectionInfo）
+ * @param primaryIp Windows 主 IP（来自 collectConnectionInfo）
+ * @param batPath   remote-start-mcp.bat 绝对路径（正斜杠）
  * @returns 桥接 server 对象
  */
 export function buildBridgeServer(
-  withTypeEnabled: boolean,
   sshUser: string,
   primaryIp: string,
   batPath: string
 ): BridgeServer {
-  const server: BridgeServer = {
+  return {
     command: "ssh",
     args: ["-i", SSH_KEY_PATH, `${sshUser}@${primaryIp}`, batPath],
   };
-  if (withTypeEnabled) {
-    server.type = "stdio";
+}
+
+/**
+ * @brief 按落点渲染桥接 server 对象（写入目标文件的实际形态）
+ * @details 收敛各客户端的写法差异：
+ *          - claude（split，无 serverType）：{ command, args } 分体
+ *          - zcode（split，serverType:"stdio"）：分体 + type:"stdio" / enabled:true
+ *          - opencode（array）：command 为数组（合并 command+args），
+ *            type:"local" / enabled:true / timeout:600000
+ * @param file   落点描述符（serverStyle / serverType 决定形态）
+ * @param bridge 逻辑桥接定义
+ * @returns 写入目标文件的 server 对象
+ */
+export function renderServerObject(
+  file: TargetFile,
+  bridge: BridgeServer
+): Record<string, unknown> {
+  if (file.serverStyle === "array") {
+    // opencode 风格：command 为数组，type:"local"，enabled:true，timeout
+    return {
+      type: "local",
+      command: [bridge.command, ...bridge.args],
+      enabled: true,
+      timeout: 600000,
+    };
+  }
+  // claude/zcode 风格：command + args 分体
+  const server: Record<string, unknown> = {
+    command: bridge.command,
+    args: bridge.args,
+  };
+  if (file.serverType) {
+    server.type = file.serverType;
     server.enabled = true;
   }
   return server;
@@ -51,16 +81,39 @@ export function buildBridgeServer(
 
 /**
  * @brief 比较现有 server 与桥接定义是否一致
- * @details 一致性基准仅看 command + args（F8）：command 必须为 "ssh"，且 args 与桥接定义
- *          完全相等。type/enabled 是开关，不影响桥接定义，不参与比较。
+ * @details 一致性基准仅看 command（+args）：
+ *          - split 风格（claude/zcode）：command 必须为 "ssh"，且 args 与桥接定义完全相等
+ *          - array 风格（opencode）：command 必须为数组，且等于 [command, ...args] 逐项相等
+ *          type/enabled 是开关，不影响桥接定义，不参与比较。
  * @param existing 现有 server 对象
  * @param bridge   本次桥接定义
+ * @param file     落点描述符（serverStyle 决定比较形态）
  * @returns "consistent" | "inconsistent"
  */
 export function compareServer(
   existing: Record<string, unknown>,
-  bridge: BridgeServer
+  bridge: BridgeServer,
+  file: TargetFile
 ): "consistent" | "inconsistent" {
+  // array 风格（opencode）：command 为合并后的数组
+  if (file.serverStyle === "array") {
+    if (!Array.isArray(existing.command)) {
+      return "inconsistent";
+    }
+    const expected = [bridge.command, ...bridge.args];
+    const actual = existing.command as unknown[];
+    if (actual.length !== expected.length) {
+      return "inconsistent";
+    }
+    for (let i = 0; i < expected.length; i++) {
+      if (actual[i] !== expected[i]) {
+        return "inconsistent";
+      }
+    }
+    return "consistent";
+  }
+
+  // split 风格（claude/zcode）：command 为 "ssh"，args 为分体数组
   const existingCommand = existing.command;
   const existingArgs = existing.args;
   // command 必须为字符串 "ssh"
@@ -146,7 +199,7 @@ export async function readStatus(
   }
 
   const existing = container[SERVER_KEY] as Record<string, unknown>;
-  const result = compareServer(existing, bridge);
+  const result = compareServer(existing, bridge, file);
   if (result === "consistent") {
     return {
       status: "consistent",

@@ -18,7 +18,12 @@ import {
   removeServerAtPath,
   removeFromArray,
 } from "./json-mutate.js";
-import { buildBridgeServer, readStatus, checkExists } from "./status.js";
+import {
+  buildBridgeServer,
+  renderServerObject,
+  readStatus,
+  checkExists,
+} from "./status.js";
 import { askTarget } from "./target.js";
 import { collectConnectionInfo } from "../../shared/cli-helpers.js";
 
@@ -168,7 +173,6 @@ export async function doConfigure(
   let hasError = false;
   for (const file of target.files) {
     const bridge = buildBridgeServer(
-      file.withTypeEnabled,
       endpoint.sshUser,
       endpoint.primaryIp,
       endpoint.batPath
@@ -210,7 +214,6 @@ export async function doConfigure(
   log.info("写入配置 ...");
   for (const file of target.files) {
     const bridge = buildBridgeServer(
-      file.withTypeEnabled,
       endpoint.sshUser,
       endpoint.primaryIp,
       endpoint.batPath
@@ -218,9 +221,19 @@ export async function doConfigure(
     try {
       const written = await mutateFile(sftp, file, (json) => {
         let changed = false;
+        // 顶层固定字段（仅 opencode：$schema），缺失则补齐
+        if (file.rootSchema && typeof json["$schema"] !== "string") {
+          json["$schema"] = file.rootSchema;
+          changed = true;
+        }
         // server 定义（serverPath 非空）
         if (file.serverPath.length > 0) {
-          setServerAtPath(json, file.serverPath, SERVER_KEY, bridge);
+          setServerAtPath(
+            json,
+            file.serverPath,
+            SERVER_KEY,
+            renderServerObject(file, bridge)
+          );
           changed = true;
         }
         // 使能数组（enableArrayPath 非空）
@@ -258,15 +271,14 @@ export async function doConfigure(
   // 回显最终关键字段
   log.info("写入的桥接定义");
   const finalBridge = buildBridgeServer(
-    target.files[0].withTypeEnabled,
     endpoint.sshUser,
     endpoint.primaryIp,
     endpoint.batPath
   );
-  log.message(`    command: ${finalBridge.command}`);
-  log.message(`    args:    ${JSON.stringify(finalBridge.args)}`);
+  const finalObj = renderServerObject(target.files[0], finalBridge);
+  log.message(`    ${JSON.stringify(finalObj)}`);
   log.success("配置完成");
-  log.message("    需重启对应 client（claude/zcode）使配置生效");
+  log.message("    需重启对应 client（claude/zcode/opencode）使配置生效");
 }
 
 /**
@@ -370,12 +382,7 @@ export async function doCheckStatus(
   if (!target) return;
 
   for (const file of target.files) {
-    const bridge = buildBridgeServer(
-      file.withTypeEnabled,
-      sshUser,
-      primaryIp,
-      batPath
-    );
+    const bridge = buildBridgeServer(sshUser, primaryIp, batPath);
     log.info(`[${file.label}]`);
     log.message(`    路径: ${file.remotePath}`);
     try {

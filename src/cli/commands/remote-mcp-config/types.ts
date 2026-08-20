@@ -38,32 +38,38 @@ export type MenuChoice =
   | typeof MENU_EXIT;
 
 /** @brief 客户端类型 */
-export type McpClient = "claude" | "zcode";
+export type McpClient = "claude" | "zcode" | "opencode";
 
 /** @brief Claude 配置范围 */
 export type ClaudeScope = "global" | "project";
 
 /**
- * @brief SSH 桥接 server 对象（写入目标文件的 server 定义）
- * @details zcode 落点额外带 type:"stdio" / enabled:true（通过扩展字段表达）
+ * @brief SSH 桥接 server 对象的逻辑定义（与客户端写法无关）
+ * @details 纯逻辑表达：command 固定为 ssh，args 为专用密钥 + <user>@<ip> + bat 路径。
+ *          具体写入目标文件时的对象形态（command+args 分体 / command 数组、
+ *          type/enabled/timeout 等客户端差异）由 TargetFile.serverStyle / serverType 决定，
+ *          在 status.ts 的 renderServerObject 中按落点渲染。
  */
 export interface BridgeServer {
   command: string;
   args: string[];
-  type?: string;
-  enabled?: boolean;
 }
 
 /**
  * @brief 配置落点描述符（配置驱动，核心抽象）
  * @details 一个 TargetFile 完整描述"在远端哪个文件、哪个 JSON 路径下、如何读写
- *          embedded-board"。三类落点的所有差异都收敛为该结构的不同字段取值，
- *          读写逻辑对三落点完全通用。
+ *          embedded-board"。四类落点的所有差异都收敛为该结构的不同字段取值，
+ *          读写逻辑对各落点完全通用。
  * @param remotePath       远端绝对路径
  * @param label            用户可见的落点描述（如 "Claude 全局"）
- * @param serverPath       server 容器的 JSON 路径（claude:["mcpServers"]，zcode:["mcp","servers"]）；
+ * @param serverPath       server 容器的 JSON 路径（claude:["mcpServers"]，
+ *                         zcode:["mcp","servers"]，opencode:["mcp"]）；
  *                         无 server 定义时留空（仅做使能数组操作的文件）
- * @param withTypeEnabled  server 对象是否带 type:"stdio"/enabled:true（仅 zcode:true）
+ * @param serverStyle      server 对象写法：split=command+args 分体（claude/zcode），
+ *                         array=command 为数组（opencode）
+ * @param serverType       带 type/enabled 时的 type 值（zcode:"stdio"，opencode:"local"）；
+ *                         无则不写 type/enabled（claude）
+ * @param rootSchema       顶层固定字段值（仅 opencode："$schema"）；写入时若缺失则补齐
  * @param enableArrayPath  使能数组的 JSON 路径（仅 claude 项目 settings.local.json）
  * @param enableValue      使能数组中追加/移除的值（"embedded-board"）
  */
@@ -71,7 +77,9 @@ export interface TargetFile {
   remotePath: string;
   label: string;
   serverPath: string[];
-  withTypeEnabled: boolean;
+  serverStyle: "split" | "array";
+  serverType?: string;
+  rootSchema?: string;
   enableArrayPath?: string[];
   enableValue?: string;
 }

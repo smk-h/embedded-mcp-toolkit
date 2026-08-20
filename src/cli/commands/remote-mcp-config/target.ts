@@ -50,10 +50,14 @@ export function joinRemotePath(projectPath: string, relSub: string): string {
  * @details 落点路由（F3）：
  *          - claude → select(全局/项目)；项目则 text(项目绝对路径)
  *          - zcode  → 直接 text(项目绝对路径)（本期 zcode 仅项目级）
+ *          - opencode → 直接 text(项目绝对路径)（opencode 仅项目级）
  *          按选择组装 Target：
  *            Claude 全局  → 1 文件：~/.claude.json（serverPath:["mcpServers"]）
  *            Claude 项目  → 2 文件：.mcp.json（serverPath）+ settings.local.json（enableArray）
- *            ZCode  项目  → 1 文件：.zcode/config.json（serverPath:["mcp","servers"]，withTypeEnabled）
+ *            ZCode  项目  → 1 文件：.zcode/config.json（serverPath:["mcp","servers"]，
+ *                            serverType:"stdio"）
+ *            opencode 项目 → 1 文件：.opencode/opencode.json（serverPath:["mcp"]，
+ *                            serverStyle:"array"，serverType:"local"）
  * @param client     已连接的 ssh2 Client（用于展开 ~）
  * @returns 配置目标；用户取消返回 null
  * @throws 获取远端家目录失败时抛出
@@ -65,6 +69,7 @@ export async function askTarget(client: Client): Promise<Target | null> {
     options: [
       { value: "claude", label: "Claude Code" },
       { value: "zcode", label: "ZCode" },
+      { value: "opencode", label: "opencode" },
     ],
   });
   if (isCancel(clientChoice)) {
@@ -73,8 +78,8 @@ export async function askTarget(client: Client): Promise<Target | null> {
   }
 
   // 2. 按客户端类型确定范围与路径
-  if (clientChoice === "zcode") {
-    // zcode：直接项目级
+  if (clientChoice === "zcode" || clientChoice === "opencode") {
+    // zcode / opencode：直接项目级
     const projRaw = await text({
       message: "项目绝对路径（远端 Linux）",
       placeholder: "如 /home/sumu/my-project",
@@ -88,6 +93,21 @@ export async function askTarget(client: Client): Promise<Target | null> {
       log.message("    项目路径为空");
       return null;
     }
+    if (clientChoice === "opencode") {
+      return {
+        client: "opencode",
+        files: [
+          {
+            remotePath: joinRemotePath(projectPath, ".opencode/opencode.json"),
+            label: "opencode 项目（.opencode/opencode.json）",
+            serverPath: ["mcp"],
+            serverStyle: "array",
+            serverType: "local",
+            rootSchema: "https://opencode.ai/config.json",
+          },
+        ],
+      };
+    }
     return {
       client: "zcode",
       files: [
@@ -95,7 +115,8 @@ export async function askTarget(client: Client): Promise<Target | null> {
           remotePath: joinRemotePath(projectPath, ".zcode/config.json"),
           label: "ZCode 项目",
           serverPath: ["mcp", "servers"],
-          withTypeEnabled: true,
+          serverStyle: "split",
+          serverType: "stdio",
         },
       ],
     };
@@ -123,7 +144,7 @@ export async function askTarget(client: Client): Promise<Target | null> {
           remotePath: `${home}/.claude.json`,
           label: "Claude 全局",
           serverPath: ["mcpServers"],
-          withTypeEnabled: false,
+          serverStyle: "split",
         },
       ],
     };
@@ -150,13 +171,13 @@ export async function askTarget(client: Client): Promise<Target | null> {
         remotePath: joinRemotePath(projectPath, ".mcp.json"),
         label: "Claude 项目（.mcp.json server 定义）",
         serverPath: ["mcpServers"],
-        withTypeEnabled: false,
+        serverStyle: "split",
       },
       {
         remotePath: joinRemotePath(projectPath, ".claude/settings.local.json"),
         label: "Claude 项目（settings.local.json 使能）",
         serverPath: [],
-        withTypeEnabled: false,
+        serverStyle: "split",
         enableArrayPath: ["enabledMcpjsonServers"],
         enableValue: SERVER_KEY,
       },
