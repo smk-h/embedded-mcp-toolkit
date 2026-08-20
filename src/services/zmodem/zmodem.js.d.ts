@@ -54,12 +54,15 @@ declare module "zmodem.js" {
     get_details(): FileDetails;
     accept(opts?: {
       on_input?:
-        | "spool_uint8array"
-        | "spool_array"
-        | ((payload: Octets) => void);
+        "spool_uint8array" | "spool_array" | ((payload: Octets) => void);
       offset?: number;
     }): Promise<unknown>;
     skip(...args: unknown[]): unknown;
+  }
+
+  /** ZMODEM 帧头对象（_next_header_handler 处理器收到的参数） */
+  export interface ZmodemHeader {
+    get_offset(): number;
   }
 
   /** 事件驱动接口（Session.Send / Receive 共有） */
@@ -90,6 +93,15 @@ declare module "zmodem.js" {
      * 导致终端模式被破坏、后续命令无响应。
      */
     close(): Promise<unknown>;
+    /**
+     * 下一帧头的处理器表（内部字段，协议态机用）。
+     * RetransmitController 通过覆写 ZRPOS 分支接管传输中的 ZRPOS 处理。
+     */
+    _next_header_handler: Record<string, (hdr: ZmodemHeader) => void> | null;
+    /** 是否已发过 ZDATA 头（内部字段）。复位为 false 可让下次 send 重新发 ZDATA */
+    _sent_ZDATA?: boolean;
+    /** 当前文件发送偏移（内部字段，ZDATA 头携带）。可按对端 ZRPOS 要求复位 */
+    _file_offset?: number;
   }
 
   /** Session 命名空间（含 Send/Receive 子类 + parse 静态方法） */

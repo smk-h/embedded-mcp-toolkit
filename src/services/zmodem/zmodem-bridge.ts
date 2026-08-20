@@ -28,15 +28,15 @@
  * ======================================================
  */
 
-import { createReadStream, createWriteStream } from "node:fs";
-import { stat, unlink } from "node:fs/promises";
-import { Readable } from "node:stream";
+import { createWriteStream } from "node:fs";
+import { readFile, stat, unlink } from "node:fs/promises";
 
 import Zmodem, {
   type ZmodemSession,
   type SendSession,
   type Offer as ReceiveOffer,
   type Octets,
+  type ZmodemHeader,
 } from "zmodem.js";
 
 import type { SerialShell } from "../../transports/serial.js";
@@ -78,8 +78,20 @@ export interface ZmodemTransferOptions {
 
 // ── 常量 ────────────────────────────────────────────────────
 
-/** @brief ZMODEM 子包最大长度，对齐 zmodem.js 内部 MAX_CHUNK_LENGTH（lrzsz 允许 8KiB） */
-const ZMODEM_CHUNK_SIZE = 8192;
+/**
+ * @brief 上传子包长度（字节）
+ *
+ * ZMODEM 协议层允许 8KiB 子包，但实测单次大块写入在
+ * Windows→USB串口→设备 UART RX 链路上会丢字节：对端 rz 收不到 ZDATA，
+ * 反复 ZRPOS 直到超时中止（根因见 RetransmitController 说明）。
+ * 512B 在 115200bps 下约 44ms，链路可稳定承载，是丢包与吞吐的折中。
+ */
+const UPLOAD_CHUNK_SIZE = 512;
+
+/** @brief 相邻上传子包间的发送节流（毫秒）。
+ *  避免连续大块突发挤爆 Windows 串口驱动/设备 UART RX 缓冲。
+ *  参照 MobaXterm 的做法：小包 + 节奏化发送，而不是一次写完一大块。 */
+const SEND_THROTTLE_MS = 50;
 
 /** @brief 等待设备端 rz/sz 发出首帧（ZRINIT/ZRQINIT）的轮询间隔 */
 const HANDSHAKE_POLL_MS = 100;
@@ -158,7 +170,9 @@ const DEVICE_CMD_ERROR_MARKERS = [
  * @param bytes 预缓冲区
  * @returns 失败原因；null 表示尚未检测到失败、应继续等首帧
  */
-function detectHandshakeFailure(bytes: number[]): "abort" | "garbage" | "error-marker" | "prompt" | null {
+function detectHandshakeFailure(
+  bytes: number[]
+): "abort" | "garbage" | "error-marker" | "prompt" | null {
   // 1) CAN 连击检测：扫描连续 CAN 数
   let maxCanRun = 0;
   let curCanRun = 0;
@@ -507,6 +521,82 @@ async function establishSession(
   return { session, detach };
 }
 
+/**
+ * @brief ZRPOS 驱动的上传重传控制器
+ *
+ * 背景：lrzsz 的 rz 在等待数据期间会周期性重发 ZRPOS（rzfile() 每循环顶部
+ * 发一次，约 10s 超时）。zmodem.js 对传输中的 ZRPOS 只打警告并忽略
+ * （send_offer 里的 zrpos_handler_setter_func 只重新注册处理器），不响应
+ * offset → 对端永远等不到续传数据，直到双方超时 CAN 中止。实测 8KiB
+ * 单块突发在 Windows→串口→UART RX 链路上丢字节，正好触发该死锁。
+ *
+ * 本控制器在 send_offer 完成后接管 _next_header_handler 的 ZRPOS 分支：
+ * 收到 ZRPOS 后按对端回报的 offset 复位 ZDATA 发送态并重传已缓存的数据块，
+ * 实现 ZMODEM 的续传语义，作为节流发送的兜底。
+ *
+ * 用法（见 zmodemSend 主循环）：
+ *   1. record(offset, data) —— 每个子包发送前缓存一份（按起始 offset 索引）；
+ *   2. arm() —— send_offer resolve 后调用，注册 ZRPOS 处理器。无竞态：
+ *      resolve 之后的下一个 ZRPOS 至少隔一个 macrotask（串口 data 事件），
+ *      arm() 在其间同步完成；
+ *   3. 收到 ZRPOS 后 handleZRpos(offset) 重发 offset 之后的缓存块，
+ *      retransmitEnd 前移，主循环据此跳过已确认的块避免重复发送。
+ *
+ * 并发安全：ZRPOS 只能在主循环 await 间隙（节流等待/握手 await）到达，
+ * 处理器同步执行重传，与主循环不会交错写串口（写是单通道、按调用序排队，
+ * 且每个子包由一次 rawWrite 原子写出）。
+ */
+class RetransmitController {
+  /** 对端已确认的水位：offset 小于它的数据块无需重发 */
+  retransmitEnd = 0;
+
+  private readonly session: SendSession;
+  private readonly send: (data: number[]) => void;
+  private readonly pieces = new Map<number, number[]>();
+
+  constructor(session: SendSession, send: (data: number[]) => void) {
+    this.session = session;
+    this.send = send;
+  }
+
+  /** send_offer resolve 后调用：接管 _next_header_handler 的 ZRPOS 分支 */
+  arm(): void {
+    this.session._next_header_handler = { ZRPOS: this.onZRpos };
+  }
+
+  private readonly onZRpos = (hdr: ZmodemHeader): void => {
+    this.handleZRpos(hdr.get_offset());
+    // _consume_header 已把 _next_header_handler 置 null，这里重新注册，
+    // 以便处理传输过程中再次到达的 ZRPOS（对端可能仍没等到数据）。
+    this.session._next_header_handler = { ZRPOS: this.onZRpos };
+  };
+
+  /** 主循环发送某子包前调用，缓存该子包（按起始 offset 索引） */
+  record(offset: number, data: number[]): void {
+    this.pieces.set(offset, data);
+  }
+
+  /** 收到 ZRPOS：复位 ZDATA 发送态并从 offset 起重发缓存块 */
+  handleZRpos(offset: number): void {
+    logger.info(
+      `[zmodem] received ZRPOS offset=${offset}, retransmitting ${this.pieces.size} cached pieces`
+    );
+    // _sent_ZDATA 为 true 时 _send_file_part 不再发 ZDATA 头，续传会因缺头
+    // 无法对齐；复位为 false + _file_offset=offset，让下一次 send 重新发
+    // ZDATA(offset) 头，对端据此定位续传起点。
+    this.session._sent_ZDATA = false;
+    this.session._file_offset = offset;
+    for (const [pieceOffset, data] of this.pieces) {
+      if (pieceOffset < offset) continue;
+      this.send(data);
+      this.retransmitEnd = Math.max(
+        this.retransmitEnd,
+        pieceOffset + data.length
+      );
+    }
+  }
+}
+
 // ── 对外接口：上传 ──────────────────────────────────────────
 
 /**
@@ -611,24 +701,57 @@ export async function zmodemSend(
       throw new Error("Device refused the file offer (ZSKIP received)");
     }
 
-    // 流式读本地文件，分块发送（sent 已在 try 外声明）
-    const stream = createReadStream(localPath, {
-      highWaterMark: ZMODEM_CHUNK_SIZE,
-    });
+    // 读入本地文件，按 UPLOAD_CHUNK_SIZE 分块、节流发送。
+    // 历史：原先用 createReadStream + 8KiB highWaterMark 一次性把整块写出，
+    // 实测大块突发在 Windows→USB串口→UART RX 链路会丢字节，对端 rz 收不到
+    // ZDATA 反复 ZRPOS 直到超时（见 RetransmitController 说明）。改为：
+    //   - 每块 ≤512B（115200bps 约 44ms，链路可稳定承载）
+    //   - 块间节流 50ms，避免突发挤爆驱动/设备缓冲
+    //   - ZRPOS 触发时按对端 offset 重传已缓存块（RetransmitController）
+    let fileData: Buffer;
+    try {
+      fileData = await readFile(localPath);
+    } catch (err) {
+      throw new Error(
+        `Cannot read local file: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err }
+      );
+    }
 
-    for await (const chunk of stream as Readable) {
+    const retransmitter = new RetransmitController(session, (data) =>
+      transfer.send(data)
+    );
+    // send_offer 内建的 ZRPOS 处理器（接受 offer）已跑完，此后传输中的
+    // ZRPOS 由本控制器接管（arm 在 resolve 的微任务里同步完成，无竞态）
+    retransmitter.arm();
+
+    let fileOffset = 0;
+    while (fileOffset < fileData.length) {
       // 中止检查：abort 后停止发送
       if (opts?.signal?.aborted) {
         throw new Error("Transfer aborted by signal");
       }
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      transfer.send(Array.from(buf.values()));
-      sent += buf.length;
+      // 跳过已被 ZRPOS 重传覆盖的块（防御性：正常路径 retransmitEnd 恒等于
+      // fileOffset，仅在极端的并发场景下才需要前跳）
+      if (fileOffset < retransmitter.retransmitEnd) {
+        fileOffset = retransmitter.retransmitEnd;
+        continue;
+      }
+      const end = Math.min(fileOffset + UPLOAD_CHUNK_SIZE, fileData.length);
+      const piece = Array.from(fileData.subarray(fileOffset, end).values());
+      // 发送前缓存，供 ZRPOS 到达时重传
+      retransmitter.record(fileOffset, piece);
+      transfer.send(piece);
+      fileOffset = end;
+      sent += piece.length;
       // 门控心跳：首个数据块发出后才启动心跳。后续 transfer.end / session.close
       // 等 ZEOF/ZFIN 握手阶段无数据帧，需要心跳防止 idle 误杀；而握手期
       // （send_offer）无心跳，让 idle 能抓到 rz 拒绝/卡死。
       startHeartbeat(opts?.onHeartbeat, heartbeatHolder);
       opts?.onProgress?.({ bytes: sent, total: size });
+      if (fileOffset < fileData.length) {
+        await new Promise((r) => setTimeout(r, SEND_THROTTLE_MS));
+      }
     }
 
     // 全部发完，等对端确认 ZEOF（end 返回 Promise，在 ZEOF 后 resolve）。
