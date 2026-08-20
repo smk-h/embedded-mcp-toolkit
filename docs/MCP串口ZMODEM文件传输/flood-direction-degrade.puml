@@ -1,0 +1,47 @@
+@startuml 洪水链路方向退化差异
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 洪水链路上传与下载的退化形态:上传吞吐滑坡 vs 下载趋向失败
+
+participant "时间轴" as T
+
+== 上传方向:吞吐滑坡,硬扛到底 ==
+
+T -> T  : 子包 #1 发送(44ms) + 节流(50ms)
+T -> T  : ZRPOS 往返 + 本地缓存重发
+T -> T  : 子包 #2 ... (同模式重复)
+T -> T  : 有效吞吐跌至 1/3 以下\n但传输持续向前推进
+note over T
+  上传:RetransmitController
+  本地弹药不计次数,
+  退化形态 = 慢,而非失败
+end note
+
+== 下载方向:双重命中,趋向失败 ==
+
+T -> T  : 设备侧 sz 发送被 printk 打断
+T -> T  : ZRPOS 恢复链双向趟洪水
+T -> T  : 重试 1..10 逐次烧穿
+T -> T  : MAX_CRC_RETRIES 烧穿\n传输整体失败
+note over T
+  下载:发送端暴露在洪水里,
+  恢复链路更长且被动,
+  退化形态 = 滑坡 + 高概率失败
+end note
+
+@enduml
