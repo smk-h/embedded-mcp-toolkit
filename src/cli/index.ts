@@ -249,8 +249,9 @@ program
  * @brief 远程 MCP 桥接配置命令
  * @details 与 sshd-config 对偶：从本机 SSH 登录远程 Linux 服务器，交互式地在远端
  *          配置 claude/zcode/opencode 的 MCP 桥接 server（ssh 转发到本机的
- *          remote-start-mcp.bat）。覆盖四类落点：Claude 全局（~/.claude.json）、
+ *          remote-start-mcp.bat）。覆盖五类落点：Claude 全局（~/.claude.json）、
  *          Claude 项目（.mcp.json + settings.local.json）、ZCode 项目（.zcode/config.json）、
+ *          opencode 全局（~/.config/opencode/opencode.json）、
  *          opencode 项目（.opencode/opencode.json）。配置前先读取展示
  *          状态，支持配置/查看/删除。所有文件操作通过 SFTP 完成，远端无需预装 node。
  *

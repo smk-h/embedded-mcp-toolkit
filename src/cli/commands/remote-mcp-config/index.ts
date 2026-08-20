@@ -11,12 +11,13 @@
  * 不需安装 node、不需本工具包、不需设备配置——MCP 本体始终由 Windows 的
  * remote-start-mcp.bat 启动，Linux 只配一个 SSH 桥接 server（ssh -i ... <user>@<ip> <bat>）。
  *
- * 四类落点（固定 server key 名 "embedded-board"）：
+ * 五类落点（固定 server key 名 "embedded-board"）：
  *   - Claude 全局 ：Linux ~/.claude.json 顶层 mcpServers
  *   - Claude 项目 ：Linux <proj>/.mcp.json（mcpServers）+ .claude/settings.local.json（enabledMcpjsonServers）
  *   - ZCode  项目 ：Linux <proj>/.zcode/config.json（mcp.servers，含 type/enabled）
+ *   - opencode 全局：Linux ~/.config/opencode/opencode.json（mcp，command 为数组）
  *   - opencode 项目：Linux <proj>/.opencode/opencode.json（mcp，command 为数组）
- *   （ZCode 全局、opencode 全局本期不做）
+ *   （ZCode 全局本期不做）
  *
  * 所有文件读写通过 SFTP 完成（整文件下载→本地 JSON 按字段改写→整文件上传），
  * 不通过 shell exec 改文件，规避 JSON 引号转义与远端编码问题。
