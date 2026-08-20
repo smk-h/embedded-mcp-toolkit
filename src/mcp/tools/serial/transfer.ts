@@ -40,7 +40,7 @@ const IDLE_TIMEOUT_MIN_SEC = 3;
  * 被吞掉，整段传输只打出 1 条日志，看起来像卡死。字节增量节流则保证每
  * LOG_PROGRESS_BYTES 字节稳定打一条，让日志真实反映"数据在持续交付给串口"。
  *
- * 取值 32KiB：8KiB 的整数倍（对齐 ZMODEM_CHUNK_SIZE），常见文件大小（KB~MB 级）
+ * 取值 32KiB：对 512B 的上传块是 64 块一打点，常见文件大小（KB~MB 级）
  * 下能打出 3~N 条进度，既不刷屏也不至于静默。
  */
 const LOG_PROGRESS_BYTES = 32 * 1024;
@@ -421,10 +421,11 @@ export async function serialUploadHandler(args: {
   }
   const shell = lookup.shell;
 
-  // 本地文件存在性校验（同时取总大小，供 overall-proceeding 给建议值）
-  let totalSize: number;
+  // 本地文件存在性校验（桥接层 zmodemSend 还会再 stat 一次拿 offer size，
+  // 此处仅为快速失败；总大小由 onProgress 的 p.total 带回，不再重复 stat）
+  let offerTotalSize = 0;
   try {
-    totalSize = (await stat(args.local_path)).size;
+    await stat(args.local_path);
   } catch (err) {
     const msg = `Local file not found: ${args.local_path} (${err instanceof Error ? err.message : String(err)})`;
     logger.warn(`[serial_upload] ${msg}`);
@@ -460,6 +461,9 @@ export async function serialUploadHandler(args: {
         {
           onProgress: (p) => {
             guard.touch(p.bytes); // 每次数据流动重置空闲计时
+            if (typeof p.total === "number" && p.total > 0) {
+              offerTotalSize = p.total;
+            }
             if (p.bytes - lastLoggedBytes >= LOG_PROGRESS_BYTES) {
               logger.info(
                 `[serial_upload] progress ${p.bytes}/${p.total ?? "?"} bytes`
@@ -493,7 +497,7 @@ export async function serialUploadHandler(args: {
                 { bytes: result.bytes, durationMs: result.durationMs },
                 timeoutSec,
                 idleTimeoutSec,
-                totalSize
+                offerTotalSize
               )
             ),
           ],
