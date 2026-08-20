@@ -41,15 +41,17 @@
 
 整个方案分为三层，自上而下各司其职，层间通过明确的接口解耦：
 
-![三层分层架构](./串口ZMODEM文件传输设计/img/layered-architecture.svg)
+![三层分层架构](./MCP串口ZMODEM文件传输/img/layered-architecture.svg)
 
 底层依赖第三方库 `zmodem.js@0.1.10` 负责协议帧的编码解码，桥接层把它和串口的字节流粘合起来。
 
 ### 2. 字节旁路与双向数据流
 
+#### 2.1 字节旁路（双写策略）
+
 这是整个方案的地基。串口的 `data` 事件原本只喂文本态 `OutputBuffer`，ZMODEM 帧会被污染。解决方案是**双写**——`data` 事件同时喂文本态和字节旁路：
 
-![字节旁路双写](./串口ZMODEM文件传输设计/img/byte-bypass.svg)
+![字节旁路双写](./MCP串口ZMODEM文件传输/img/byte-bypass.svg)
 
 相关代码在 [`src/transports/serial.ts`](../src/transports/serial.ts#L180-L183) 的数据监听：
 
@@ -67,9 +69,11 @@ serialPort.on("data", (data: Buffer) => {
 
 【**关键**】双写策略保证 ZMODEM 传输不影响 `serial_read` 等现有工具——文本态路径始终在工作，只是 ZMODEM 帧在文本态里表现为乱码（无害，会被 `recoverShell` 排空）。
 
+#### 2.2 双向数据流
+
 上传与下载的字节流向是对称的，区别仅在于"谁发数据、谁发控制帧"。完整双向数据流如下：
 
-![双向数据流（上传与下载）](./串口ZMODEM文件传输设计/img/data-flow-bidirectional.svg)
+![双向数据流（上传与下载）](./MCP串口ZMODEM文件传输/img/data-flow-bidirectional.svg)
 
 ### 3. 文件组织
 
@@ -85,9 +89,13 @@ serialPort.on("data", (data: Buffer) => {
 | [`src/shared/transfer-result.ts`](../src/shared/transfer-result.ts) | 新增 | 传输结果摘要格式化 |
 | [`src/mcp/server.ts`](../src/mcp/server.ts) | 修改 | 全局异常兜底 |
 
-## 三、 ZMODEM 协议基础
+## 三、 协议与传输原理
 
-### 1. 协议角色与帧类型
+本章从 ZMODEM 协议本身出发，先讲清楚协议层面的约定，再展开上传、下载两个方向的具体实现。
+
+### 1. ZMODEM 协议基础
+
+#### 1.1 协议角色与帧类型
 
 ZMODEM 是一个**主从式**的文件传输协议，关键帧类型如下：
 
@@ -104,7 +112,7 @@ ZMODEM 是一个**主从式**的文件传输协议，关键帧类型如下：
 | ZFIN | 8 | 任一端 | 会话结束握手 |
 | ZNAK | — | 任一端 | 否定应答（CRC 错误，要求重传） |
 
-### 2. 头部格式
+#### 1.2 头部格式
 
 ZMODEM 帧头部有两种编码格式：
 
@@ -115,7 +123,7 @@ ZMODEM 帧头部有两种编码格式：
 
 【**易错点**】注意区分 `ZDLE(0x18)` 和 `CAN(0x18)`——两者字节值相同但语义完全不同。`ZDLE` 是协议转义前导符，`CAN` 是中止信号；判断时必须结合上下文（`ZDLE` 前必有 `ZPAD`）。
 
-### 3. 标准中止序列
+#### 1.3 标准中止序列
 
 当一方需要强制中止 ZMODEM 会话时，发送标准中止序列：
 
@@ -128,11 +136,11 @@ lrzsz 收到后会立即退出接收/发送态。注意：
 - `Ctrl+C(0x03)` 在 ZMODEM 协议态下**会被当作数据吞掉**，无法中断——必须用 CAN 序列
 - 设备端 lrzsz **超时**时（如等不到对端响应）会自发 `CAN × 10`（双倍），这是"超时退出"的特征，与"主动中止"的 `CAN × 5` 不同
 
-## 四、 会话建立机制
+### 2. 会话建立机制（establishSession）
 
 会话建立（`establishSession`）是上传和下载共用的核心流程，也是整个方案最脆弱的环节。上传时设备 `rz` 发 ZRINIT（建 Send 会话），下载时设备 `sz` 发 ZRQINIT（建 Receive 会话），两者建立逻辑完全一致。
 
-### 1. 挂旁路后再发命令
+#### 2.1 挂旁路后再发命令
 
 【**根因**】如果先发 `rz` 再挂旁路，设备几乎瞬间回 ZRINIT，此时 `rawReceiver` 还是 `null`，ZRINIT 帧就进了文本态 `OutputBuffer`（被 `toString()` 污染），协议层永远收不到首帧。必须**先挂旁路、后发命令**。
 
@@ -153,7 +161,7 @@ if (startCmd) {
 }
 ```
 
-### 2. 剥离命令回显
+#### 2.2 剥离命令回显
 
 `rz` 命令执行后，设备会回显 `"rz\r\n rz waiting to receive."` 这类文本，然后才是 ZRINIT 帧。`zmodem.js` 的 `Session.parse` 内部假设输入从 ZMODEM 头开始，**不剥离前缀垃圾**。
 
@@ -181,7 +189,7 @@ function findZmodemHeaderStart(bytes: number[]): number {
 
 找到头起始后，从那里截取再 `parse`。
 
-### 3. 传副本防 mutation
+#### 2.3 传副本防 mutation
 
 `Zmodem.Session.parse` 内部会 `splice` 传入的数组（消费掉已解析字节），**破坏原数组**。因此必须传副本：
 
@@ -189,11 +197,11 @@ function findZmodemHeaderStart(bytes: number[]): number {
 const parsed = Zmodem.Session.parse(preBuffer.slice(headerStart));
 ```
 
-### 4. 建链轮询
+#### 2.4 建链轮询
 
 建立会话是**轮询式**的，不是事件驱动。每 100ms 检查一次 `preBuffer` 是否有足够字节解析出会话，超时 5 秒（`HANDSHAKE_TIMEOUT_MS`）。
 
-【**关键**】轮询循环里**先做失败检测，再做 parse**——单纯 parse 成功不代表握手成功（详见 4.1 节）：
+【**关键**】轮询循环里**先做失败检测，再做 parse**——单纯 parse 成功不代表握手成功（详见 2.4.1 节）：
 
 ```typescript
 // src/services/zmodem/zmodem-bridge.ts
@@ -227,7 +235,7 @@ while (Date.now() < deadline) {
 }
 ```
 
-#### 4.1 握手期失败检测（detectHandshakeFailure）
+##### 2.4.1 握手期失败检测（detectHandshakeFailure）
 
 `detectHandshakeFailure()` 在轮询循环里被调用**两次**（parse 前一次、parse 成功后一次），用于识别对端在握手阶段就非协议态退出的四类情况：
 
@@ -274,19 +282,19 @@ function detectHandshakeFailure(bytes: number[]):
 
 【**为什么 parse 成功后还要再检一次**】实测 lrzsz 在文件不存在时，会**先发一个合法的 ZRQINIT 首帧**（让 `Session.parse` 成功），**紧接着**在同一批字节里打印 `cannot open` 并发 CAN×10 退出。由于设备端时序极快（< 1ms），ZRQINIT + 错误文本 + CAN 往往在第一次 100ms 轮询时就已经一起塞进 `preBuffer`。parse 只消费了首帧，preBuffer 里残留的错误信息仍在，parse 成功后的二次检测即可命中，比纯 idle 兜底更快更准。安全性上，preBuffer 此时只含首帧 + 紧随的少量设备输出，不含用户文件数据（文件数据要等 offer/accept 之后才流入），不会误报。
 
-### 5. 建链流程图
+#### 2.5 建链流程图
 
-![建链流程图](./串口ZMODEM文件传输设计/img/establish-session.svg)
+![建链流程图](./MCP串口ZMODEM文件传输/img/establish-session.svg)
 
-## 五、 上传方案（serial_upload）
+### 3. 上传方案（serial_upload）
 
-### 1. 角色与流程概览
+#### 3.1 角色与流程概览
 
 上传时，MCP 是 ZMODEM **发送端**，设备端 `rz` 是接收端。完整时序：
 
-![上传时序图](./串口ZMODEM文件传输设计/img/upload-sequence.svg)
+![上传时序图](./MCP串口ZMODEM文件传输/img/upload-sequence.svg)
 
-### 2. 数据发送
+#### 3.2 数据发送
 
 会话建立后，进入数据发送阶段。`zmodemSend()` 的核心逻辑分为四步：
 
@@ -325,7 +333,7 @@ await raceAbort(transfer.end([]), opts?.signal);
 
 【**raceAbort 的作用**】`send_offer` 和 `transfer.end` 返回的 Promise 在 `session.abort()` 后可能既不 resolve 也不 reject（悬挂），导致超时 abort 后整个传输永久卡死。`raceAbort` 给这些 await 加一个 abort 出口：signal 一旦 abort，立即 reject 抛错，让上层 catch 接管。
 
-### 3. ZFIN 关闭握手（关键）
+#### 3.3 ZFIN 关闭握手（关键）
 
 这是上传方案的**核心难点**，也是调试过程中最棘手的 bug。`transfer.end([])` 只完成单文件结束（发 ZEOF、等对端 ZRINIT），**它不会发 ZFIN**。必须额外调用 `session.close()`：
 
@@ -384,15 +392,15 @@ function closeSessionWithTimeout(
 
 5 秒的等待 + CAN×10（而非 CAN×5）是定位这个 bug 的关键线索。
 
-## 六、 下载方案（serial_download）
+### 4. 下载方案（serial_download）
 
-### 1. 角色与流程概览
+#### 4.1 角色与流程概览
 
 下载时，MCP 是 ZMODEM **接收端**，设备端 `sz` 是发送端。完整时序：
 
-![下载时序图](./串口ZMODEM文件传输设计/img/download-sequence.svg)
+![下载时序图](./MCP串口ZMODEM文件传输/img/download-sequence.svg)
 
-### 2. 接收端的惰性会话（关键）
+#### 4.2 接收端的惰性会话（关键）
 
 这是下载方案的核心难点。与上传不同，下载侧的 ZMODEM 会话在 `parse()` 后是**惰性的**——必须显式调用 `session.start()` 才会驱动状态机。
 
@@ -436,7 +444,7 @@ await sessionEnd;
 
 【**顺序约束**】`start()` 必须在 offer handler 注册**之后**调用。因为 `start()` 发的 ZRINIT 会立即引来 sz 回 ZFILE，ZFILE 触发 offer 事件——如果 handler 还没注册，offer 就丢了。
 
-### 3. 流式写盘
+#### 4.3 流式写盘
 
 下载采用流式写盘，避免大文件撑爆内存。`on_input` 回调在每个数据帧到达时触发，直接写入文件流，不做内存缓存：
 
@@ -455,7 +463,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 });
 ```
 
-### 4. 接收端的关闭握手（自动）
+#### 4.4 接收端的关闭握手（自动）
 
 与上传侧不同，**接收端不需要手动调 `close()`**——ZMODEM 协议规定，接收端完成接收后会自动应答发送端的 ZFIN：
 
@@ -466,7 +474,166 @@ session.on("offer", (xfer: ReceiveOffer) => {
 
 因此下载侧只需 `await sessionEnd`，等待 `session_end` 事件即可。
 
-## 七、 超时机制设计
+## 四、 串口持续输出对传输的影响
+
+前面各章的分析默认了一个理想前提：**串口链路是"干净"的**——除 ZMODEM 协议帧外，设备不向串口输出任何无关字节。但真实嵌入式场景往往并非如此。本章专门分析**设备端持续输出**（内核日志、诊断打印、常驻任务的周期性输出等）对 ZMODEM 传输造成的冲击。
+
+### 1. 问题来源：什么是"串口持续输出"
+
+嵌入式设备上，串口常常同时承担 **shell 交互**和**系统日志输出**两个职责。以下几类输出会在 ZMODEM 传输期间持续灌入串口：
+
+| 输出来源 | 典型场景 | 输出特征 |
+|---|---|---|
+| 内核日志（printk） | 驱动异常、USB 枚举、OOM、panic 前兆 | 突发性、不可预测，直通 UART 不经 shell |
+| 常驻诊断任务 | `dmesg -w`、`logcat`、自定义守护进程周期打印 | 周期性、稳定速率 |
+| 业务打印 | 应用日志、传感器数据上报 | 与业务逻辑相关，速率不定 |
+| 其他终端会话 | 设备多路 tty 输出重定向到同一串口 | 不可控 |
+
+【**为什么这些输出会冲击传输**】ZMODEM 是**带内协议**——协议帧和噪声字节共享同一条串口字节流，没有任何链路层的隔离机制。串口本身也不提供消息边界：接收方只能靠 `ZPAD ZDLE` 前缀在字节流中"捞"协议帧。于是持续输出带来的所有字节都会与协议帧**物理交织**，协议层的每一个阶段都可能被污染。
+
+### 2. 影响机理：分阶段的冲击分析
+
+持续输出对 ZMODEM 传输的冲击在不同阶段表现不同。下面按建链期、数据期、关闭期依次展开。
+
+#### 2.1 建链期：首帧被洪水淹没
+
+建链期（`establishSession`）只等一个东西：设备 `rz`/`sz` 发出的首帧（ZRINIT/ZRQINIT）。此时协议层还没有任何状态，唯一的定位手段是 `findZmodemHeaderStart()` 在 `preBuffer` 里扫描 `ZPAD ZDLE` 前缀。
+
+持续输出在这个阶段的冲击路径：
+
+- **首帧被稀释**：日志行持续灌入 `preBuffer`，首帧夹在日志字节中间到达。`findZmodemHeaderStart` 能跳过前缀垃圾定位到帧头，**但前提是首帧完整到达**。若日志输出把首帧冲断（分多次 `data` 事件到达），100ms 轮询周期内可能拼不出完整帧
+- **垃圾上限误判**：`detectHandshakeFailure` 的 `garbage` 判据是"缓冲区超 256 字节仍无 ZMODEM 头"。持续的日志输出完全可能在首帧到达前就把 256 字节额度烧光，导致**误判为"对端没进协议态"**而提前失败——这本来是为"命令打错、设备回 shell"设计的判据，在洪水场景下变成了误伤源
+- **错误文本误命中**：日志行里如果恰好包含 `not found`、`skipped` 等子串（`DEVICE_CMD_ERROR_MARKERS` 的成员），会被 `error-marker` 判据误命中，建链直接判死
+
+![建链期冲击](./MCP串口ZMODEM文件传输/img/flood-impact-handshake.svg)
+
+#### 2.2 数据期：上传与下载的差异化冲击
+
+数据期是受冲击**最重**的阶段。子包是**整体验 CRC 校验**的最小单位，任何污染都会让整个子包作废。
+
+【**结论**】同等洪水强度下，**下载方向（设备 sz → MCP）受影响更大**，上传方向相对更能扛。差异来自三个不对称：接收端身份不对称、恢复链路不对称、失败上限不对称。下面分别展开。
+
+##### 2.2.1 上传方向（MCP → 设备 rz）：污染正面命中，但有缓存可重传
+
+上传时，MCP 是发送端，设备 rz 是接收端。内核日志从设备侧写入 UART，恰好命中 rz 的接收缓冲——污染是正面命中的，但本地重传弹药让上传能以"吞吐滑坡"的形态硬扛洪水：
+
+1. MCP 发出 ZDATA 子包（512B，见第四章 3.2 节的小包与节流设计）
+2. 设备内核日志在**同一时刻**向 UART 写出——printk 直通硬件，与用户态 `rz` 的读入竞争同一个 RX 缓冲
+3. `rz` 从 UART 读到的是"子包前半 + 日志字节 + 子包后半"的交错序列
+4. 子包边界被破坏、CRC 校验失败，`rz` 丢弃整个子包
+5. `rz` 周期性重发 ZRPOS 请求从上次正确偏移续传（lrzsz 的 `rzfile()` 每循环顶部发一次，约 10s 超时）
+6. MCP 侧的 `RetransmitController` 响应 ZRPOS，重发缓存块
+7. 若洪水不停，下一个子包再次被污染，回到步骤 2——形成**续传风暴**
+
+上传方向能扛住洪水的三点底气：
+
+- **本地缓存重传弹药**：`RetransmitController` 按 offset 缓存每个已发子包，ZRPOS 一到立即重发，**不计次数上限**——洪水不停就硬扛到底，代价只是吞吐下降
+- **回执信道同向搭载**：ZRPOS 从设备发回 MCP，与日志同向共用设备 UART TX；但控制帧只有几字节，在日志洪流中存活概率远高于长数据帧，回执路径被淹没的概率低
+- **节流错峰**：`SEND_THROTTLE_MS=50` 的块间节流让每次只暴露一个 512B（约 44ms）的撞车窗口，不是成批子包同时进洪水
+
+因此上传方向的典型退化形态是**吞吐滑坡**（重传消耗时间）而非传输失败。
+
+![上传方向：污染正面命中与本地缓存重传](./MCP串口ZMODEM文件传输/img/flood-impact-upload-direction.svg)
+
+##### 2.2.2 下载方向（设备 sz → MCP）：污染双重命中 + 恢复链路更脆
+
+下载时，设备 sz 是发送端，MCP 是接收端。洪水对下载是**双重命中**：
+
+- **第一重：设备侧发送被打断**。sz 与 printk 竞争设备 UART TX——日志字节直接插进 sz 的 ZDATA 子包流，发出的数据流本身就是污染的；同时 printk 还抢占 CPU/UART 中断，打断 sz 的发送节奏
+- **第二重：MCP 接收侧污染**。MCP 收到的每个子包都泡在洪水里，zmodem.js 抛 CRC 错误后**会话直接进入死态**（`_input_buffer` 已前进、子包处理器仍挂着），单次污染的杀伤更大
+
+恢复链路也更脆弱：`recoverFromCrcError` 捕获 CRC 错误后，需要**双向趟过洪水**——ZRPOS 控制帧下行到设备（与日志同向逆行）、sz 重发的子包上行到 MCP（再次撞洪水）——两个环节任一失败，恢复就中断。且恢复依赖远端 sz 进程存活且愿意续传，MCP 处于被动。
+
+失败上限更硬：`MAX_CRC_RETRIES=10` 烧穿后桥接层放弃恢复，交由 idle/overall 超时兜底报错，传输整体失败；上传方向没有这个上限。
+
+![下载方向：双重命中与单向恢复的脆弱链路](./MCP串口ZMODEM文件传输/img/flood-impact-download-direction.svg)
+
+zmodem.js 在子包 CRC 校验失败时直接抛 `Zmodem.Error("crc")` 且不主动发 ZRPOS（它假设可靠传输）。桥接层的 `recoverFromCrcError` 捕获该错误后主动发 `ZRPOS(_file_offset)` 请 sz 从上次正确位置续传，并复位协议态机重新等 ZDATA 头对齐。完整恢复链与时序见下图：
+
+![下载方向 CRC 恢复链](./MCP串口ZMODEM文件传输/img/flood-impact-crc-recovery.svg)
+
+##### 2.2.3 上传与下载的差异汇总
+
+| 差异维度 | 上传方向（MCP → 设备 rz） | 下载方向（设备 sz → MCP） |
+|---|---|---|
+| 污染命中位置 | 设备 UART RX（rz 接收缓冲） | 设备 UART TX（sz 发送流）+ MCP 接收侧，双重命中 |
+| 发送端暴露面 | MCP 在 PC 侧，发送流不碰洪水 | sz 在设备侧，发送流被 printk 直接插入 |
+| 单次污染杀伤 | 子包作废，本地缓存可重发 | 会话死态，需复位协议态机才能恢复 |
+| 重传弹药 | `RetransmitController` 本地缓存，即发即得 | 依赖远端 sz 续传，无本地弹药 |
+| 回执路径风险 | ZRPOS 帧短，淹没概率低 | ZRPOS 下行 + 子包上行双向趟洪水 |
+| 失败上限 | 无硬上限，硬扛到底 | `MAX_CRC_RETRIES=10` 烧穿即失败 |
+| 退化形态 | 吞吐滑坡 | 吞吐滑坡 → 重试烧穿 → 传输失败 |
+
+【**洪水密度决定失败形态**】偶发噪声（如一次孤立的内核警告）只会触发一两次 ZRPOS 续传，传输总时间小幅变长；持续洪水（如每秒数 KB 的日志）则会让重试次数快速逼近 `MAX_CRC_RETRIES=10` 上限——超限后桥接层放弃恢复，交由 idle/overall 超时兜底报错，传输整体失败。
+
+#### 2.3 关闭期：ZFIN 握手被拉长
+
+关闭期（ZEOF/ZFIN/OO 握手）本身没有数据帧，靠心跳续命（见第五章 4 节）。持续输出在这个阶段的直接破坏较小，但会拉长握手时间：
+
+- **回执被淹没**：MCP 等 ZFIN 时，洪水字节与 ZFIN 帧混在 `data` 事件里到达。`session.consume` 收到混合输入后，靠内部状态机逐字节扫描定位帧头，扫描开销与垃圾量成正比
+- **idle 窗口被心跳掩盖**：只要心跳在跑（500ms 节拍），关闭期的洪水**不会触发 idle 超时**——心跳只是证明"MCP 还活着"，并不证明对端 ZFIN 在正常推进。若对端因洪水冲击已经异常退出，MCP 要等 `SESSION_END_TIMEOUT_MS=5s` 的关闭超时或上层 idle 才能发现
+
+#### 2.4 吞吐影响：时间线对比
+
+把静默链路与洪水链路放在同一条时间线上对比，冲击一目了然：
+
+![静默链路与洪水链路对比](./MCP串口ZMODEM文件传输/img/flood-throughput-compare.svg)
+
+其中洪水链路对上传/下载的退化形态并不相同（差异分析见 2.2.3），上传方向在本地重传弹药支撑下典型表现为吞吐滑坡；下载方向则叠加了设备侧 sz 发送被打断、恢复链路双向趟洪水的双重冲击：
+
+![洪水链路上上传与下载的退化形态差异](./MCP串口ZMODEM文件传输/img/flood-direction-degrade.svg)
+
+静默链路上子包背靠背流动，吞吐接近线速的 90% 以上；洪水链路上每次污染都要付出"重传 + 重新对齐 + 节流等待"的往返代价，有效吞吐可能跌至 1/3 以下。按 115200bps 线速约 11.5KB/s 计，一个 10MB 文件在静默链路约需 15 分钟，洪水链路下可能超过 45 分钟——若期间重试烧穿上限，则直接失败。
+
+### 3. 防御与缓解机制
+
+针对上述冲击，当前方案已在多个层面布防。各项机制并非专为洪水设计，但组合起来构成了对持续输出的系统性防御：
+
+#### 3.1 协议层：CRC + ZRPOS 续传
+
+ZMODEM 协议自带的**逐子包 CRC 校验**是第一道防线——任何被污染的子包都会在接收端被识别并丢弃，**不会写坏文件**（这是正确性的底线）。配合 ZRPOS 断点续传语义：
+
+- **上传方向**：`RetransmitController` 接管传输中的 ZRPOS（zmodem.js 原生只打警告不响应），按对端回报的 offset 复位 ZDATA 发送态并重发缓存块
+- **下载方向**：`recoverFromCrcError` 捕获 CRC 错误，主动发 `ZRPOS(_file_offset)` 请 sz 续传，并清空输入缓冲、还原 accept 阶段的 ZDATA 处理器，重新对齐协议态机
+- **重试上限**：`MAX_CRC_RETRIES=10` 防止链路持续污染时空转烧 CPU，超限交由超时机制兜底
+
+#### 3.2 链路层：小包 + 节流
+
+上传方向的两个参数是**以退为进**的缓冲设计：
+
+- `UPLOAD_CHUNK_SIZE=512`：子包越小，单次污染作废的字节数越少，重传代价越低。8KiB 大包一旦被污染，整包 8KiB 都要重发；512B 小包作废面缩小 16 倍
+- `SEND_THROTTLE_MS=50`：块间节流给设备 UART RX 缓冲和 MCP 的 `data` 事件处理留出喘息空间，降低"日志写入与子包读取竞争缓冲"导致的字节交错概率
+
+这两个值最初是为解决"Windows→USB 串口→设备 UART RX 链路大块突发丢字节"而引入的（详见第九章调试经验），对洪水场景同样有效——突发越猛，交错概率越高；节奏化发送天然降低了与日志写入撞车的窗口。
+
+#### 3.3 建链层：垃圾剥离与容忍上限
+
+建链期的防御是"剥离 + 上限"的组合：
+
+- `findZmodemHeaderStart()` 能从日志垃圾中定位真正的帧头（`2a 2a 18` 或 `2a 18 41/43` 前缀），首帧夹在日志中间也能被捞出来
+- `HANDSHAKE_MAX_GARBAGE_BYTES=256` 的垃圾上限是对"对端根本没进协议态"的快速判死，避免干等 5s 超时。代价是洪水极猛时可能误伤（日志先于首帧烧光额度），属于**有意的权衡**——宁可偶发误判（重试一次即可），不忍受静默卡死
+- `HANDSHAKE_CAN_THRESHOLD=3` 的 CAN 连击阈值容忍单字节噪声，不会因日志里零星的 0x18 字节误判中止
+
+#### 3.4 超时层：idle 判据天然适配洪水场景
+
+洪水场景下"数据还在流动"与"传输还在推进"的区分尤为关键——被污染的子包虽然作废了，但链路上确实有字节往返，传输**没有死**：
+
+- `touch(bytes)` 在每次 `onProgress` 时重置 idle——即使传输因续传风暴变慢，只要子包仍在推进（哪怕反复重传），idle 不会误杀
+- `heartbeat()` 覆盖关闭握手阶段——洪水拉长 ZFIN 往返时，心跳保证 idle 不把"慢握手"误判为"链路挂了"
+- `overall-proceeding` 判据给出"timeout 设小了"的提示而非静默截断——洪水链路上传输时间可能是静默链路的三倍以上，总超时需要按实测速率放宽
+
+### 4. 用户侧操作建议
+
+机制层面的防御之外，用户在传输前的预处理能显著降低洪水冲击：
+
+- **先停掉可控的输出源**：`dmesg -D`（关闭控制台日志）、`kill` 常驻打印任务、降低应用日志级别。命令类输出源（`logcat`、`tail -f`）可以先 `Ctrl+Z` 挂起或重定向到文件
+- **检查内核日志速率**：传输前 `cat /proc/sys/kernel/printk` 看控制台日志级别，级别越低（数值越大）直通串口的日志越少
+- **预估超时**：洪水链路上按 1/2~1/3 线速预估传输时间，相应调大 `timeout`；`idle_timeout` 一般无需调整（续传风暴期间数据仍在流动，touch 会持续重置）
+- **失败后重试**：若因重试烧穿 `MAX_CRC_RETRIES` 失败，说明洪水过猛，必须先治理输出源再重传——重试本身不会改善信道质量
+
+【**注意**】传输期间不要通过 `serial_write` 发送任何命令——所有字节都会混入协议流（虽然对协议层是可剥离的垃圾，但徒增污染量）。
+
+## 五、 超时机制设计
 
 ### 1. 设计动机：区分"真故障"与"超时设小了"
 
@@ -633,7 +800,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 });
 ```
 
-【**与握手期失败检测的协同**】门控心跳与第四章的 `detectHandshakeFailure` 是双重保险：握手期失败检测负责在 `establishSession` 阶段就识别对端非协议态退出并立即抛错（毫秒级）；门控心跳则兜底——即使握手期检测漏掉某个时序（如 parse 已成功但后续 offer 永不到达），`idle_timeout` 也能在 15s 内抓到，不再被心跳喂活而失效。
+【**与握手期失败检测的协同**】门控心跳与第三章 2.4.1 节的 `detectHandshakeFailure` 是双重保险：握手期失败检测负责在 `establishSession` 阶段就识别对端非协议态退出并立即抛错（毫秒级）；门控心跳则兜底——即使握手期检测漏掉某个时序（如 parse 已成功但后续 offer 永不到达），`idle_timeout` 也能在 15s 内抓到，不再被心跳喂活而失效。
 
 ### 5. 超时判定原理
 
@@ -687,11 +854,11 @@ session.on("offer", (xfer: ReceiveOffer) => {
 ### 7. 关键设计点
 
 1. **touch 即重置**：每收到一个数据块（`onProgress` 回调）就调 `touch()`，相当于把空闲计时器拨回原点。因此 idle 超时不是"从传输开始计时"，而是"从上次收到数据开始计时"。慢但稳定的传输（如 115200 波特率下每 800ms 一个包）永远不会触发 idle
-2. **heartbeat 覆盖关闭握手间隙**：`transfer.end` / `session.close` 等无数据帧的阶段，由 bridge 层按 500ms 节拍触发 `heartbeat()`，同样重置 idle。这样 idle 判据从"无数据流动"细化为"既无数据也无协议心跳"，关闭握手阶段不再被误杀。**注意心跳是门控启动的**——仅在首个数据块到达/发出后才启用，握手期（send_offer / 等 offer）不启动，让 idle 能抓到对端在握手期就死了的情况（详见 7.4 节）
+2. **heartbeat 覆盖关闭握手间隙**：`transfer.end` / `session.close` 等无数据帧的阶段，由 bridge 层按 500ms 节拍触发 `heartbeat()`，同样重置 idle。这样 idle 判据从"无数据流动"细化为"既无数据也无协议心跳"，关闭握手阶段不再被误杀。**注意心跳是门控启动的**——仅在首个数据块到达/发出后才启用，握手期（send_offer / 等 offer）不启动，让 idle 能抓到对端在握手期就死了的情况（详见 4.1 节）
 3. **复用 idleTimeoutSec 判 progressing**：overall 到点时，用 `lastProgressAt` 是否落在最近 `idleTimeoutSec` 窗口内来判断传输是否仍在推进（touch 与 heartbeat 都会刷新 `lastProgressAt`）。这个窗口值与 idle 超时值一致，保证了**判据统一**：如果传输出问题了，idle 必先触发；如果 idle 没触发，说明数据一直在流或协议在推进，overall 就不该静默截断
 4. **共用 AbortController**：两个定时器独立运行，但共享同一个 `AbortController`。谁先到点谁 abort，后到点的检查 `controller.signal.aborted` 后直接 return，不做重复 abort
 
-## 八、 异常处理机制
+## 六、 异常处理机制
 
 ### 1. 异常分类与处理矩阵
 
@@ -712,7 +879,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 
 异常发生后，代码按统一路径处理。以下决策流展示了不同异常的走向：
 
-![异常处理决策流](./串口ZMODEM文件传输设计/img/exception-decision.svg)
+![异常处理决策流](./MCP串口ZMODEM文件传输/img/exception-decision.svg)
 
 ### 3. 双层 abort 设计
 
@@ -870,7 +1037,7 @@ async function recoverShell(shell): Promise<void> {
 - **正常路径**：rz/sz 已干净退出、shell 在提示符，本函数只是排空缓冲里残留的协议字节回显，属于轻量清理
 - **失败路径**：finally 已发 abort 让 rz/sz 退出，本函数发回车触发重新输出提示符 + 循环排空
 
-## 九、 前置条件与流控
+## 七、 前置条件与流控
 
 ### 1. 关闭软件流控（disableFlowControl）
 
@@ -902,11 +1069,15 @@ async function disableFlowControl(shell): Promise<void> {
 - `serial_upload` 的 `recv_cmd` 参数：默认 `"rz"`，可传 `"rz -e"`（转义所有控制字符）
 - `serial_download` 的 `send_cmd` 参数：默认 `"sz {remote}"`，`{remote}` 占位符替换为远端路径
 
-## 十、 工具接口
+## 八、 工具接口与调用链
 
-### 1. serial_upload
+本章给出两个工具的接口定义与从 handler 到串口字节流的完整调用链，供排查问题时按图索骥。
 
-#### 1.1 serialUploadHandler()
+### 1. 工具接口
+
+#### 1.1 serial_upload
+
+##### 1.1.1 serialUploadHandler()
 
 该函数在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 文件中声明：
 
@@ -939,7 +1110,7 @@ export async function serialUploadHandler(args: {
 
 返回 MCP 响应，`content[0].text` 为传输摘要文本，含字节数、耗时、速率。
 
-#### 1.2 使用示例
+##### 1.1.2 使用示例
 
 ```
 serial_upload:
@@ -948,9 +1119,9 @@ serial_upload:
   remote_name: image.bin
 ```
 
-### 2. serial_download
+#### 1.2 serial_download
 
-#### 2.1 serialDownloadHandler()
+##### 1.2.1 serialDownloadHandler()
 
 该函数在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 文件中声明：
 
@@ -983,7 +1154,7 @@ export async function serialDownloadHandler(args: {
 
 返回 MCP 响应，`content[0].text` 为传输摘要文本。
 
-#### 2.2 使用示例
+##### 1.2.2 使用示例
 
 ```
 serial_download:
@@ -992,9 +1163,9 @@ serial_download:
   local_path: E:/logs/dump.bin
 ```
 
-## 十一、 完整调用链
+### 2. 完整调用链
 
-### 1. 上传调用链
+#### 2.1 上传调用链
 
 ```
 serialUploadHandler(args)
@@ -1060,7 +1231,7 @@ serialUploadHandler(args)
         └─ recoverShell(shell)                                    [排空缓冲]
 ```
 
-### 2. 下载调用链
+#### 2.2 下载调用链
 
 ```
 serialDownloadHandler(args)
@@ -1118,11 +1289,13 @@ serialDownloadHandler(args)
         └─ recoverShell(shell)
 ```
 
-## 十二、 关键常量
+## 九、 关键常量与调试经验
+
+### 1. 关键常量
 
 整个方案涉及的常量集中在两个文件，以下是完整清单及取值依据：
 
-### 1. 协议层常量（zmodem-bridge.ts）
+#### 1.1 协议层常量（zmodem-bridge.ts）
 
 | 常量 | 值 | 含义 |
 |---|---|---|
@@ -1137,7 +1310,7 @@ serialDownloadHandler(args)
 | `ABORT_SETTLE_MS` | 500 | 发 abort 序列后等设备退出的延时 |
 | `SESSION_END_TIMEOUT_MS` | 5000 | 等 ZFIN 握手 / session_end 的超时 |
 
-### 2. 工具层常量（transfer.ts）
+#### 1.2 工具层常量（transfer.ts）
 
 | 常量 | 值 | 含义 |
 |---|---|---|
@@ -1151,71 +1324,71 @@ serialDownloadHandler(args)
 | `SHELL_RECOVER_MAX_DRAINS` | 5 | recoverShell 排空缓冲的最大轮次 |
 | `SHELL_RECOVER_DRAIN_MS` | 300 | recoverShell 每次排空间隔 |
 
-## 十三、 调试经验总结
+### 2. 调试经验总结
 
 本方案在真机调试过程中累计定位并修复了 11 个 bug，以下是按发现顺序的经验总结，对后续维护有参考价值：
 
-### 1. 软件流控拦截协议字节
+#### 2.1 软件流控拦截协议字节
 
 - **现象**：ZRINIT 帧解析失败，握手超时
 - **根因**：终端 `ixon`/`ixoff` 拦截 ZRINIT 末尾的 XON(0x11)
 - **修复**：rz/sz 前发 `stty -ixon -ixoff`
 
-### 2. 命令发送早于旁路挂载
+#### 2.2 命令发送早于旁路挂载
 
 - **现象**：间歇性握手失败
 - **根因**：先发 rz 再挂 rawReceiver，ZRINIT 进了文本态
 - **修复**：`establishSession` 先挂旁路再发命令
 
-### 3. parse 破坏输入数组
+#### 2.3 parse 破坏输入数组
 
 - **现象**：首帧解析后，后续帧丢失
 - **根因**：`Session.parse` 内部 splice 消费字节，破坏原数组
 - **修复**：传 `slice()` 副本
 
-### 4. parse_hex 不剥命令回显
+#### 2.4 parse_hex 不剥命令回显
 
 - **现象**：握手失败，preBuffer 里有 "rz waiting to receive." 前缀
 - **根因**：`parse_hex` 假设输入从帧头开始，不剥离前缀垃圾
 - **修复**：`findZmodemHeaderStart` 定位真头
 
-### 5. 进程崩溃
+#### 2.5 进程崩溃
 
 - **现象**：传输完成后 MCP 进程退出
 - **根因**：zmodem.js 内部 "Peer aborted session" 等 rejection 无人接听
 - **修复**：全局 `unhandledRejection`/`uncaughtException` 兜底
 
-### 6. 上传侧缺 session.close()
+#### 2.6 上传侧缺 session.close()
 
 - **现象**：上传后 shell 卡死，设备发 CAN×10
 - **根因**：`transfer.end([])` 不发 ZFIN，rz 等不到 ZFIN 超时 abort
 - **修复**：补 `closeSessionWithTimeout(session)` 调 `session.close()`
 
-### 7. 下载侧缺 session.start()
+#### 2.7 下载侧缺 session.start()
 
 - **现象**：下载 0 字节，offer 不触发
 - **根因**：Receive 会话惰性，不调 `start()` 永不发 ZRINIT
 - **修复**：offer handler 注册后 `await session.start()`
 
-### 8. finally 无条件 abort 破坏终端
+#### 2.8 finally 无条件 abort 破坏终端
 
 - **现象**：下载成功后 shell 卡死
 - **根因**：finally 对已干净退出、回到提示符的 shell 发 CAN×5+BS×5
 - **修复**：用 `cleanEnded` 标志门控（不用 `has_ended()`，因其受本地 abort 干扰）
 
-### 9. 下载侧 session.abort() 同步触发 session_end 致 cleanEnded 误置
+#### 2.9 下载侧 session.abort() 同步触发 session_end 致 cleanEnded 误置
 
 - **现象**：下载超时后 shell 卡死（与 Bug 6 现象相同但根因不同）
 - **根因**：下载侧 `onAbort` 调 `session.abort()` 时，zmodem.js **同步触发** `session_end` 事件，`cleanEnded` 被误置为 `true`，finally 检查 `!cleanEnded` 时为 false，跳过 `abortDeviceSession`，设备端 sz 卡在协议态
 - **修复**：finally 条件从 `if (!cleanEnded)` 改为 `if (!cleanEnded || aborted)`——只要是被 abort 信号中止的，无条件发 CAN×5+BS×5
 
-### 10. 握手阶段无数据帧被 idle 误杀
+#### 2.10 握手阶段无数据帧被 idle 误杀
 
 - **现象**：上传 208KB 文件，数据全部 `transfer.send` 出去（`bytes=208498` 与文件总大小一致），但 `fail ms=15165`，耗时正好等于默认 `idle_timeout=15s`。后续重试又因设备端残留同名文件触发 ZSKIP，需要改名 + `rz -y` 才能恢复
 - **根因**：`onProgress` 只在数据帧到达/发出时触发（`transfer.send` 后），但 `transfer.end([])`（等 ZEOF/ZRINIT）和 `session.close()`（等 ZFIN/OO）两个握手阶段**没有数据帧也没有 onProgress**，idle 计时器持续运行。慢串口 + 设备 rz 处理大文件握手稍慢时，"发完数据到握完手"的间隙超过 `idle_timeout`，正常的握手等待被误判为"链路挂了"
 - **修复**：guard 新增 `heartbeat()` 方法，只刷新 `lastProgressAt` 时间戳（重置 idle + 让 overall 能判"仍在推进"），不增加字节数。idle 判据从"无数据流动"细化为"既无数据也无协议心跳"，关闭握手阶段不再被误杀。注意心跳的启动时机在 Bug 11 中被进一步修正为门控启动
 
-### 11. 握手期对端退出未被检测，心跳喂活 idle 致下载卡死
+#### 2.11 握手期对端退出未被检测，心跳喂活 idle 致下载卡死
 
 - **现象**：下载 `/root/package-lock.json`（设备上不存在该文件），从 23:29:21 卡到 23:31:36，整整 2 分 15 秒才返回（最终是 MCP 客户端先断开），期间无任何 progress 日志
 - **根因**（双重）：
@@ -1227,7 +1400,7 @@ serialDownloadHandler(args)
   - CAN 连击阈值取 3：容忍单字节噪声，ZMODEM 头里的单个 ZDLE（同为 0x18）和转义数据 `0x18 0x18` 都不触发，只有协议层 CAN×5+ 中止才达到
 - **定位线索**：串口日志里出现 `sz: cannot open ...: No such file or directory` + `[CAN]×10` + `command not found`（工具发的 ZDATA 被 shell 当命令），且 MCP 日志里 download 无任何 progress 行——典型的握手期对端退出
 
-### 12. 定位技巧
+#### 2.12 定位技巧
 
 调试 ZMODEM 协议问题时，几个有效手段：
 
@@ -1236,7 +1409,7 @@ serialDownloadHandler(args)
 - **看 0x42 的位置**：在 `2a 2a 18` 之后是 hex 头格式指示符 ZHEX（'B'），不是帧类型
 - **独立诊断脚本**：`test/scripts/serial/abort-zmodem.mjs` 可在 MCP 释放端口后单独发 abort 恢复设备
 
-## 十四、 验收标准
+## 十、 验收标准
 
 ### 1. AC1：上传正确性
 

@@ -1,0 +1,59 @@
+@startuml 洪水冲击建链期
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 建链期冲击:持续输出淹没首帧导致 handshake timeout
+
+participant "MCP\n(establishSession)" as M
+participant "设备 shell\n(持续输出)" as S
+participant "设备 rz\n(首帧)" as R
+
+== 挂旁路后发命令 ==
+
+M -> S  : rz 命令
+S --> M : 回显 "rz\r\n waiting to receive."
+
+== 洪水场景:日志先于首帧涌入 ==
+
+loop 洪水持续输出 (logcat / dmesg / top)
+  S --> M : 日志行 × N (每行几十~几百字节)
+end loop
+
+M -> M  : 轮询 preBuffer\nfindZmodemHeaderStart 未命中
+M -> M  : detectHandshakeFailure\n缓冲 < 256B 时容忍, 继续等
+
+R --> M : ZRINIT 首帧 (迟到)
+M -> M  : findZmodemHeaderStart\n从日志垃圾中定位 2a 2a 18
+M -> M  : parse(preBuffer.slice(headerStart))\n建链成功
+
+== 极端场景:洪水吞掉首帧或超时 ==
+
+alt 首帧被洪水稀释, 5s 内未到
+  M -> M  : HANDSHAKE_TIMEOUT_MS 到期
+  M --> M : throw "handshake timeout"
+else 日志行内恰好出现 CAN 连击 / 错误文本
+  M -> M  : detectHandshakeFailure 误命中
+  M --> M : throw "handshake failed: <原因>"
+end alt
+
+note over M, S
+  256B 垃圾上限与 5s 超时是
+  建链期的两道硬门:洪水越猛,
+  首帧越容易被挤出窗口
+end note
+
+@enduml

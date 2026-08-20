@@ -29,7 +29,8 @@
  */
 
 import { createWriteStream } from "node:fs";
-import { readFile, stat, unlink } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
 
 import Zmodem, {
   type ZmodemSession,
@@ -593,6 +594,17 @@ class RetransmitController {
   /** 主循环发送某子包前调用，缓存该子包（按起始 offset 索引） */
   record(offset: number, data: number[]): void {
     this.pieces.set(offset, data);
+    // 顺带清理已被 retransmitEnd 覆盖的旧块：这些块已被对端确认收到，
+    // 不再可能收到针对它们的 ZRPOS，驻留只会让内存随文件大小线性膨胀
+    // （10MB 文件 = 2 万个条目直到传输结束）。正常路径 retransmitEnd 恒
+    // 等于发送水位，此循环无操作；仅在 ZRPOS 回退后重新发送时批量回收。
+    if (this.retransmitEnd > 0) {
+      for (const pieceOffset of this.pieces.keys()) {
+        if (pieceOffset < this.retransmitEnd) {
+          this.pieces.delete(pieceOffset);
+        }
+      }
+    }
   }
 
   /** 收到 ZRPOS：复位 ZDATA 发送态并从 offset 起重发缓存块 */
@@ -600,6 +612,13 @@ class RetransmitController {
     logger.info(
       `[zmodem] received ZRPOS offset=${offset}, retransmitting ${this.pieces.size} cached pieces`
     );
+    // 丢弃 offset 之前的缓存块：对端已确认收到，后续 ZRPOS 水位只会单调
+    // 前移（ZMODEM 续传语义），这些块不再需要
+    for (const pieceOffset of this.pieces.keys()) {
+      if (pieceOffset < offset) {
+        this.pieces.delete(pieceOffset);
+      }
+    }
     // _sent_ZDATA 为 true 时 _send_file_part 不再发 ZDATA 头，续传会因缺头
     // 无法对齐；复位为 false + _file_offset=offset，让下一次 send 重新发
     // ZDATA(offset) 头，对端据此定位续传起点。
@@ -720,16 +739,24 @@ export async function zmodemSend(
       throw new Error("Device refused the file offer (ZSKIP received)");
     }
 
-    // 读入本地文件，按 UPLOAD_CHUNK_SIZE 分块、节流发送。
+    // 流式读本地文件（highWaterMark 对齐 UPLOAD_CHUNK_SIZE，天然按 512B 出块），
+    // 逐块节流发送。不 readFile 全量入内存：大文件（如百 MB 根文件系统镜像）
+    // 会占用等量内存，且读期间文件被截断/修改会静默产生与 offer size 不符的
+    // 数据，流式读能及时发现 EOF 提前或读错误。
     // 历史：原先用 createReadStream + 8KiB highWaterMark 一次性把整块写出，
     // 实测大块突发在 Windows→USB串口→UART RX 链路会丢字节，对端 rz 收不到
-    // ZDATA 反复 ZRPOS 直到超时（见 RetransmitController 说明）。改为：
+    // ZDATA 反复 ZRPOS 直到超时（见 RetransmitController 说明）。现在的形态：
     //   - 每块 ≤512B（115200bps 约 44ms，链路可稳定承载）
     //   - 块间节流 50ms，避免突发挤爆驱动/设备缓冲
     //   - ZRPOS 触发时按对端 offset 重传已缓存块（RetransmitController）
-    let fileData: Buffer;
+    let stream: ReturnType<typeof createReadStream>;
     try {
-      fileData = await readFile(localPath);
+      stream = createReadStream(localPath, {
+        highWaterMark: UPLOAD_CHUNK_SIZE,
+      });
+      // 把 'error' 事件挂到迭代器上：fd 打开失败（如读期间文件被删）时
+      // for await 会以原始 fs 错误 reject，而非漏成未处理异常
+      stream.on("error", () => {});
     } catch (err) {
       throw new Error(
         `Cannot read local file: ${err instanceof Error ? err.message : String(err)}`,
@@ -744,33 +771,64 @@ export async function zmodemSend(
     // ZRPOS 由本控制器接管（arm 在 resolve 的微任务里同步完成，无竞态）
     retransmitter.arm();
 
+    // 中止检查：abort 后停止发送（在迭代器挂起前同步轮询一次）
+    if (opts?.signal?.aborted) {
+      stream.destroy();
+      throw new Error("Transfer aborted by signal");
+    }
     let fileOffset = 0;
-    while (fileOffset < fileData.length) {
-      // 中止检查：abort 后停止发送
-      if (opts?.signal?.aborted) {
-        throw new Error("Transfer aborted by signal");
-      }
-      // 跳过已被 ZRPOS 重传覆盖的块（防御性：正常路径 retransmitEnd 恒等于
-      // fileOffset，仅在极端的并发场景下才需要前跳）
-      if (fileOffset < retransmitter.retransmitEnd) {
-        fileOffset = retransmitter.retransmitEnd;
-        continue;
-      }
-      const end = Math.min(fileOffset + UPLOAD_CHUNK_SIZE, fileData.length);
-      const piece = Array.from(fileData.subarray(fileOffset, end).values());
-      // 发送前缓存，供 ZRPOS 到达时重传
-      retransmitter.record(fileOffset, piece);
-      transfer.send(piece);
-      fileOffset = end;
-      sent += piece.length;
-      // 门控心跳：首个数据块发出后才启动心跳。后续 transfer.end / session.close
-      // 等 ZEOF/ZFIN 握手阶段无数据帧，需要心跳防止 idle 误杀；而握手期
-      // （send_offer）无心跳，让 idle 能抓到 rz 拒绝/卡死。
-      startHeartbeat(opts?.onHeartbeat, heartbeatHolder);
-      opts?.onProgress?.({ bytes: sent, total: size });
-      if (fileOffset < fileData.length) {
+    try {
+      for await (const chunk of stream) {
+        const buf = chunk as Buffer;
+        if (buf.length === 0) continue;
+        // 跳过已被 ZRPOS 重传覆盖的数据（防御性：正常路径 retransmitEnd 恒等于
+        // fileOffset，仅在极端的并发场景下才需要前跳）。若 ZRPOS 水位落在
+        // 本 chunk 中间，裁剪掉已确认前缀后继续发剩余部分。
+        let piece: Buffer = buf;
+        if (fileOffset < retransmitter.retransmitEnd) {
+          const skip = retransmitter.retransmitEnd - fileOffset;
+          if (skip >= buf.length) {
+            fileOffset += buf.length;
+            continue;
+          }
+          piece = buf.subarray(skip);
+          fileOffset = retransmitter.retransmitEnd;
+        }
+        const pieceArr = Array.from(piece.values());
+        // 发送前缓存，供 ZRPOS 到达时重传
+        retransmitter.record(fileOffset, pieceArr);
+        transfer.send(pieceArr);
+        fileOffset += piece.length;
+        sent += piece.length;
+        // 门控心跳：首个数据块发出后才启动心跳。后续 transfer.end / session.close
+        // 等 ZEOF/ZFIN 握手阶段无数据帧，需要心跳防止 idle 误杀；而握手期
+        // （send_offer）无心跳，让 idle 能抓到 rz 拒绝/卡死。
+        startHeartbeat(opts?.onHeartbeat, heartbeatHolder);
+        opts?.onProgress?.({ bytes: sent, total: size });
         await new Promise((r) => setTimeout(r, SEND_THROTTLE_MS));
+        // 节流间隙是 ZRPOS/abort 唯一可能到达的窗口，醒来后立即检查
+        if (opts?.signal?.aborted) {
+          throw new Error("Transfer aborted by signal");
+        }
       }
+    } catch (err) {
+      // for await 退出时会自动 destroy 流；这里兜底确保 fd 释放
+      stream.destroy();
+      // 已是本函数语义化错误（abort）则原样上抛，否则包装读盘错误
+      if (err instanceof Error && err.message.includes("aborted")) {
+        throw err;
+      }
+      throw new Error(
+        `Cannot read local file: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err }
+      );
+    }
+    // 完整性校验：读到的字节数与 offer 时 stat 的大小不符（读期间文件被截断），
+    // 说明数据源已变，继续发 ZEOF 会让对端收下一个残缺文件却不报错
+    if (sent < size) {
+      throw new Error(
+        `Local file shrank during transfer: expected ${size} bytes but only read ${sent}`
+      );
     }
 
     // 全部发完，等对端确认 ZEOF（end 返回 Promise，在 ZEOF 后 resolve）。

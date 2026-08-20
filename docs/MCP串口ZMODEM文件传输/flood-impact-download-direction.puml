@@ -1,0 +1,73 @@
+@startuml 洪水冲击下载方向独立分析
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 下载方向:发送与接收双重命中,恢复链路双向趟洪水,重试烧穿即失败
+
+participant "设备 sz\n(发送端)" as S
+participant "设备内核\n(dmesg 洪水)" as K
+participant "串口链路\n(115200 bps)" as L
+participant "MCP\n(接收端)" as M
+
+== 第一重命中:sz 的发送流被直接污染 ==
+
+S -> L  : ZDATA(offset=0) 子包
+K -> L  : printk 日志字节\n(与 sz 竞争同一 UART TX)
+L -> M  : 交错的污染数据流\n"子包 + 日志字节"
+M -> M  : zmodem.js 抛\nZmodem.Error("crc")
+note over S, K
+  日志与 sz 的发送流同向共线,
+  插入位置在设备侧 TX,
+  MCP 收到时子包已被破坏
+end note
+
+== 第二重命中:会话死态,单次杀伤更大 ==
+
+M -> M  : 会话进入死态\n(_input_buffer 已前进,\n子包处理器仍挂着)
+note over M
+  zmodem.js 假设可靠链路,
+  CRC 错误后不主动发 ZRPOS,
+  不复位就无法继续收包
+end note
+
+== 恢复链路:双向趟过洪水 ==
+
+M -> L  : ZRPOS(_file_offset)\n(下行, 与日志逆行)
+L -> S  : 洪水中捞出的 ZRPOS
+M -> M  : recoverFromCrcError\n清空输入缓冲, 复位协议态机
+S -> L  : ZDATA(offset) 头 + 重发子包\n(上行, 再次撞洪水)
+K -> L  : 日志字节再次插入
+L -> M  : 重发的子包再次被污染
+
+== 退避上限:烧穿即整体失败 ==
+
+loop 重试 1..MAX_CRC_RETRIES(10)
+  S --> M : 子包再次被污染
+  M -> S  : ZRPOS(...) 再次续传
+end loop
+
+M -> M  : crcRetries 超上限\n放弃恢复
+M --> M : 交由 idle/overall 超时兜底\n传输整体失败
+
+note over S, M
+  恢复链路依赖远端 sz 存活且
+  愿意续传,MCP 全程被动;
+  双向趟洪水 + 硬上限 = 下载方向
+  比上传更脆弱
+end note
+
+@enduml

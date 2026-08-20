@@ -1,0 +1,53 @@
+@startuml 洪水冲击吞吐时序
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 静默链路 vs 洪水链路:同一文件的传输时间线对比
+
+participant "发送端" as T
+participant "串口链路\n(115200 bps)" as L
+
+== 场景一:静默链路 (基线) ==
+
+T -> L  : 子包 #1 (44ms)
+T -> L  : 子包 #2 (44ms)
+T -> L  : 子包 #3 ...
+note over T, L
+  无噪声: 子包背靠背流动,
+  吞吐 ≈ 线速的 90%+
+end note
+
+== 场景二:洪水链路 (污染) ==
+
+T -> L  : 子包 #1
+L --> T : ZRPOS(#1)  ← 子包 #1 被污染
+T -> L  : 子包 #1 重发
+T -> L  : 子包 #2
+L --> T : ZRPOS(#2)  ← 子包 #2 被污染
+T -> L  : 子包 #2 重发
+T -> L  : 子包 #3
+L --> T : ZRPOS(#3)  ← 子包 #3 又被污染
+T -> L  : 子包 #3 重发
+note over T, L
+  每个 ZRPOS 往返引入
+  节流等待 + 重传 + 对齐开销,
+  有效吞吐可能跌至 1/3 以下;
+  极端时重试烧穿 MAX_CRC_RETRIES
+  直接失败
+end note
+
+@enduml

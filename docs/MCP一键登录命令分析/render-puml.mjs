@@ -182,7 +182,7 @@ function printUsage() {
       "  -h, --help       显示帮助",
       "",
       "示例:",
-      "  node scripts/render-puml.mjs docs/串口ZMODEM文件传输设计/*.puml",
+      "  node scripts/render-puml.mjs docs/MCP串口ZMODEM文件传输/*.puml",
       "  node scripts/render-puml.mjs foo.puml --out-dir ./out-img",
     ].join("\n")
   );

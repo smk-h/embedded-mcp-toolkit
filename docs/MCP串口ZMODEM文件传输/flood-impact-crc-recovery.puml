@@ -1,0 +1,57 @@
+@startuml 洪水冲击下载CRC链
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 下载方向:CRC 失败 → ZRPOS 续传恢复链与退避上限
+
+participant "设备 sz\n(发送端)" as S
+participant "MCP\n(接收端)" as M
+
+== 正常接收 ==
+
+S --> M : ZDATA × N (子包流)
+M -> M : on_input 流式写盘
+
+== 子包被噪声污染 ==
+
+S --> M : ZDATA 子包 (混入噪声字节)
+M -> M : zmodem.js 抛\nZmodem.Error("crc")
+
+== 恢复链 (recoverFromCrcError) ==
+
+M -> S  : ZRPOS(_file_offset)\n请从上次正确位置续传
+M -> M  : 清空 _input_buffer\n还原 acceptHandler\n复位协议态机
+S --> M : ZDATA(offset) 头 + 重发子包
+M -> M : 重新对齐, CRC 通过
+
+== 洪水持续污染:重试退避 ==
+
+loop 重试 1..MAX_CRC_RETRIES(10)
+  S --> M : 子包再次被污染
+  M -> S  : ZRPOS(...) 再次续传
+end loop
+
+M -> M  : crcRetries 超上限\n放弃恢复
+M --> M : 交由 idle/overall 超时兜底\n报错终止
+
+note over S, M
+  噪声偶发: 一两次 ZRPOS 即恢复;
+  噪声持续: 重试次数被烧穿,
+  传输整体滑坡直至失败
+end note
+
+@enduml

@@ -1,0 +1,62 @@
+@startuml 洪水冲击上传方向独立分析
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 11
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 上传方向:污染正面命中 rz,但本地缓存重传弹药充足,典型退化为吞吐滑坡
+
+participant "MCP\n(发送端)" as M
+participant "串口链路\n(115200 bps)" as L
+participant "设备 rz\n(接收端)" as R
+participant "设备内核\n(dmesg 洪水)" as K
+
+== 发送被污染的子包 ==
+
+M -> L  : ZDATA(offset=0) 子包 512B\n(约 44ms + 50ms 节流)
+L -> R  : 子包到达 UART RX
+K -> R  : printk 日志字节\n(直通 UART, 同一 RX 缓冲)
+R -> R  : 读到交错序列\n"子包前半 + 日志 + 子包后半"
+R -> R  : 子包 CRC 校验失败\n丢弃整个子包
+
+== 回执:控制帧在洪流中存活 ==
+
+R --> M : ZRPOS(offset=0) 请求重传
+note over R, M
+  ZRPOS 只有几字节,且与日志
+  同向共用设备 UART TX,
+  在洪流中存活概率远高于长数据帧
+end note
+
+== 本地缓存重传:弹药即发即得,不计次数 ==
+
+M -> M  : RetransmitController\n命中缓存 pieces(offset=0)
+M -> L  : ZDATA(offset=0) 重发子包\n(无需读盘, 无需等对端)
+L -> R  : 本次撞车窗口已过\nCRC 通过
+
+== 洪水不停:续传风暴但硬扛到底 ==
+
+M -> L  : ZDATA(offset=512)
+K -> R  : 日志字节再次插入
+R --> M : ZRPOS(offset=512)
+M -> L  : 重发 offset=512
+note over M, R
+  ZRPOS 不计次数上限,洪水不停
+  就硬扛到底——上传方向的代价
+  是吞吐滑坡,而非传输失败;
+  每次只暴露一个 512B 撞车窗口
+end note
+
+@enduml
