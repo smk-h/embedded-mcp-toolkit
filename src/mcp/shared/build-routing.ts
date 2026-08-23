@@ -16,6 +16,8 @@
  * ======================================================
  */
 
+import { pkg } from "../../../shared/package-info.js";
+
 // ── 单行指引（instructions 用） ──────────────────────────────
 
 /**
@@ -53,7 +55,7 @@ export function buildRoutingInstructions(): string {
  */
 export function buildRoutingHint(): string {
   return [
-    "Build routing notice: you are in deployment mode 2 (remote-ssh) — the AI client runs on Linux, this MCP server runs on Windows.",
+    `Build routing notice: you are in deployment mode 2 (remote-ssh) — the AI client runs on Linux, the ${pkg.name} MCP server runs on Windows.`,
     "Build locally with cmdsift instead of ssh_build — ssh_build routes traffic Linux -> Windows MCP -> Linux (a wasteful round trip).",
     "Typical cmdsift usage:",
     "  - cmdsift 'make -j8'",
