@@ -58,8 +58,8 @@ function formatLogDirectories(lp: LogPaths): string[] {
   const businessState = lp.business.enabled ? "enabled" : "disabled";
   const rawDataState = lp.rawData.enabled ? "enabled" : "disabled";
   return [
-    "Log directories:",
-    `  cwd:              ${lp.cwd}`,
+    `Log directories (${pkg.name} MCP server):`,
+    `  server cwd:       ${lp.cwd}`,
     `  business log:     ${lp.business.dir}  (${businessState})`,
     `  raw data log:     ${lp.rawData.dir}  (${rawDataState})`,
     "",
