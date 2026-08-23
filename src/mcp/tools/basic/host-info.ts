@@ -19,6 +19,7 @@ import { fromJsonSchema } from "@modelcontextprotocol/server";
 
 import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
+import { pkg } from "../../../shared/package-info.js";
 import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
 import { resolveLogPaths, type LogPaths } from "../../shared/log-paths.js";
 import { buildRoutingHint } from "../../shared/build-routing.js";
@@ -33,7 +34,8 @@ import { buildRoutingHint } from "../../shared/build-routing.js";
  */
 export const hostInfoConfig = {
   description:
-    "Query the MCP host endpoint (username@ip) for constructing cross-machine file transfers (scp) when this MCP runs on Windows and the AI client runs on Linux. " +
+    `Query the MCP host endpoint (username@ip) of ${pkg.name} for constructing cross-machine file transfers (scp) when this MCP (${pkg.name}) runs on Windows and the AI client runs on Linux. ` +
+    `Also returns the ${pkg.name} log save directories (business log & raw data log absolute paths) for locating/cleaning up logs. ` +
     "Returns 'local started' with no endpoint for local launches.",
   inputSchema: fromJsonSchema<Record<string, never>>({
     type: "object",
@@ -65,7 +67,7 @@ function formatLogDirectories(lp: LogPaths): string[] {
     "  - business log (LOG_SAVE + LOG_DIR): whole-process diagnostic info, one file per run (YYYY-MM-DD_HHMMSS.log).",
     "  - raw data log (SAVE2FILE_PATH): per-session raw byte stream from serial/ssh/adb, subdir per device.",
     "  - 'disabled' means that channel is not currently writing to disk; the dir above is where it WOULD save if enabled.",
-    "  - To clean up logs, run power_shell on this MCP host against these dirs (e.g. Get-ChildItem '...' -Recurse | Remove-Item), or scp from your Linux shell in mode 2.",
+    `  - To clean up logs, run power_shell on the ${pkg.name} MCP host against these dirs (e.g. Get-ChildItem '...' -Recurse | Remove-Item), or scp from your Linux shell in mode 2.`,
   ];
 }
 
@@ -113,7 +115,7 @@ function formatHostEndpoint(
     `Host IP:    ${ep.hostIp ?? "(unknown)"}`,
     "Source:     ssh_connection",
     "",
-    "Usage: You (the AI client) are running on Linux; this MCP server runs on Windows (the endpoint above). To transfer files between your Linux machine and Windows, run scp in YOUR OWN shell (not via the power_shell tool, which only operates on the Windows host itself). Always pass the passwordless key -i ~/.ssh/id_mcp_server:",
+    `Usage: You (the AI client) are running on Linux; the ${pkg.name} MCP server runs on Windows (the endpoint above). To transfer files between your Linux machine and Windows, run scp in YOUR OWN shell (not via the power_shell tool, which only operates on the Windows host itself). Always pass the passwordless key -i ~/.ssh/id_mcp_server:`,
     `  - Linux <- Windows (pull):  scp -i ~/.ssh/id_mcp_server ${ep.endpoint}:"E:/path/to/file" ~/local/path`,
     `  - Linux -> Windows (push):  scp -i ~/.ssh/id_mcp_server ~/local/file ${ep.endpoint}:"E:/path/"`,
     "Do NOT use power_shell_* tools for cross-machine transfers — those run on Windows and would scp Windows to itself.",
