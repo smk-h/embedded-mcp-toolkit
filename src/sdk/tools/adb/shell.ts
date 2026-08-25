@@ -5,18 +5,17 @@
  * Author     : opencode
  * Date       : 2026/05/31
  * Version    : 1.0.0
- * Description: ADB Shell 交互式 MCP 工具
+ * Description: ADB Shell 交互式 SDK 工具
  *
  *   提供对 Android 设备的持久化 ADB Shell 会话管理，
- *   支持 open / close / write / read / list / exec 六个操作。
+ *   支持 open / close / write / read / list / exec 六个操作
+ *   （协议无关，MCP 注册见 src/mcp/tools/adb）。
  *
  *   与 PowerShellShell / SerialShell / SSHShell 保持相同的接口模式，
  *   区别在于 ADB Shell 连接的是持久化 adb shell 子进程。
  * ======================================================
  */
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import {
   getPromptPattern,
@@ -30,9 +29,10 @@ import {
   CONTROL_CHAR_MAP,
   type ControlChar,
   PromptDetector,
-} from "../../../sdk/shared/prompt-detector.js";
-import { sendControlChar } from "../../shared/send-ctrl.js";
-import { runExec } from "../../shared/exec-runner.js";
+} from "../../shared/prompt-detector.js";
+// 过渡期反向依赖：send-ctrl / exec-runner 仍在 mcp/shared（整体迁移为后续阶段）
+import { sendControlChar } from "../../../mcp/shared/send-ctrl.js";
+import { runExec } from "../../../mcp/shared/exec-runner.js";
 import { resolveAdbDeviceName } from "./device-resolver.js";
 
 // ── adb_shell_open ──────────────────────────────────────────
@@ -46,12 +46,10 @@ import { resolveAdbDeviceName } from "./device-resolver.js";
  *                中该设备绑定的 serialNo，不触发探测、日志目录更准确；不传时才由
  *                adb 自动发现唯一连接的设备
  */
-export const adbShellOpenConfig = {
+export const adbShellOpenConfig: SdkToolConfig = {
   description:
     "Open an interactive ADB shell session to an Android device. Returns the initial banner output.",
-  inputSchema: fromJsonSchema<{
-    device?: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -69,7 +67,7 @@ export const adbShellOpenConfig = {
           "There is NO need to call adb_device_list first.",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -82,7 +80,7 @@ export const adbShellOpenConfig = {
  *   4. 将 shell 存入会话表，返回 session_id
  *
  * @param args  工具参数，包含可选的 device
- * @returns MCP 响应，包含 session_id 和 banner 内容
+ * @returns 会话打开结果文本，包含 session_id 和 banner 内容
  */
 export async function adbShellOpenHandler(args: { device?: string }) {
   // 1) 确定目标设备名称
@@ -134,9 +132,7 @@ export async function adbShellOpenHandler(args: { device?: string }) {
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logger.error(`[adb_shell_open] open failed: ${errMsg}`);
-    return {
-      content: [text(`ADB shell open failed: ${errMsg}`)],
-    };
+    return `ADB shell open failed: ${errMsg}`;
   }
 
   // open() 成功后才将 shell 存入会话表，后续操作通过 session_id 复用该进程
@@ -160,13 +156,7 @@ export async function adbShellOpenHandler(args: { device?: string }) {
   });
   logger.info(`[adb_shell_open] session opened: ${sessionId}`);
 
-  return {
-    content: [
-      text(
-        `Session ${sessionId} opened. Device: ${shell.getSerialNo()}\n${banner || "(no banner)"}`
-      ),
-    ],
-  };
+  return `Session ${sessionId} opened. Device: ${shell.getSerialNo()}\n${banner || "(no banner)"}`;
 }
 
 // ── adb_shell_close ─────────────────────────────────────────
@@ -178,9 +168,9 @@ export async function adbShellOpenHandler(args: { device?: string }) {
  *
  * @param session_id  由 adb_shell_open 返回的会话 ID
  */
-export const adbShellCloseConfig = {
+export const adbShellCloseConfig: SdkToolConfig = {
   description: "Close an ADB shell session and terminate the adb process.",
-  inputSchema: fromJsonSchema<{ session_id: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -189,7 +179,7 @@ export const adbShellCloseConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -201,21 +191,21 @@ export const adbShellCloseConfig = {
  *   3. 从会话表中移除该条目
  *
  * @param args  工具参数，包含 session_id
- * @returns MCP 响应，确认会话已关闭
+ * @returns 确认会话已关闭的文本
  */
 export async function adbShellCloseHandler(args: { session_id: string }) {
   logger.info(`[adb_shell_close] session_id=${args.session_id}`);
-  const result = adbStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = adbStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   await adbStore.withLock(args.session_id, async () => {
-    await result.shell.close();
+    await shell.close();
   });
   adbStore.remove(args.session_id);
 
-  return { content: [text(`Session ${args.session_id} closed.`)] };
+  return `Session ${args.session_id} closed.`;
 }
 
 // ── adb_shell_write ─────────────────────────────────────────
@@ -229,16 +219,12 @@ export async function adbShellCloseHandler(args: { session_id: string }) {
  * @param command     要发送的命令字符串
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const adbShellWriteConfig = {
+export const adbShellWriteConfig: SdkToolConfig = {
   description:
     "Send a command to an ADB shell session. " +
     "Do NOT call this concurrently with adb_shell_exec/adb_shell_read on the same session_id — " +
     "concurrent access to the same ADB shell corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    clear?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -256,7 +242,7 @@ export const adbShellWriteConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -266,7 +252,7 @@ export const adbShellWriteConfig = {
  * 注意：此函数仅发送命令，不等待输出，需配合 adb_shell_read 读取结果。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 clear
- * @returns MCP 响应，确认命令已发送
+ * @returns 确认命令已发送的文本
  */
 export async function adbShellWriteHandler(args: {
   session_id: string;
@@ -277,14 +263,14 @@ export async function adbShellWriteHandler(args: {
   logger.info(
     `[adb_shell_write] session_id=${args.session_id} command=${args.command} clear=${clearVal}`
   );
-  const result = adbStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = adbStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return adbStore.withLock(args.session_id, async () => {
-    result.shell.write(args.command, clearVal);
-    return { content: [text(`Command sent: ${args.command}`)] };
+    shell.write(args.command, clearVal);
+    return `Command sent: ${args.command}`;
   });
 }
 
@@ -298,12 +284,12 @@ export async function adbShellWriteHandler(args: {
  * @param session_id  由 adb_shell_open 返回的会话 ID
  * @param clear       缓冲区清空标志（1=读取后清空，0=保留缓冲区，默认 1）
  */
-export const adbShellReadConfig = {
+export const adbShellReadConfig: SdkToolConfig = {
   description:
     "Read output from an ADB shell session. " +
     "Do NOT call this concurrently with adb_shell_exec/adb_shell_write on the same session_id — " +
     "concurrent access to the same ADB shell corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -317,7 +303,7 @@ export const adbShellReadConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -328,7 +314,7 @@ export const adbShellReadConfig = {
  * clear=0 时保留缓冲区内容，可重复读取。
  *
  * @param args  工具参数，包含 session_id 和可选的 clear
- * @returns MCP 响应，包含读取到的输出内容
+ * @returns 读取到的输出内容
  */
 export async function adbShellReadHandler(args: {
   session_id: string;
@@ -338,14 +324,14 @@ export async function adbShellReadHandler(args: {
   logger.info(
     `[adb_shell_read] session_id=${args.session_id} clear=${clearVal}`
   );
-  const result = adbStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = adbStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return adbStore.withLock(args.session_id, async () => {
-    const output = result.shell.read(clearVal);
-    return { content: [text(output || "(no output)")] };
+    const output = shell.read(clearVal);
+    return output || "(no output)";
   });
 }
 
@@ -363,20 +349,14 @@ export async function adbShellReadHandler(args: {
  * @param clear        缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  * @param maxDuration  执行时长覆盖（毫秒）。默认按命令类型分流：常驻命令(ping/logcat/top)10000ms 采样超时(发Ctrl+C)，普通命令 300000ms 兜底超时(不发Ctrl+C)。超时动作仍按常驻性判定
  */
-export const adbShellExecConfig = {
+export const adbShellExecConfig: SdkToolConfig = {
   description:
     "Send a command to an ADB shell session and wait for the output. Combines write + delay + read in one call. " +
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the ADB shell is a single " +
     "channel; concurrent calls will interleave output and corrupt results. " +
     "Always wait for the previous command to finish before sending the next one. " +
     "If you need parallel execution, open multiple sessions via adb_shell_open.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    delay?: number;
-    clear?: number;
-    maxDuration?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -412,7 +392,7 @@ export const adbShellExecConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -423,7 +403,7 @@ export const adbShellExecConfig = {
  * 普通命令靠提示符检测返回，仅提示符未匹配时走兜底超时（不发 Ctrl+C，返回兜底超时标注）。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 delay、clear、maxDuration
- * @returns MCP 响应，包含命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
+ * @returns 命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
  */
 export async function adbShellExecHandler(args: {
   session_id: string;
@@ -438,12 +418,11 @@ export async function adbShellExecHandler(args: {
   logger.info(
     `[adb_shell_exec] session_id=${args.session_id} command=${args.command} delay=${delayVal} clear=${clearVal} maxDuration=${maxDurationVal ?? "(default)"}`
   );
-  const result = adbStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = adbStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
-  const shell = result.shell;
   const deviceName = resolveDeviceName();
 
   // 提示符检测器：设备配置覆盖优先，无配置用默认正则
@@ -486,7 +465,7 @@ export async function adbShellExecHandler(args: {
         `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
     }
 
-    return { content: [text(output || "(no output)")] };
+    return output || "(no output)";
   });
 }
 
@@ -512,13 +491,10 @@ const CTRL_LABEL: Readonly<Record<ControlChar, string>> = {
  * @param session_id  由 adb_shell_open 返回的会话 ID
  * @param key         控制字符类型：c(Ctrl+C)/u(Ctrl+U)/d(Ctrl+D)/z(Ctrl+Z)
  */
-export const adbShellSendCtrlConfig = {
+export const adbShellSendCtrlConfig: SdkToolConfig = {
   description:
     "Send a control character (Ctrl+C/U/D/Z) to an ADB shell session without appending a newline.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    key: ControlChar;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -533,7 +509,7 @@ export const adbShellSendCtrlConfig = {
       },
     },
     required: ["session_id", "key"],
-  }),
+  },
 };
 
 /**
@@ -543,7 +519,7 @@ export const adbShellSendCtrlConfig = {
  * 保证语义正确。发送后自动 drain 丢弃回显并短暂等待信号生效。
  *
  * @param args  工具参数，包含 session_id 和 key
- * @returns MCP 响应，确认控制字符已发送
+ * @returns 确认控制字符已发送的文本
  */
 export async function adbShellSendCtrlHandler(args: {
   session_id: string;
@@ -552,16 +528,14 @@ export async function adbShellSendCtrlHandler(args: {
   logger.info(
     `[adb_shell_send_ctrl] session_id=${args.session_id} key=${args.key}`
   );
-  const result = adbStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = adbStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return adbStore.withLock(args.session_id, async () => {
-    const byte = await sendControlChar(result.shell, args.key);
+    const byte = await sendControlChar(shell, args.key);
     const label = CTRL_LABEL[args.key];
-    return {
-      content: [text(`${label} sent (${byte})`)],
-    };
+    return `${label} sent (${byte})`;
   });
 }

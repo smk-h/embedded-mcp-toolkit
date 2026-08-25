@@ -86,7 +86,7 @@ async function cleanupAllSessions() {
     import("./tools/serial/sessions.js"),
     import("./tools/ssh/sessions.js"),
     import("./tools/win/sessions.js"),
-    import("./tools/adb/sessions.js"),
+    import("../sdk/tools/adb/sessions.js"),
   ]);
   await Promise.allSettled([
     disposeAllSerialSessions(),

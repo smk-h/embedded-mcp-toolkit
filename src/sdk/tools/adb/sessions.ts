@@ -5,7 +5,8 @@
  * disposeAllAdbShellSessions 保持原名，server.ts cleanup 钩子按名引用。
  */
 
-import { ShellSessionStore } from "../../sessions/index.js";
+// 过渡期反向依赖：sessions 域仍在 mcp/（整体迁移为后续阶段）
+import { ShellSessionStore } from "../../../mcp/sessions/index.js";
 import { AdbShell } from "../../../transports/adb.js";
 
 /** @brief ADB 会话存储实例（前缀 "adb" → 生成 adb_1、adb_2 ...） */

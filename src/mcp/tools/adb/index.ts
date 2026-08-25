@@ -2,53 +2,25 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : index.ts
- * Author     : opencode
- * Date       : 2026/05/31
+ * Author     : sumu
+ * Date       : 2026/08/25
  * Version    : 1.0.0
- * Description: MCP ADB 工具 — ADB Shell 工具的统一定义入口
+ * Description: MCP ADB 工具 — sdk ADB 工具的 MCP 适配入口
  *
- *   只导出工具，注册由 src/mcp/server.ts 负责。
+ *   本文件不再定义任何工具，仅把 src/sdk 的协议无关定义经
+ *   adapter 适配为 MCP ToolEntry（注册由 src/mcp/server.ts 负责）。
  * ======================================================
  */
-import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 
-import {
-  adbShellOpenConfig,
-  adbShellOpenHandler,
-  adbShellCloseConfig,
-  adbShellCloseHandler,
-  adbShellWriteConfig,
-  adbShellWriteHandler,
-  adbShellReadConfig,
-  adbShellReadHandler,
-  adbShellExecConfig,
-  adbShellExecHandler,
-  adbShellSendCtrlConfig,
-  adbShellSendCtrlHandler,
-} from "./shell.js";
-import {
-  adbDeviceListConfig,
-  adbDeviceListHandler,
-  adbExecConfig,
-  adbExecHandler,
-} from "./exec.js";
+import { sdkAdbTools } from "../../../sdk/index.js";
+import { adaptSdkTool } from "../../adapter.js";
+import type { ToolEntry } from "../../tool-registry.js";
+
+// ── 工具列表 ────────────────────────────────────────────────
 
 /**
- * @brief 所有已定义的 ADB 工具列表
+ * @brief 所有已定义的 ADB 工具列表（由 sdkAdbTools 适配而来）
  *
- * 添加新工具时只需在此数组中追加一项即可。
+ * 添加新工具改到 src/sdk/tools/adb/index.ts，此处无需变动。
  */
-export const mcpAdbTools: ToolEntry[] = [
-  mcpDefineTool("adb_device_list", adbDeviceListConfig, adbDeviceListHandler),
-  mcpDefineTool("adb_exec", adbExecConfig, adbExecHandler),
-  mcpDefineTool("adb_shell_open", adbShellOpenConfig, adbShellOpenHandler),
-  mcpDefineTool("adb_shell_close", adbShellCloseConfig, adbShellCloseHandler),
-  mcpDefineTool("adb_shell_write", adbShellWriteConfig, adbShellWriteHandler),
-  mcpDefineTool("adb_shell_read", adbShellReadConfig, adbShellReadHandler),
-  mcpDefineTool("adb_shell_exec", adbShellExecConfig, adbShellExecHandler),
-  mcpDefineTool(
-    "adb_shell_send_ctrl",
-    adbShellSendCtrlConfig,
-    adbShellSendCtrlHandler
-  ),
-];
+export const mcpAdbTools: ToolEntry[] = sdkAdbTools.map(adaptSdkTool);

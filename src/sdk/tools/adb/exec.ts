@@ -5,19 +5,19 @@
  * Author     : opencode
  * Date       : 2026/05/31
  * Version    : 1.0.0
- * Description: ADB 一次性命令执行与设备扫描 MCP 工具
+ * Description: ADB 一次性命令执行与设备扫描 SDK 工具
  *
  *   提供 execAdb 通用函数执行非交互式 ADB 命令，
- *   以及 adb_device_list / adb_exec 两个 MCP 工具。
+ *   以及 adb_device_list / adb_exec 两个工具（协议无关，
+ *   MCP 注册见 src/mcp/tools/adb）。
  *
  *   与 shell.ts 互补：shell.ts 管理持久化交互式会话，
  *   exec.ts 负责一次性命令执行。
  * ======================================================
  */
 import { spawnSync } from "child_process";
-import { fromJsonSchema } from "@modelcontextprotocol/server";
 
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { resolveAdbSerial, resolveDeviceName } from "../../../shared/config.js";
 import { resolveAdbDeviceName } from "./device-resolver.js";
@@ -159,13 +159,13 @@ interface AdbDeviceInfo {
  *
  * 列出当前所有通过 USB 或 TCP/IP 连接的 ADB 设备及其状态。
  */
-export const adbDeviceListConfig = {
+export const adbDeviceListConfig: SdkToolConfig = {
   description:
     "List all connected ADB devices and their status (device, offline, unauthorized, etc.)",
-  inputSchema: fromJsonSchema<Record<string, never>>({
+  inputSchema: {
     type: "object",
     properties: {},
-  }),
+  },
 };
 
 /**
@@ -216,14 +216,10 @@ export async function adbDeviceListHandler() {
   const devices = parseAdbDevices(raw);
 
   if (devices.length === 0) {
-    return {
-      content: [
-        text(
-          "No ADB devices found.\n" +
-            "(Check USB connection, enable USB debugging, and ensure adb is in PATH)"
-        ),
-      ],
-    };
+    return (
+      "No ADB devices found.\n" +
+      "(Check USB connection, enable USB debugging, and ensure adb is in PATH)"
+    );
   }
 
   const lines: string[] = [`Found ${devices.length} device(s):`, ""];
@@ -236,7 +232,7 @@ export async function adbDeviceListHandler() {
     }
   }
 
-  return { content: [text(lines.join("\n"))] };
+  return lines.join("\n");
 }
 
 // ── adb_exec 工具 ──────────────────────────────────────────
@@ -252,14 +248,11 @@ export async function adbDeviceListHandler() {
  *                adb 自动发现唯一连接的设备
  * @param command ADB 命令及参数（不含 "adb" 前缀），如 "devices"、"shell ls /sdcard"
  */
-export const adbExecConfig = {
+export const adbExecConfig: SdkToolConfig = {
   description:
     "Execute a one-shot ADB command without a persistent session. " +
     "Use for adb devices, install, push, or short shell commands.",
-  inputSchema: fromJsonSchema<{
-    command: string;
-    device?: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -283,7 +276,7 @@ export const adbExecConfig = {
       },
     },
     required: ["command"],
-  }),
+  },
 };
 
 /**
@@ -340,5 +333,5 @@ export async function adbExecHandler(args: {
 
   const output = execAdb(cmdArgs);
 
-  return { content: [text(output || "(no output)")] };
+  return output || "(no output)";
 }
