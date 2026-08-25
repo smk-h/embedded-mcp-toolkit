@@ -154,8 +154,7 @@ export function resolveHostEndpoint(): HostEndpoint {
   const hostIp = resolveHostIp(sshConn as string);
 
   // username 与 hostIp 任一缺失则端点不可用（降级，不抛错）
-  const endpoint =
-    username && hostIp ? `${username}@${hostIp}` : null;
+  const endpoint = username && hostIp ? `${username}@${hostIp}` : null;
   // 解析成功来源为 ssh_connection，否则为 unavailable
   const source = endpoint ? "ssh_connection" : "unavailable";
 

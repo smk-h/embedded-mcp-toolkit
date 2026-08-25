@@ -16,6 +16,6 @@
  */
 
 export { ShellSessionStore } from "./session-store.js";
-export type { CreateSessionMeta, GetResult } from "./session-store.js";
+export type { CreateSessionMeta } from "./session-store.js";
 
 export { registry, type SessionType, type SessionMeta } from "./registry.js";

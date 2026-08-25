@@ -3,8 +3,8 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as os from "os";
-import { resolveHostEndpoint } from "./shared/host-endpoint.js";
-import { buildRoutingInstructions } from "./shared/build-routing.js";
+import { resolveHostEndpoint } from "../sdk/shared/host-endpoint.js";
+import { buildRoutingInstructions } from "../sdk/shared/build-routing.js";
 
 import { logger } from "../shared/logger.js";
 import { pkg } from "../shared/package-info.js";

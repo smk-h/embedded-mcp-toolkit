@@ -36,9 +36,8 @@ import {
   PromptDetector,
   UbootDetector,
 } from "../../shared/prompt-detector.js";
-// 过渡期反向依赖：send-ctrl / exec-runner 仍在 mcp/shared（整体迁移为后续阶段）
-import { sendControlChar } from "../../../mcp/shared/send-ctrl.js";
-import { runExec } from "../../../mcp/shared/exec-runner.js";
+import { sendControlChar } from "../../shared/send-ctrl.js";
+import { runExec } from "../../shared/exec-runner.js";
 
 // ── serial_open ─────────────────────────────────────────────
 

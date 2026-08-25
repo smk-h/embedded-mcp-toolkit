@@ -32,10 +32,7 @@
 import type { InteractiveShell } from "../../transports/interactive-shell.js";
 import { logger } from "../../shared/logger.js";
 
-import {
-  type ControlChar,
-  PromptDetector,
-} from "../../sdk/shared/prompt-detector.js";
+import { type ControlChar, PromptDetector } from "./prompt-detector.js";
 import { classifyResident, type ResidentVerdict } from "./resident-detector.js";
 
 /** @brief 常驻命令采样超时时长（毫秒），到点发 Ctrl+C 终止（中性语义） */
@@ -351,8 +348,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     accumulated += input.shell.drain();
 
     // ── 1级：marker 检测（确定性，首选） ──
-    const markerMatch: RegExpMatchArray | null =
-      accumulated.match(markerRegex);
+    const markerMatch: RegExpMatchArray | null = accumulated.match(markerRegex);
     if (markerMatch) {
       // hush/POSIX shell 展开为数字；simple parser 原样输出字面量 "$?"（退出码未知）
       const rawExit: string = markerMatch[1];

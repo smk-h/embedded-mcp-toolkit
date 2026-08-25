@@ -16,8 +16,7 @@
 
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
-// 过渡期反向依赖：registry 仍在 mcp/sessions（sessions 域整体迁移为后续阶段）
-import { registry, type SessionMeta } from "../../../mcp/sessions/registry.js";
+import { registry, type SessionMeta } from "../../sessions/registry.js";
 import { formatBeijingTime } from "../../../utils/timestamp.js";
 
 // ── session_info ──────────────────────────────────────────

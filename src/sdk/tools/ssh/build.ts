@@ -11,9 +11,8 @@ import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { sanitize } from "../../../utils/terminal-sanitizer.js";
 import { sshStore } from "./sessions.js";
-// 过渡期反向依赖：host-endpoint / build-routing 仍在 mcp/shared（整体迁移为后续阶段）
-import { resolveHostEndpoint } from "../../../mcp/shared/host-endpoint.js";
-import { buildRoutingHint } from "../../../mcp/shared/build-routing.js";
+import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
+import { buildRoutingHint } from "../../shared/build-routing.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
 const BUILD_MARKER = "___MCP_BUILD_DONE___";

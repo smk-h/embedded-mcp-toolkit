@@ -18,13 +18,12 @@
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { pkg } from "../../../shared/package-info.js";
-// 过渡期反向依赖：宿主端点/日志目录/路由提示仍在 mcp/shared（整体迁移为后续阶段）
-import { resolveHostEndpoint } from "../../../mcp/shared/host-endpoint.js";
+import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
 import {
   resolveLogPaths,
   type LogPaths,
-} from "../../../mcp/shared/log-paths.js";
-import { buildRoutingHint } from "../../../mcp/shared/build-routing.js";
+} from "../../shared/log-paths.js";
+import { buildRoutingHint } from "../../shared/build-routing.js";
 
 // ── 声明 ────────────────────────────────────────────────────
 

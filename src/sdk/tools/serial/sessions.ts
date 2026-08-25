@@ -8,8 +8,7 @@
  * 保留在 shell.ts 内，不在此处也不进基类。
  */
 
-// 过渡期反向依赖：sessions 域仍在 mcp/（整体迁移为后续阶段）
-import { ShellSessionStore } from "../../../mcp/sessions/index.js";
+import { ShellSessionStore } from "../../sessions/index.js";
 import { SerialShell } from "../../../transports/serial.js";
 import { logger } from "../../../shared/logger.js";
 

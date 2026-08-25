@@ -24,7 +24,6 @@
 
 import { BaseShell } from "../../transports/base-shell.js";
 import { registry, type SessionType } from "./registry.js";
-import { text } from "../tool-registry.js";
 import { logger } from "../../shared/logger.js";
 
 // ── 类型 ────────────────────────────────────────────────────
@@ -41,16 +40,6 @@ export interface CreateSessionMeta {
   connectionInfo: string; // 人可读的连接细节，如 "192.168.16.103:22"、"COM3@115200"
   logPath?: string; // 日志文件完整路径，来自 enableFromEnv 的返回值；未启用时为 undefined
 }
-
-/**
- * @brief getOrNotFound 的查询结果（判别联合）
- *
- * 命中时 ok=true 并携带 shell 实例；未命中时 ok=false 并携带统一文案的 MCP 响应。
- * 调用方用 `if (!result.ok) return result.response;` 一行处理 not-found 分支。
- */
-export type GetResult<T extends BaseShell> =
-  | { ok: true; shell: T }
-  | { ok: false; response: { content: { type: "text"; text: string }[] } };
 
 // ── SessionMutex ───────────────────────────────────────────
 
@@ -191,31 +180,6 @@ export class ShellSessionStore<T extends BaseShell> {
   }
 
   /**
-   * @brief 查询会话，不存在时返回统一的 not-found MCP 响应
-   *
-   * 封装各 handler 里重复最多的 not-found 样板。返回值用判别联合，类型安全。
-   * 调用方典型用法：
-   *   const result = store.getOrNotFound(session_id);
-   *   if (!result.ok) return result.response;
-   *   const shell = result.shell;
-   *
-   * @param sessionId - 会话 ID
-   * @returns 命中返回 { ok: true, shell }，未命中返回 { ok: false, response }
-   */
-  getOrNotFound(sessionId: string): GetResult<T> {
-    const shell = this.#sessions.get(sessionId);
-    if (shell) {
-      return { ok: true, shell };
-    }
-    return {
-      ok: false,
-      response: {
-        content: [text(`Session ${sessionId} not found.`)],
-      },
-    };
-  }
-
-  /**
    * @brief 删除会话：从 Map 删除、从 registry 注销
    *
    * 只负责"删 Map + 注销 registry"，不调 close（close 由各 handler 在合适时机调，
@@ -239,7 +203,7 @@ export class ShellSessionStore<T extends BaseShell> {
    *
    * 不同 session_id 的锁互相独立，不会互相阻塞。
    *
-   * session 不存在时直接执行 fn（让 fn 内部的 getOrNotFound 返回 not-found 响应），
+   * session 不存在时直接执行 fn（让 fn 内部的 get() 返回 not-found 结果），
    * 不阻塞调用方。
    *
    * @param sessionId - 会话 ID
