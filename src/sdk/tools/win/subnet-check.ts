@@ -170,7 +170,8 @@ function maskToCidr(mask: string): number {
   if ((inverted & (inverted + 1)) !== 0) {
     throw new Error(`Invalid subnet mask: "${mask}" (non-contiguous bits)`);
   }
-  return 32 - Math.clz32(inverted);
+  // inverted 为低位连续的 1，inverted + 1 必为 2^主机位，前缀长度 = 32 - 主机位
+  return 32 - Math.log2(inverted + 1);
 }
 
 /**
