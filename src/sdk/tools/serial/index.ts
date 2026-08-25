@@ -8,7 +8,7 @@
  * Description: SDK Serial 工具统一定义入口
  *
  *   协议无关的串口工具聚合（shell 会话 / 一键登录 / U-Boot 编排 /
- *   ZMODEM 传输）；MCP 侧注册见 src/mcp/tools/serial/index.ts。
+ *   ZMODEM 传输）；MCP 侧注册见 src/mcp/tools.ts。
  * ======================================================
  */
 

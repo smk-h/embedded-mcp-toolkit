@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/06/09
  * Version    : x.x.x
- * Description: session_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
+ * Description: session_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  *
  *   提供跨连接类型的会话查询能力：
  *     - 按 session_id 查询 → 返回该会话的完整元数据

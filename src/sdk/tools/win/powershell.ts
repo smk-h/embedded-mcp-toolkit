@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/05/28
  * Version    : x.x.x
- * Description: PowerShell 交互式 Shell SDK 工具（协议无关，MCP 注册见 src/mcp/tools/win）
+ * Description: PowerShell 交互式 Shell SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  *
  * 提供对本地 Windows PowerShell 进程的会话管理，
  * 支持 open / close / write / read / list / exec 六个操作。

@@ -7,13 +7,13 @@
  * Version    : x.x.x
  * Description: SDK Basic 工具统一定义入口
  *
- *   协议无关的通用工具聚合；MCP 侧注册见 src/mcp/tools/basic/index.ts。
+ *   协议无关的通用工具聚合；MCP 侧注册见 src/mcp/tools.ts。
  * ======================================================
  */
 
 // SDK Basic 工具 — 通用工具的统一定义入口（协议无关）
 //
-//   只导出工具定义与执行函数；MCP 侧注册见 src/mcp/tools/basic/index.ts。
+//   只导出工具定义与执行函数；MCP 侧注册见 src/mcp/tools.ts。
 
 import { sdkDefineTool, type AnySdkToolDef } from "../../types.js";
 

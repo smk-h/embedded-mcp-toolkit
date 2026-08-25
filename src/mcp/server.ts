@@ -19,11 +19,13 @@ import { buildRoutingInstructions } from "../sdk/shared/build-routing.js";
 
 import { logger } from "../shared/logger.js";
 import { pkg } from "../shared/package-info.js";
-import { mcpBasicTools } from "./tools/basic/index.js";
-import { mcpSshTools } from "./tools/ssh/index.js";
-import { mcpSerialTools } from "./tools/serial/index.js";
-import { mcpWinTools } from "./tools/win/index.js";
-import { mcpAdbTools } from "./tools/adb/index.js";
+import {
+  mcpBasicTools,
+  mcpSshTools,
+  mcpSerialTools,
+  mcpWinTools,
+  mcpAdbTools,
+} from "./tools.js";
 
 // ── package info ───────────────────────────────────────────
 // 经由 package-info 统一读取：npm/源码模式读磁盘，单文件 exe 模式用打包期注入的字面量

@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: host_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
+ * Description: host_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  *
  *   查询 MCP 宿主端点信息（username@ip），用于跨机部署场景下 AI 客户端
  *   构造 scp 等文件传输命令。作为 instructions 字段未被客户端采纳时的兜底通道。

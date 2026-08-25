@@ -8,7 +8,7 @@
  * Description: SDK Win 工具统一定义入口
  *
  *   协议无关的 Windows 主机工具聚合（PowerShell 会话 / 端口扫描 /
- *   网络扫描 / 子网检查）；MCP 侧注册见 src/mcp/tools/win/index.ts。
+ *   网络扫描 / 子网检查）；MCP 侧注册见 src/mcp/tools.ts。
  * ======================================================
  */
 

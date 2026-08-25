@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/08/25
  * Version    : x.x.x
- * Description: greet SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
+ * Description: greet SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  * ======================================================
  */
 

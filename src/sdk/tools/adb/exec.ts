@@ -9,7 +9,7 @@
  *
  *   提供 execAdb 通用函数执行非交互式 ADB 命令，
  *   以及 adb_device_list / adb_exec 两个工具（协议无关，
- *   MCP 注册见 src/mcp/tools/adb）。
+ *   MCP 注册见 src/mcp/tools.ts）。
  *
  *   与 shell.ts 互补：shell.ts 管理持久化交互式会话，
  *   exec.ts 负责一次性命令执行。

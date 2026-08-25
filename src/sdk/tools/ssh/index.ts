@@ -8,7 +8,7 @@
  * Description: SDK SSH 工具统一定义入口
  *
  *   协议无关的 SSH 工具聚合（shell 会话 / 一键登录 / 远程编译 / SFTP）；
- *   MCP 侧注册见 src/mcp/tools/ssh/index.ts。
+ *   MCP 侧注册见 src/mcp/tools.ts。
  * ======================================================
  */
 

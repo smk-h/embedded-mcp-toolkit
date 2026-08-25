@@ -8,7 +8,7 @@
  * Description: SDK ADB 工具统一定义入口
  *
  *   协议无关的 ADB 工具聚合（设备扫描 + 交互式 shell 会话）；
- *   MCP 侧注册见 src/mcp/tools/adb/index.ts。
+ *   MCP 侧注册见 src/mcp/tools.ts。
  * ======================================================
  */
 

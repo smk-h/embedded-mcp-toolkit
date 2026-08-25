@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/05/26
  * Version    : x.x.x
- * Description: device_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
+ * Description: device_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  * ======================================================
  */
 
