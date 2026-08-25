@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : shell.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: SSH 交互式 Shell SDK 工具（协议无关，MCP 注册见 src/mcp/tools/ssh）
+ * ======================================================
+ */
+
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { SSHShell, type SSHShellConfig } from "../../../transports/ssh.js";

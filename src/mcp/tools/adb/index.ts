@@ -4,7 +4,7 @@
  * File name  : index.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: MCP ADB 工具 — sdk ADB 工具的 MCP 适配入口
  *
  *   本文件不再定义任何工具，仅把 src/sdk 的协议无关定义经

@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : config.ts
+ * Author     : sumu
+ * Date       : 2026/05/25
+ * Version    : x.x.x
+ * Description: 设备配置加载 — config.yaml 解析与各通道配置读取
+ * ======================================================
+ */
+
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { load } from "js-yaml";

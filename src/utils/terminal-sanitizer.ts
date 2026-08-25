@@ -1,4 +1,13 @@
-// 终端输出辅助 — 清洗控制字符，防止终端显示错乱
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : terminal-sanitizer.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: 终端输出清洗 — 控制字符转可读标记
+ * ======================================================
+ */
 
 /**
  * @brief 控制字符 → 可见文本标记映射表

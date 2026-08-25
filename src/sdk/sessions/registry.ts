@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : registry.ts
- * Author     : opencode
+ * Author     : sumu
  * Date       : 2026/06/09
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 中心化会话注册表
  *
  *   统一记录所有连接类型（SSH / Serial / ADB / PowerShell）的会话元数据，

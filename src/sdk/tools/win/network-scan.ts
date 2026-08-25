@@ -1,7 +1,15 @@
 /**
- *  网络适配器: 计算机中负责网络通信的硬件设备，包括有线网卡、无线网卡、蓝牙等。
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : network-scan.ts
+ * Author     : sumu
+ * Date       : 2026/05/28
+ * Version    : x.x.x
+ * Description: 网络适配器: 计算机中负责网络通信的硬件设备，包括有线网卡、无线网卡、蓝牙等。
+ *
  *              查询网络适配器：Get-CimInstance -ClassName Win32_NetworkAdapter | Select-Object Name, DeviceID, Speed, NetConnectionStatus, MACAddress, Manufacturer | Format-Table -AutoSize
  *              查询网络适配器配置：Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true } | Select-Object Description, IPAddress, MACAddress, DHCPEnabled | Format-Table -AutoSize
+ * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";

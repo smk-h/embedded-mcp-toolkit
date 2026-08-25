@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : exec.ts
- * Author     : opencode
+ * Author     : sumu
  * Date       : 2026/05/31
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: ADB 一次性命令执行与设备扫描 SDK 工具
  *
  *   提供 execAdb 通用函数执行非交互式 ADB 命令，

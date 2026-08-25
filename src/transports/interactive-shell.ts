@@ -4,7 +4,7 @@
  * File name  : interactive-shell.ts
  * Author     : sumu
  * Date       : 2026/07/13
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 交互式 Shell 的统一读写接口
  *
  *   抽象出 open / write / read / drain / close 五个方法，

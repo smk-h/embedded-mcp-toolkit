@@ -1,8 +1,14 @@
 /**
- * @file src/cli/commands/sshd-config/platform.ts
- * @brief 平台与管理员权限
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : platform.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: 平台与管理员权限
  *
  * 判断 Windows 平台、检测管理员权限、自动 UAC 提权重启当前命令。
+ * ======================================================
  */
 
 import { execFileSync } from "child_process";

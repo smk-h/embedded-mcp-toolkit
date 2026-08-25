@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/one-click.ts
- * @brief step8: 一键完成全流程
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : one-click.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step8: 一键完成全流程
+ * ======================================================
  */
 
 import { log } from "@clack/prompts";

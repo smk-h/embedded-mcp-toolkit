@@ -1,8 +1,15 @@
 /**
- * PSH (Protect Shell) 终端状态枚举
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : psh.ts
+ * Author     : sumu
+ * Date       : 2026/05/25
+ * Version    : x.x.x
+ * Description: PSH (Protect Shell) 终端状态枚举
  *
  * PSH 是嵌入式设备上的锁定 shell，启动后限制可用命令，
  * 需要通过特定流程（如 debug + 密码）解锁后才能获得完整 shell。
+ * ======================================================
  */
 
 import { logger } from "../shared/logger.js";

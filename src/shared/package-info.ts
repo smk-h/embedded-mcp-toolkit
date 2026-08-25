@@ -1,6 +1,11 @@
 /**
- * @file package-info.ts
- * @brief 统一的 package.json 信息读取（兼容 npm/源码运行与单文件 exe 两种模式）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : package-info.ts
+ * Author     : sumu
+ * Date       : 2026/08/18
+ * Version    : x.x.x
+ * Description: 统一的 package.json 信息读取（兼容 npm/源码运行与单文件 exe 两种模式）
  *
  * 两种运行环境的取值来源：
  *   - 单文件 exe（bun build --compile，见 scripts/build-exe.mjs）：打包时通过
@@ -12,6 +17,7 @@
  * 注入通道选用 globalThis 成员表达式而非裸标识符：define 语义下成员表达式被
  * 精确替换，node 运行时该属性自然为 undefined，无需依赖 typeof 折叠等打包器
  * 实现细节。
+ * ======================================================
  */
 
 import { readFileSync } from "fs";

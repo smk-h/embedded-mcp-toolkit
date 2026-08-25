@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : adb.ts
- * Author     : opencode
+ * Author     : sumu
  * Date       : 2026/05/31
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: ADB Shell 交互式会话管理器
  *
  *   通过 child_process.spawn 启动持久化的 adb shell 进程，

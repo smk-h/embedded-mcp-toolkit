@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/sshd-config/sshd-config-edit.ts
- * @brief sshd_config 辅助
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : sshd-config-edit.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: sshd_config 辅助
  *
  * 在 sshd_config 行数组中查找匹配且未被注释的指令行、修改 sshd_config 文本内容。
  * 纯字符串处理，无外部依赖。
+ * ======================================================
  */
 
 // ============================================================

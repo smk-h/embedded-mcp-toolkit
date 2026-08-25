@@ -4,7 +4,7 @@
  * File name  : user-login.ts
  * Author     : sumu
  * Date       : 2026/06/02
- * Version    : 2.0
+ * Version    : x.x.x
  * Description: 用户登录模块 —— 抽象串口/SSH 等通道下的用户名/密码登录流程。
  *              参考 PshHandler 的设计，将状态枚举、结果结构、登录通道接口统一封装。
  *              通过 UserLoginProfile 模板配置不同的登录样式（如标准用户名/密码、仅密码等）。

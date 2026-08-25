@@ -4,7 +4,7 @@
  * File name  : index.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: SDK 聚合出口
  *
  *   外部项目统一从此处引用 sdk 能力（类型契约 + 各工具组定义），

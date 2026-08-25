@@ -4,7 +4,7 @@
  * File name  : adapter.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: SDK → MCP 适配器
  *
  *   把协议无关的工具定义包装为 MCP 工具条目：

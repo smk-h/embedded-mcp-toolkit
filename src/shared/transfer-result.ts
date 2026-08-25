@@ -4,7 +4,7 @@
  * File name  : transfer-result.ts
  * Author     : sumu
  * Date       : 2026/07/24
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 文件传输结果摘要（共享层）
  *
  *   定义跨通道复用的 TransferResult 接口与摘要格式化工具函数。

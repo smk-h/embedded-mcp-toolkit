@@ -1,5 +1,11 @@
 /**
- * PowerShell 工具函数与交互式 Shell 管理器
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : powershell.ts
+ * Author     : sumu
+ * Date       : 2026/05/27
+ * Version    : x.x.x
+ * Description: PowerShell 工具函数与交互式 Shell 管理器
  *
  * 提供两层能力：
  *   1. 一次性脚本执行：encodePsCommand / execPowerShell（非交互式，执行后进程退出）
@@ -8,6 +14,7 @@
  * 交互式 Shell 通过 child_process.spawn 启动持久化的 PowerShell 进程，
  * 实现与 SerialShell / SSHShell 相同的缓冲区管理接口，
  * 可复用于 PshHandler 的解锁流程和 interactiveLoop。
+ * ======================================================
  */
 import {
   execSync,

@@ -1,9 +1,15 @@
 /**
- * @file SDK SSH SFTP 工具（协议无关，MCP 注册见 src/mcp/tools/ssh）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : sftp.ts
+ * Author     : sumu
+ * Date       : 2026/07/12
+ * Version    : x.x.x
+ * Description: 在已建立的 SSH 会话上提供文件上传/下载能力，复用同一条 TCP+SSH 连接。
  *
- * 在已建立的 SSH 会话上提供文件上传/下载能力，复用同一条 TCP+SSH 连接。
  * 通过 ssh2 的 SFTP 子系统（fastGet/fastPut）流式传输，适用于大文件场景。
  * 传输完成后返回字节数/耗时/速率摘要。
+ * ======================================================
  */
 
 import type { SdkToolConfig } from "../../types.js";

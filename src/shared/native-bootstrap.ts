@@ -1,6 +1,11 @@
 /**
- * @file native-bootstrap.ts
- * @brief 串口原生绑定（.node）加载前置检查与引导
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : native-bootstrap.ts
+ * Author     : sumu
+ * Date       : 2026/08/18
+ * Version    : x.x.x
+ * Description: 串口原生绑定（.node）加载前置检查与引导
  *
  * 背景：
  *   serialport 的原生绑定 @serialport/bindings-cpp 是 C++ 编译产物（.node 文件），
@@ -18,6 +23,7 @@
  *   "@" 与 "/"，在 Windows 下设置不可靠），只做两件事：
  *     1. 串口使用前确认绑定可被找到（exe 布局或 node_modules）；
  *     2. 找不到时给出明确的中文错误指引，替代 node-gyp-build 的晦涩报错。
+ * ======================================================
  */
 
 import { existsSync } from "fs";

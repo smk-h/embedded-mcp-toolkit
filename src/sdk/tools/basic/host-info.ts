@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : host-info.ts
- * Author     : embedded-mcp-toolkit
+ * Author     : sumu
  * Date       : 2026/07/30
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: host_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
  *
  *   查询 MCP 宿主端点信息（username@ip），用于跨机部署场景下 AI 客户端

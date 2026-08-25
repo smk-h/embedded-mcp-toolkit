@@ -1,5 +1,11 @@
 /**
- * Subnet Check 工具 — 检查目标 IP 是否与主机在同一子网内（可达）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : subnet-check.ts
+ * Author     : sumu
+ * Date       : 2026/05/28
+ * Version    : x.x.x
+ * Description: Subnet Check 工具 — 检查目标 IP 是否与主机在同一子网内（可达）
  *
  * 工作流程：
  *   1. 通过 PowerShell 获取主机的 IP 地址、子网掩码和默认网关
@@ -60,6 +66,7 @@
  *
  *   /28  → 可用主机 14 个（1 ~ 14），网关 192.168.16.14 有效
  *   /24  → 可用主机 254 个（1 ~ 254），网关 192.168.16.14 有效
+ * ======================================================
  */
 
 import type { SdkToolConfig } from "../../types.js";

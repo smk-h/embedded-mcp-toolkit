@@ -1,5 +1,12 @@
 /**
- *  USB端口: 通用串行总线（Universal Serial Bus）接口，是现代计算机最常用的外部设备连接标准。
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : port-scan.ts
+ * Author     : sumu
+ * Date       : 2026/05/28
+ * Version    : x.x.x
+ * Description: USB端口: 通用串行总线（Universal Serial Bus）接口，是现代计算机最常用的外部设备连接标准。
+ *
  *              查询USB控制器：Get-CimInstance -ClassName Win32_USBController | Select-Object Name, DeviceID, Status | Format-Table -AutoSize
  *              查询USB集线器：Get-CimInstance -ClassName Win32_USBHub | Select-Object Name, DeviceID, Status | Format-Table -AutoSize
  *  COM端口: 串行通信端口（Communications Port的缩写），也称为RS-232串口或串行端口。
@@ -7,6 +14,7 @@
  *                                                              ^ 查询得到的是 Windows系统中所有即插即用（Plug and Play）设备 的详细信息。
  *              只能查找到串口    Get-CimInstance -ClassName Win32_SerialPort | Select-Object Name, DeviceID, Description
  *  LPT端口: 并行端口（Line Printer Terminal的缩写），也称为打印机端口或Centronics接口，逐渐已经被USB代替了，没怎么见过，所以下面只扫描USB口了
+ * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";

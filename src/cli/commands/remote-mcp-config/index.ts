@@ -1,6 +1,11 @@
 /**
- * @file src/cli/commands/remote-mcp-config/index.ts
- * @brief embedded-mcp-toolkit remote-mcp-config 命令（目录门面）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : index.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: embedded-mcp-toolkit remote-mcp-config 命令（目录门面）
  *
  * 交互式引导完成"在远程 Linux 服务器上配置 claude/zcode/opencode 的 MCP 桥接"。
  * 与 sshd-config 命令（ch14 之前，配 Windows 免密登录）形成对偶：
@@ -30,6 +35,7 @@
  *   - target.ts       C4前 落点路由
  *   - operations.ts   C4后 配置/删除/诊断业务流程
  *   - run.ts          C5 主菜单 + 主入口
+ * ======================================================
  */
 
 export { runRemoteMcpConfig } from "./run.js";

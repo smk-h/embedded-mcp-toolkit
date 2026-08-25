@@ -4,7 +4,7 @@
  * File name  : prompt-detector.ts
  * Author     : sumu
  * Date       : 2026/07/17
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: Shell 状态/提示符检测器与控制字符映射
  *
  *   提供以下共享能力，供三个通道（adb/ssh/serial）的 exec 编排与

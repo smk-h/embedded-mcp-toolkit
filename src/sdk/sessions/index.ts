@@ -4,7 +4,7 @@
  * File name  : index.ts
  * Author     : sumu
  * Date       : 2026/07/14
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 会话域聚合导出
  *
  *   统一对外暴露会话基础设施：

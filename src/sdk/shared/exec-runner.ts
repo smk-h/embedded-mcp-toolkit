@@ -4,7 +4,7 @@
  * File name  : exec-runner.ts
  * Author     : sumu
  * Date       : 2026/07/17
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 交互式 shell exec 的统一编排逻辑
  *
  *   把三个通道（adb/ssh/serial）复制粘贴的 exec 主体逻辑抽到此处统一实现：

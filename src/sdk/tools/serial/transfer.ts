@@ -1,13 +1,19 @@
 /**
- * @file SDK Serial ZMODEM 文件传输工具（协议无关，MCP 注册见 src/mcp/tools/serial）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : transfer.ts
+ * Author     : sumu
+ * Date       : 2026/07/24
+ * Version    : x.x.x
+ * Description: 在已建立的串口会话上，通过 ZMODEM 协议（依赖设备端 lrzsz 的 rz/sz）传输二进制文件。
  *
- * 在已建立的串口会话上，通过 ZMODEM 协议（依赖设备端 lrzsz 的 rz/sz）传输二进制文件。
  * 复用同一条串口连接，传输全程不释放串口、会话保持不断。
  *   - serial_upload   发送端，设备端 rz 接收
  *   - serial_download 接收端，设备端 sz 发送
  *
  * 工具采用阻塞式调用（对齐 serial_exec 风格），传输过程中通过 logger 在 stderr 输出进度，
  * 完成或失败或超时后返回传输摘要（字节数/耗时/速率）。
+ * ======================================================
  */
 
 import { basename } from "node:path";

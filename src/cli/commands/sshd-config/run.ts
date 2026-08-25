@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/sshd-config/run.ts
- * @brief 主菜单与命令主入口
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : run.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: 主菜单与命令主入口
  *
  * 显示主菜单并等待用户选择、打印 banner，以及 sshd-config 命令主入口：
  * 平台校验 → 管理员权限检查 → 交互式菜单循环。
+ * ======================================================
  */
 
 import { select, isCancel } from "@clack/prompts";

@@ -1,12 +1,18 @@
 /**
- * @file src/cli/shared/cli-helpers.ts
- * @brief 终端交互辅助与本机 OS 信息采集共享模块
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : cli-helpers.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: 终端交互辅助与本机 OS 信息采集共享模块
  *
  * 提供 readline 问答、清屏、暂停、密码安全输入等终端交互能力，以及本机连接信息
  * （用户名 + IPv4 地址）采集。供 sshd-config 与 remote-mcp-config 两个交互式命令共用，
  * 保证两者的交互范式一致（清屏 + 菜单 + clack 组件）。
  *
  * 设计原则：函数实现与从 sshd-config.ts 迁出时保持逐字一致（仅补 export 与 JSDoc）。
+ * ======================================================
  */
 
 import { userInfo, networkInterfaces } from "os";

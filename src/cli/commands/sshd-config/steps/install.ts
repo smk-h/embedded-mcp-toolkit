@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/install.ts
- * @brief step1: 安装 Windows SSH 服务
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : install.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step1: 安装 Windows SSH 服务
+ * ======================================================
  */
 
 import { existsSync, mkdirSync } from "fs";

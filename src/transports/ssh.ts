@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : ssh.ts
+ * Author     : sumu
+ * Date       : 2026/05/28
+ * Version    : x.x.x
+ * Description: SSHShell 传输层 — SSH 连接与 SFTP 通道
+ * ======================================================
+ */
+
 import { stat, unlink } from "node:fs/promises";
 
 import {

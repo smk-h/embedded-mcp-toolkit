@@ -1,10 +1,16 @@
 /**
- * @file SDK SSH Build 工具（协议无关，MCP 注册见 src/mcp/tools/ssh）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : build.ts
+ * Author     : sumu
+ * Date       : 2026/06/06
+ * Version    : x.x.x
+ * Description: 在远端编译服务器上执行编译命令并等待完成，返回编译结果。
  *
- * 在远端编译服务器上执行编译命令并等待完成，返回编译结果。
  * 通过完成标记（completion marker）机制检测编译结束，
  * 自动分类采集编译输出中的错误、警告和常规信息。
  * 适用于 make、cmake、shell 脚本等长时间编译场景。
+ * ======================================================
  */
 
 import type { SdkToolConfig } from "../../types.js";

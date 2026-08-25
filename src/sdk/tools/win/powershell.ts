@@ -1,5 +1,11 @@
 /**
- * @brief PowerShell 交互式 Shell SDK 工具（协议无关，MCP 注册见 src/mcp/tools/win）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : powershell.ts
+ * Author     : sumu
+ * Date       : 2026/05/28
+ * Version    : x.x.x
+ * Description: PowerShell 交互式 Shell SDK 工具（协议无关，MCP 注册见 src/mcp/tools/win）
  *
  * 提供对本地 Windows PowerShell 进程的会话管理，
  * 支持 open / close / write / read / list / exec 六个操作。
@@ -7,6 +13,7 @@
  * 会话模式与 serial_shell / ssh_shell 保持一致，
  * 区别在于 PowerShell 连接的是本地持久化 powershell.exe 进程，
  * 而非远程串口或 SSH。
+ * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";

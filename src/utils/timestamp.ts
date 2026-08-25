@@ -1,7 +1,14 @@
 /**
- * @brief 时间戳工具函数
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : timestamp.ts
+ * Author     : sumu
+ * Date       : 2026/06/05
+ * Version    : x.x.x
+ * Description: 时间戳工具函数
  *
  * 统一日志文件名和日志行内的时间戳格式（北京时间）。
+ * ======================================================
  */
 
 /** 当前北京时间各字段 */

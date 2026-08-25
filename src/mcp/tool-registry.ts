@@ -1,4 +1,13 @@
-// mcp 共享辅助函数、类型与工具构建器
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : tool-registry.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: MCP 工具注册辅助 — 工具条目类型与批量注册
+ * ======================================================
+ */
 
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { logger } from "../shared/logger.js";

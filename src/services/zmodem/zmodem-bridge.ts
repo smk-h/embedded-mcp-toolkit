@@ -4,7 +4,7 @@
  * File name  : zmodem-bridge.ts
  * Author     : sumu
  * Date       : 2026/07/24
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: ZMODEM 协议桥接层
  *
  *   封装 zmodem.js 库，把 SerialShell 的字节旁路 ←→ ZMODEM 会话粘合起来。

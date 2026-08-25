@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : shell.ts
- * Author     : opencode
+ * Author     : sumu
  * Date       : 2026/05/31
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: ADB Shell 交互式 SDK 工具
  *
  *   提供对 Android 设备的持久化 ADB Shell 会话管理，

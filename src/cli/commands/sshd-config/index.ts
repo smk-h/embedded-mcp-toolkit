@@ -1,6 +1,11 @@
 /**
- * @file src/cli/commands/sshd-config/index.ts
- * @brief embedded-mcp-toolkit sshd-config 命令（目录门面）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : index.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: embedded-mcp-toolkit sshd-config 命令（目录门面）
  *
  * 交互式引导完成"Windows 端 SSH 免密登录环境"搭建，用于让远端 Linux 编译服务器
  * 通过公钥免密登录 Windows 本地（MCP 服务所在机器）。
@@ -28,6 +33,7 @@
  *   - steps/               8 个菜单 step（install/generate-key/config-sshd/
  *                           check-status/uninstall/show-info/gen-template/one-click）
  *   - run.ts               主菜单 + 主入口
+ * ======================================================
  */
 
 export { runSshdConfig } from "./run.js";

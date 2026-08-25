@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : file-logger.ts
+ * Author     : sumu
+ * Date       : 2026/06/05
+ * Version    : x.x.x
+ * Description: 原始数据文件日志记录器 FileLogger
+ * ======================================================
+ */
+
 import {
   createWriteStream,
   existsSync,

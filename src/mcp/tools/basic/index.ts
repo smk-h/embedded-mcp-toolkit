@@ -1,4 +1,14 @@
-// MCP Basic 工具 — sdk basic 工具的 MCP 适配入口（注册由 src/mcp/server.ts 负责）
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : index.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: MCP Basic 工具 — sdk Basic 工具的 MCP 适配入口
+ * ======================================================
+ */
+
 //
 //   本文件不再定义任何工具，仅把 src/sdk 的协议无关定义经
 //   adapter 适配为 MCP ToolEntry，保证 server.ts 零改动。

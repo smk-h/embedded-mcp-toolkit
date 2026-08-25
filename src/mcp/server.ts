@@ -1,4 +1,15 @@
-﻿// MCP Server — 创建 McpServer 实例、注册所有工具、提供启动入口
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : server.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: MCP 服务器入口 — 传输初始化与全部工具注册
+ * ======================================================
+ */
+
+// MCP Server — 创建 McpServer 实例、注册所有工具、提供启动入口
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";

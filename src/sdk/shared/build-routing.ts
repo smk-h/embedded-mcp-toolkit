@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : build-routing.ts
- * Author     : embedded-mcp-toolkit
+ * Author     : sumu
  * Date       : 2026/08/03
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 编译路由指引文本模块
  *
  *   封装跨机部署（方式二：远程 SSH 启动）下"编译应优先用本机 cmdsift、

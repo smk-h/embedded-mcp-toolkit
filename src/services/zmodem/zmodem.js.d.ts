@@ -4,7 +4,7 @@
  * File name  : zmodem.js.d.ts
  * Author     : sumu
  * Date       : 2026/07/24
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: zmodem.js 第三方包的类型声明
  *
  *   zmodem.js@0.1.10 是纯 JS 实现且无官方类型定义，

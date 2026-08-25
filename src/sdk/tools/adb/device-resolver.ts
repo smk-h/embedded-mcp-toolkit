@@ -4,7 +4,7 @@
  * File name  : device-resolver.ts
  * Author     : sumu
  * Date       : 2026/07/20
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: ADB 通道 deviceName 解析器
  *
  *   封装 deviceName 的降级解析策略，供 adb_shell_open 和 adb_exec 共用，

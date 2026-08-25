@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : host-endpoint.ts
- * Author     : embedded-mcp-toolkit
+ * Author     : sumu
  * Date       : 2026/07/30
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: MCP 宿主端点解析模块
  *
  *   从本机 OS 信息与 SSH 会话环境变量解析宿主端点（username@ip），

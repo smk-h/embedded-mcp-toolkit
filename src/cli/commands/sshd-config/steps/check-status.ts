@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/check-status.ts
- * @brief step4: 检查 sshd 配置状态（只读诊断）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : check-status.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step4: 检查 sshd 配置状态（只读诊断）
+ * ======================================================
  */
 
 import { existsSync, readFileSync } from "fs";

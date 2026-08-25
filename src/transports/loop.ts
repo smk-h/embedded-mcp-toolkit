@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : loop.ts
+ * Author     : sumu
+ * Date       : 2026/05/25
+ * Version    : x.x.x
+ * Description: 交互式终端循环 — 标准输入命令读取与转发
+ * ======================================================
+ */
+
 import type { InteractiveShell } from "./interactive-shell.js";
 
 /**

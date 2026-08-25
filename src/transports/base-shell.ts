@@ -4,7 +4,7 @@
  * File name  : base-shell.ts
  * Author     : sumu
  * Date       : 2026/07/13
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 传输层抽象基类（模板方法模式）
  *
  *   统一四个传输类（SSHShell / SerialShell / AdbShell / PowerShellShell）的

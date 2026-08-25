@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : output-buffer.ts
+ * Author     : sumu
+ * Date       : 2026/06/12
+ * Version    : x.x.x
+ * Description: 输出缓冲区管理器 OutputBuffer
+ * ======================================================
+ */
+
 import { MAX_BUFFER_SIZE } from "../shared/constants.js";
 
 /**

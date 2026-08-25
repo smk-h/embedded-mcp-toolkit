@@ -4,7 +4,7 @@
  * File name  : types.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: SDK 类型契约与工具构建器
  *
  *   协议无关的工具定义层：零 MCP / DSH 依赖，只描述「工具是什么、

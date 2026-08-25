@@ -4,7 +4,7 @@
  * File name  : index.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: SDK Win 工具统一定义入口
  *
  *   协议无关的 Windows 主机工具聚合（PowerShell 会话 / 端口扫描 /

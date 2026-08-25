@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/remote-mcp-config/json-mutate.ts
- * @brief C2. JSON 按 path 操作（纯函数，操作本地内存中的 JSON 对象）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : json-mutate.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: C2. JSON 按 path 操作（纯函数，操作本地内存中的 JSON 对象）
  *
  * 按 JSON 路径取/设/删嵌套对象与使能数组。全部为纯函数，入参为普通对象/数组，
  * 不依赖任何外部状态。
+ * ======================================================
  */
 
 // ============================================================

@@ -4,7 +4,7 @@
  * File name  : index.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: SDK Serial 工具统一定义入口
  *
  *   协议无关的串口工具聚合（shell 会话 / 一键登录 / U-Boot 编排 /

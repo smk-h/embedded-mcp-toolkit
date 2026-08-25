@@ -1,8 +1,14 @@
 /**
- * @file src/cli/commands/remote-mcp-config/types.ts
- * @brief remote-mcp-config 命令的类型、接口与常量定义
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : types.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: remote-mcp-config 命令的类型、接口与常量定义
  *
  * 集中本命令目录内跨文件共享的类型、接口、菜单枚举与路径常量，作为类型层供各子文件引用。
+ * ======================================================
  */
 
 // ============================================================

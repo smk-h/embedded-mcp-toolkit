@@ -4,7 +4,7 @@
  * File name  : session-store.ts
  * Author     : sumu
  * Date       : 2026/07/14
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 泛型会话存储（实例存储层）
  *
  *   以 session_id 为键存储 BaseShell 子类实例，统一承担：

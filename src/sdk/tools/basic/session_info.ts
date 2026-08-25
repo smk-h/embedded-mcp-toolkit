@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : session_info.ts
- * Author     : opencode
+ * Author     : sumu
  * Date       : 2026/06/09
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: session_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
  *
  *   提供跨连接类型的会话查询能力：

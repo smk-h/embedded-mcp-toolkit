@@ -2,9 +2,9 @@
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : log-paths.ts
- * Author     : embedded-mcp-toolkit
+ * Author     : sumu
  * Date       : 2026/08/23
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 日志目录解析模块
  *
  *   基于 MCP 进程工作目录（process.cwd）与 LOG_SAVE / LOG_DIR / SAVE2FILE_PATH

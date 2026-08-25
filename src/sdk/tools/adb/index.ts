@@ -4,7 +4,7 @@
  * File name  : index.ts
  * Author     : sumu
  * Date       : 2026/08/25
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: SDK ADB 工具统一定义入口
  *
  *   协议无关的 ADB 工具聚合（设备扫描 + 交互式 shell 会话）；

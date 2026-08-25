@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : device-info.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: device_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
+ * ======================================================
+ */
+
 import type { SdkToolConfig } from "../../types.js";
 import { getAllConfig, listDevices } from "../../../shared/config.js";
 import { logger } from "../../../shared/logger.js";

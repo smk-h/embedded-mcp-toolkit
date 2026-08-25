@@ -1,8 +1,14 @@
 /**
- * @file src/cli/commands/sshd-config/sshd-service.ts
- * @brief sshd 服务辅助
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : sshd-service.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: sshd 服务辅助
  *
  * 检查 sshd 服务是否已注册、查找 sshd.exe 路径、检测 OpenSSH 安装方式、确保 sshd 服务已注册。
+ * ======================================================
  */
 
 import { existsSync } from "fs";

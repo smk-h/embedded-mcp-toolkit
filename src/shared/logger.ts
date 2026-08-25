@@ -1,5 +1,11 @@
 /**
- * @brief 日志模块
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : logger.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: 日志模块
  *
  * 通过 MCP 环境变量 LOG_SAVE / LOG_DIR 控制日志文件写入。
  * - LOG_SAVE 为真值时启用文件保存
@@ -7,6 +13,7 @@
  * - 日志文件名格式: YYYY-MM-DD_HHMMSS.log（北京时间）
  *
  * 导出单例 logger 对象，通过 logger.info / error / warn 写入日志。
+ * ======================================================
  */
 
 import { mkdirSync, appendFileSync, existsSync, statSync } from "fs";

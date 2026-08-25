@@ -1,9 +1,15 @@
 /**
- * @file SSH 通道会话存储实例
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : sessions.ts
+ * Author     : sumu
+ * Date       : 2026/07/14
+ * Version    : x.x.x
+ * Description: 实例化 ShellSessionStore 并导出，供 ssh 目录内各工具 handler 共享，
  *
- * 实例化 ShellSessionStore 并导出，供 ssh 目录内各工具 handler 共享，
  * 也供 build.ts / sftp.ts 跨文件查询会话。
  * disposeAllSshSessions 保持原名，server.ts cleanup 钩子按名引用。
+ * ======================================================
  */
 
 import { ShellSessionStore } from "../../sessions/index.js";

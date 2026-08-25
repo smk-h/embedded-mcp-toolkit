@@ -1,6 +1,11 @@
 /**
- * @file src/cli/shared/ssh.ts
- * @brief SSH 传输层共享模块
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : ssh.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: SSH 传输层共享模块
  *
  * 提供 SSH 连接、命令执行、文件上传/下载、地址解析等传输能力，供 sshd-config 与
  * remote-mcp-config 两个交互式命令共用。本模块不含任何业务概念，是纯粹的 SSH + IO
@@ -8,6 +13,7 @@
  *
  * 设计原则：函数实现与从 sshd-config.ts 迁出时保持逐字一致（仅补 export 与 JSDoc），
  * 确保迁移本身不引入行为回归；新增的 sshUpload 与既有 sshDownload 对称实现。
+ * ======================================================
  */
 
 import { Client, type ConnectConfig } from "ssh2";

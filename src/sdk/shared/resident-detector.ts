@@ -4,7 +4,7 @@
  * File name  : resident-detector.ts
  * Author     : sumu
  * Date       : 2026/07/28
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 常驻命令检测器
  *
  *   判断用户传入的命令字符串是否为「常驻命令」——即永不返回 shell 提示符、

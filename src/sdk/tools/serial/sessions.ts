@@ -1,11 +1,17 @@
 /**
- * @file Serial 通道会话存储实例
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : sessions.ts
+ * Author     : sumu
+ * Date       : 2026/07/14
+ * Version    : x.x.x
+ * Description: 实例化 ShellSessionStore 并导出，供 serial 目录内各工具 handler 共享。
  *
- * 实例化 ShellSessionStore 并导出，供 serial 目录内各工具 handler 共享。
  * disposeAllSerialSessions 保持原名，server.ts cleanup 钩子按名引用。
  *
  * 注意：Serial 的 portToSession（COM 口防重）作为通道特有逻辑，
  * 保留在 shell.ts 内，不在此处也不进基类。
+ * ======================================================
  */
 
 import { ShellSessionStore } from "../../sessions/index.js";

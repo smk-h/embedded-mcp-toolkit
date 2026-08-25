@@ -1,10 +1,16 @@
 /**
- * @file src/cli/commands/remote-mcp-config/sftp.ts
- * @brief C1. SFTP 文件操作（远端整文件读写）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : sftp.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: C1. SFTP 文件操作（远端整文件读写）
  *
  * 打开/关闭 SFTP 会话、读取/写入远端文本文件、递归建目录、备份为 .bak。
  * 一次配置操作涉及多次 SFTP 读写，应复用同一会话句柄，避免反复开 channel
  * 触发远端 sshd 的会话/通道限制。
+ * ======================================================
  */
 
 import { Client, type SFTPWrapper } from "ssh2";

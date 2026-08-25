@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : key-provider.ts
+ * Author     : sumu
+ * Date       : 2026/05/25
+ * Version    : x.x.x
+ * Description: SSH 密钥提供者 KeyProvider — file/terminal 双模式取钥
+ * ======================================================
+ */
+
 import {
   watchFile,
   unwatchFile,

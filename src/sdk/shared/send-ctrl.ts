@@ -4,7 +4,7 @@
  * File name  : send-ctrl.ts
  * Author     : sumu
  * Date       : 2026/07/17
- * Version    : 1.0.0
+ * Version    : x.x.x
  * Description: 发送控制字符的统一动作
  *
  *   三个通道（adb/ssh/serial）的 send_ctrl 工具复用本函数，

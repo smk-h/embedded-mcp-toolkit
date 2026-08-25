@@ -1,3 +1,14 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : serial.ts
+ * Author     : sumu
+ * Date       : 2026/05/28
+ * Version    : x.x.x
+ * Description: SerialShell 串口传输层 — 串口连接与交互数据流
+ * ======================================================
+ */
+
 import type { SerialPort } from "serialport";
 
 import { interactiveLoop } from "./loop.js";
