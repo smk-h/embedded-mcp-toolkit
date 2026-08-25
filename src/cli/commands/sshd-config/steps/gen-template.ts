@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/gen-template.ts
- * @brief step7: 生成 Linux 端 MCP 配置模板
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : gen-template.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step7: 生成 Linux 端 MCP 配置模板
+ * ======================================================
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";

@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/generate-key.ts
- * @brief step2: 编译服务器生成密钥对
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : generate-key.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step2: 编译服务器生成密钥对
+ * ======================================================
  */
 
 import { existsSync, mkdirSync } from "fs";

@@ -36,7 +36,7 @@
 
 ### 2. 实例存储层 ShellSessionStore
 
-`ShellSessionStore` 是一个泛型类，定义于 `src/mcp/sessions/session-store.ts`，各通道用不同前缀实例化：
+`ShellSessionStore` 是一个泛型类，定义于 `src/sdk/sessions/session-store.ts`，各通道用不同前缀实例化：
 
 | 通道 | 实例名 | 前缀 | 生成的 ID 示例 |
 |------|--------|------|---------------|
@@ -65,12 +65,12 @@
 
 ### 3. 元数据层 SessionRegistry
 
-`SessionRegistry` 是全局单例（`src/mcp/sessions/registry.ts`），只存储轻量元数据，不持有 Transport 引用，避免循环引用与 GC 问题。所有查询均为 O(1)。
+`SessionRegistry` 是全局单例（`src/sdk/sessions/registry.ts`），只存储轻量元数据，不持有 Transport 引用，避免循环引用与 GC 问题。所有查询均为 O(1)。
 
 #### 3.1 元数据模型 SessionMeta
 
 ```typescript
-// src/mcp/sessions/registry.ts
+// src/sdk/sessions/registry.ts
 interface SessionMeta {
   id: string;            // session_id，如 "ssh_1"
   type: SessionType;     // 连接类型：ssh | serial | adb | powershell
@@ -91,7 +91,7 @@ interface SessionMeta {
 #### 3.2 双向索引
 
 ```typescript
-// src/mcp/sessions/registry.ts
+// src/sdk/sessions/registry.ts
 class SessionRegistry {
   #metaBySession = new Map<string, SessionMeta>();    // session_id → SessionMeta
   #sessionsByDevice = new Map<string, Set<string>>(); // deviceName → Set<session_id>
@@ -205,7 +205,7 @@ SSH / Serial 的 `login` 流程也利用这一机制，在会话锁内串行完�
 
 ### 1. session_info 工具
 
-`session_info` 是跨连接类型的统一查询入口（`src/mcp/tools/basic/session_info.ts`），通过 `registry` 提供三种查询模式：
+`session_info` 是跨连接类型的统一查询入口（`src/sdk/tools/basic/session_info.ts`），通过 `registry` 提供三种查询模式：
 
 | 模式 | 参数 | 用途 |
 |------|------|------|

@@ -21,7 +21,7 @@
 import assert from "node:assert/strict";
 
 const { UbootDetector } = await import(
-  "../out/mcp/shared/prompt-detector.js"
+  "../../../out/sdk/exec/prompt-detector.js"
 );
 
 let passed = 0;

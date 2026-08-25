@@ -1,16 +1,27 @@
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : index.ts
+ * Author     : sumu
+ * Date       : 2026/05/21
+ * Version    : x.x.x
+ * Description: CLI 命令入口 — commander 命令树注册与分发
+ * ======================================================
+ */
+
 import { Command } from "commander";
-import { interactiveShell, pshDemoSsh } from "../transports/ssh.js";
+import { interactiveShell, pshDemoSsh } from "../sdk/transports/ssh.js";
 import {
   interactiveSerialShell,
   pshDemoSerial,
   userLoginDemoSerial,
-} from "../transports/serial.js";
+} from "../sdk/transports/serial.js";
 import {
   getSSHConfig,
   getSerialConfig,
   getAllConfig,
-} from "../shared/config.js";
-import { pkg } from "../shared/package-info.js";
+} from "../sdk/shared/config.js";
+import { pkg } from "../sdk/shared/package-info.js";
 import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";

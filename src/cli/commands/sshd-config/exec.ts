@@ -1,8 +1,14 @@
 /**
- * @file src/cli/commands/sshd-config/exec.ts
- * @brief 命令执行封装
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : exec.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: 命令执行封装
  *
  * 执行外部命令并统一封装结果：execToResult（公共核心）、runPowerShell、runCmd。
+ * ======================================================
  */
 
 import { execFile } from "child_process";

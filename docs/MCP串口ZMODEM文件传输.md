@@ -22,7 +22,7 @@
 | `serial_read` | 读取文本输出 | 数据监听走 `data.toString()`，二进制帧会被 UTF-8 解码污染 |
 | `serial_exec` | 执行命令取结果 | 基于提示符检测，无法承载协议帧 |
 
-问题的核心在 [`src/transports/serial.ts`](../src/transports/serial.ts) 的数据监听：原始 `Buffer` 被无条件 `toString()` 后送入文本态 `OutputBuffer`，ZMODEM 协议帧（含大量非 ASCII 字节）一旦经过 UTF-8 解码就不可逆地损坏。
+问题的核心在 [`src/sdk/transports/serial.ts`](../src/sdk/transports/serial.ts) 的数据监听：原始 `Buffer` 被无条件 `toString()` 后送入文本态 `OutputBuffer`，ZMODEM 协议帧（含大量非 ASCII 字节）一旦经过 UTF-8 解码就不可逆地损坏。
 
 ### 3. 解决思路
 
@@ -53,10 +53,10 @@
 
 ![字节旁路双写](./MCP串口ZMODEM文件传输/img/byte-bypass.svg)
 
-相关代码在 [`src/transports/serial.ts`](../src/transports/serial.ts#L180-L183) 的数据监听：
+相关代码在 [`src/sdk/transports/serial.ts`](../src/sdk/transports/serial.ts#L180-L183) 的数据监听：
 
 ```typescript
-// src/transports/serial.ts
+// src/sdk/transports/serial.ts
 serialPort.on("data", (data: Buffer) => {
   if (this.#rawReceiver) this.#rawReceiver(data);
   this.appendData(data.toString());
@@ -81,12 +81,12 @@ serialPort.on("data", (data: Buffer) => {
 
 | 文件 | 状态 | 职责 |
 |---|---|---|
-| [`src/services/zmodem/zmodem-bridge.ts`](../src/services/zmodem/zmodem-bridge.ts) | 新增 | 协议桥接层，`zmodemSend`/`zmodemReceive` |
-| [`src/services/zmodem/index.ts`](../src/services/zmodem/index.ts) | 新增 | 模块导出 |
-| [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) | 新增 | 工具层，两个 handler |
-| [`src/mcp/tools/serial/index.ts`](../src/mcp/tools/serial/index.ts) | 修改 | 注册新工具 |
-| [`src/transports/serial.ts`](../src/transports/serial.ts) | 修改 | 字节旁路、rawWrite、drainPort |
-| [`src/shared/transfer-result.ts`](../src/shared/transfer-result.ts) | 新增 | 传输结果摘要格式化 |
+| [`src/sdk/zmodem/zmodem-bridge.ts`](../src/sdk/zmodem/zmodem-bridge.ts) | 新增 | 协议桥接层，`zmodemSend`/`zmodemReceive` |
+| [`src/sdk/zmodem/index.ts`](../src/sdk/zmodem/index.ts) | 新增 | 模块导出 |
+| [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) | 新增 | 工具层，两个 handler |
+| [`src/sdk/tools/serial/index.ts`](../src/sdk/tools/serial/index.ts) | 修改 | 注册新工具 |
+| [`src/sdk/transports/serial.ts`](../src/sdk/transports/serial.ts) | 修改 | 字节旁路、rawWrite、drainPort |
+| [`src/sdk/shared/transfer-result.ts`](../src/sdk/shared/transfer-result.ts) | 新增 | 传输结果摘要格式化 |
 | [`src/mcp/server.ts`](../src/mcp/server.ts) | 修改 | 全局异常兜底 |
 
 ## 三、 协议与传输原理
@@ -145,7 +145,7 @@ lrzsz 收到后会立即退出接收/发送态。注意：
 【**根因**】如果先发 `rz` 再挂旁路，设备几乎瞬间回 ZRINIT，此时 `rawReceiver` 还是 `null`，ZRINIT 帧就进了文本态 `OutputBuffer`（被 `toString()` 污染），协议层永远收不到首帧。必须**先挂旁路、后发命令**。
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 // 先挂字节旁路
 const detach = shell.attachRawReceiver((buf: Buffer) => {
   if (session) {
@@ -168,7 +168,7 @@ if (startCmd) {
 解决方案是 `findZmodemHeaderStart()` 定位真正的帧头起始：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 function findZmodemHeaderStart(bytes: number[]): number {
   for (let i = 0; i < bytes.length - 1; i++) {
     // hex 头：0x2a 0x2a 0x18（ZPAD ZPAD ZDLE）
@@ -204,7 +204,7 @@ const parsed = Zmodem.Session.parse(preBuffer.slice(headerStart));
 【**关键**】轮询循环里**先做失败检测，再做 parse**——单纯 parse 成功不代表握手成功（详见 2.4.1 节）：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 const deadline = Date.now() + timeoutMs;
 let failReason = null;
 while (Date.now() < deadline) {
@@ -240,7 +240,7 @@ while (Date.now() < deadline) {
 `detectHandshakeFailure()` 在轮询循环里被调用**两次**（parse 前一次、parse 成功后一次），用于识别对端在握手阶段就非协议态退出的四类情况：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 function detectHandshakeFailure(bytes: number[]):
   "abort" | "garbage" | "error-marker" | "prompt" | null
 {
@@ -299,7 +299,7 @@ function detectHandshakeFailure(bytes: number[]):
 会话建立后，进入数据发送阶段。`zmodemSend()` 的核心逻辑分为四步：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 // 1. 发 offer（ZFILE），携带文件名和大小
 const offer = Zmodem.Validation.offer_parameters({
   name: remoteName,
@@ -338,7 +338,7 @@ await raceAbort(transfer.end([]), opts?.signal);
 这是上传方案的**核心难点**，也是调试过程中最棘手的 bug。`transfer.end([])` 只完成单文件结束（发 ZEOF、等对端 ZRINIT），**它不会发 ZFIN**。必须额外调用 `session.close()`：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 await raceAbort(transfer.end([]), opts?.signal);
 
 // 关键：调 session.close() 发 ZFIN 关闭握手
@@ -349,7 +349,7 @@ cleanEnded = closeResult.cleanEnded;
 `closeSessionWithTimeout()` 内部用超时兜底 + abort 感知，避免对端异常不回 ZFIN 时无限阻塞：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 function closeSessionWithTimeout(
   session: SendSession,
   signal?: AbortSignal
@@ -415,7 +415,7 @@ function closeSessionWithTimeout(
 `zmodemReceive()` 的正确顺序——**先注册事件处理器，再调 `start()`**：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 // 1. 先注册 offer 和 session_end 事件处理器
 session.on("session_end", () => {
   cleanEnded = true;
@@ -449,7 +449,7 @@ await sessionEnd;
 下载采用流式写盘，避免大文件撑爆内存。`on_input` 回调在每个数据帧到达时触发，直接写入文件流，不做内存缓存：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 session.on("offer", (xfer: ReceiveOffer) => {
   writeStream = createWriteStream(localPath);
   xfer.accept({
@@ -662,10 +662,10 @@ ZMODEM 协议自带的**逐子包 CRC 校验**是第一道防线——任何被�
 
 ### 3. 超时守卫实现
 
-代码在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 中实现，核心判定逻辑：
+代码在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 中实现，核心判定逻辑：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 function createTransferTimeoutGuard(
   controller: AbortController,
   timeoutSec: number,
@@ -741,7 +741,7 @@ ZEOF/ZFIN 握手    → guard.heartbeat()   → 仅刷新时间戳 + 重置 idle
 【**门控策略**】心跳推迟到**首个数据块到达/发出后**才启动，由 `startHeartbeat()` 辅助函数（幂等）触发：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 function startHeartbeat(
   onHeartbeat: (() => void) | undefined,
   timerHolder: { timer: ReturnType<typeof setInterval> | null }
@@ -765,7 +765,7 @@ function startHeartbeat(
 上传的"首个数据块发出"在 `for await` 循环里，每个 chunk `transfer.send` 后调一次 `startHeartbeat`（幂等，首个 chunk 即启动）：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts（zmodemSend）
+// src/sdk/zmodem/zmodem-bridge.ts（zmodemSend）
 for await (const chunk of stream as Readable) {
   if (opts?.signal?.aborted) throw new Error("Transfer aborted by signal");
   const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -783,7 +783,7 @@ for await (const chunk of stream as Readable) {
 下载的"首个数据块到达"在 `offer` 事件的 `on_input` 回调里，每次写盘后调 `startHeartbeat`（首个 payload 即启动）：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts（zmodemReceive）
+// src/sdk/zmodem/zmodem-bridge.ts（zmodemReceive）
 session.on("offer", (xfer: ReceiveOffer) => {
   writeStream = createWriteStream(localPath);
   xfer.accept({
@@ -888,7 +888,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 #### 3.1 协议层 abort（session.abort）
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts（catch 块）
+// src/sdk/zmodem/zmodem-bridge.ts（catch 块）
 try {
   session?.abort?.();
 } catch {
@@ -901,7 +901,7 @@ try {
 #### 3.2 传输层 abort（abortDeviceSession）
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 async function abortDeviceSession(shell: SerialShell): Promise<void> {
   try {
     logger.info("[zmodem] sending CAN×5+BS×5 to abort device-side rz/sz");
@@ -925,7 +925,7 @@ async function abortDeviceSession(shell: SerialShell): Promise<void> {
 是否发传输层 abort，由 `cleanEnded` 标志门控——这是经过多次踩坑后的正确设计：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts（finally 块）
+// src/sdk/zmodem/zmodem-bridge.ts（finally 块）
 if (!cleanEnded) {
   await abortDeviceSession(shell);
 }
@@ -960,7 +960,7 @@ _has_ended() { return this.aborted() || !!this._sent_OO; }
 下载侧（`zmodemReceive`）的 finally 块有一个额外考量：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts（zmodemReceive finally 块）
+// src/sdk/zmodem/zmodem-bridge.ts（zmodemReceive finally 块）
 if (!cleanEnded || aborted) {
   await abortDeviceSession(shell);
 }
@@ -1004,7 +1004,7 @@ process.on("uncaughtException", (err) => {
 下载失败时，本地可能已有部分写入的文件。`zmodemReceive()` 的 catch 块负责清理：
 
 ```typescript
-// src/services/zmodem/zmodem-bridge.ts
+// src/sdk/zmodem/zmodem-bridge.ts
 catch (err) {
   // ... abort session ...
   try {
@@ -1021,7 +1021,7 @@ catch (err) {
 传输结束后（无论成功失败），工具层都会调 `recoverShell()` 清理 shell 缓冲：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 async function recoverShell(shell): Promise<void> {
   shell.read(1);                          // 丢弃缓冲残留
   shell.write("", 1);                     // 发回车触发提示符
@@ -1046,7 +1046,7 @@ async function recoverShell(shell): Promise<void> {
 `disableFlowControl()` 在每次传输前执行：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 const STTY_DISABLE_FLOW_CTRL = "stty -ixon -ixoff";
 
 async function disableFlowControl(shell): Promise<void> {
@@ -1079,10 +1079,10 @@ async function disableFlowControl(shell): Promise<void> {
 
 ##### 1.1.1 serialUploadHandler()
 
-该函数在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 文件中声明：
+该函数在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 文件中声明：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 export async function serialUploadHandler(args: {
   session_id: string;
   local_path: string;
@@ -1123,10 +1123,10 @@ serial_upload:
 
 ##### 1.2.1 serialDownloadHandler()
 
-该函数在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 文件中声明：
+该函数在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 文件中声明：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 export async function serialDownloadHandler(args: {
   session_id: string;
   remote_path: string;

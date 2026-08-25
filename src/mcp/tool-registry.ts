@@ -1,18 +1,22 @@
-// mcp 共享辅助函数、类型与工具构建器
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : tool-registry.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: MCP 工具注册辅助 — 工具条目类型与批量注册
+ * ======================================================
+ */
 
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { logger } from "../shared/logger.js";
+import { logger } from "../sdk/shared/logger.js";
 
 // ── 辅助函数 ────────────────────────────────────────────────
 
 /** 快速构造 MCP TextContent 对象 */
 export function text(content: string) {
   return { type: "text" as const, text: content };
-}
-
-/** 获取错误的可读消息 */
-export function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // ── 类型 ────────────────────────────────────────────────────
@@ -75,7 +79,9 @@ function withInvocationLog(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const ms = Date.now() - started;
-      logger.error(`<<< Tool invocation FAILED [${name}] elapsed=${ms}ms err=${msg}`);
+      logger.error(
+        `<<< Tool invocation FAILED [${name}] elapsed=${ms}ms err=${msg}`
+      );
       throw err;
     }
   };

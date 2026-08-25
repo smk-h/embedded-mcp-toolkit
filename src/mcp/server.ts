@@ -1,18 +1,31 @@
-﻿// MCP Server — 创建 McpServer 实例、注册所有工具、提供启动入口
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : server.ts
+ * Author     : sumu
+ * Date       : 2026/05/26
+ * Version    : x.x.x
+ * Description: MCP 服务器入口 — 传输初始化与全部工具注册
+ * ======================================================
+ */
+
+// MCP Server — 创建 McpServer 实例、注册所有工具、提供启动入口
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as os from "os";
-import { resolveHostEndpoint } from "./shared/host-endpoint.js";
-import { buildRoutingInstructions } from "./shared/build-routing.js";
+import { resolveHostEndpoint } from "../sdk/host/host-endpoint.js";
+import { buildRoutingInstructions } from "../sdk/host/build-routing.js";
 
-import { logger } from "../shared/logger.js";
-import { pkg } from "../shared/package-info.js";
-import { mcpBasicTools } from "./tools/basic/index.js";
-import { mcpSshTools } from "./tools/ssh/index.js";
-import { mcpSerialTools } from "./tools/serial/index.js";
-import { mcpWinTools } from "./tools/win/index.js";
-import { mcpAdbTools } from "./tools/adb/index.js";
+import { logger } from "../sdk/shared/logger.js";
+import { pkg } from "../sdk/shared/package-info.js";
+import {
+  mcpBasicTools,
+  mcpSshTools,
+  mcpSerialTools,
+  mcpWinTools,
+  mcpAdbTools,
+} from "./tools.js";
 
 // ── package info ───────────────────────────────────────────
 // 经由 package-info 统一读取：npm/源码模式读磁盘，单文件 exe 模式用打包期注入的字面量
@@ -83,10 +96,10 @@ async function cleanupAllSessions() {
     { disposeAllPowerShellSessions },
     { disposeAllAdbShellSessions },
   ] = await Promise.all([
-    import("./tools/serial/sessions.js"),
-    import("./tools/ssh/sessions.js"),
-    import("./tools/win/sessions.js"),
-    import("./tools/adb/sessions.js"),
+    import("../sdk/tools/serial/sessions.js"),
+    import("../sdk/tools/ssh/sessions.js"),
+    import("../sdk/tools/win/sessions.js"),
+    import("../sdk/tools/adb/sessions.js"),
   ]);
   await Promise.allSettled([
     disposeAllSerialSessions(),

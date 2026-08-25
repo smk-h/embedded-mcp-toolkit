@@ -1,6 +1,11 @@
 /**
- * @file src/cli/commands/init.ts
- * @brief embedded-mcp-toolkit init 命令
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : init.ts
+ * Author     : sumu
+ * Date       : 2026/05/27
+ * Version    : x.x.x
+ * Description: embedded-mcp-toolkit init 命令
  *
  * 在任意目录执行，自动初始化 Claude Code / OpenCode 的 MCP 配置。
  * 支持两种模板来源：
@@ -9,6 +14,7 @@
  *      内嵌模板（见 init-templates.ts，由 scripts/gen-init-templates.mjs 生成）。
  *      把 exe 放进任意空目录执行 init，即可一键生成 .embedded/ 数据目录、
  *      模板配置与 remote-start-mcp.bat。
+ * ======================================================
  */
 
 import {

@@ -1,8 +1,14 @@
 /**
- * @file src/cli/commands/remote-mcp-config/target.ts
- * @brief C4-前半. 落点描述符与 askTarget（落点路由）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : target.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: C4-前半. 落点描述符与 askTarget（落点路由）
  *
  * 获取远端家目录、拼接远端项目绝对路径、交互式选择客户端类型与配置范围并组装配置目标。
+ * ======================================================
  */
 
 import { Client } from "ssh2";

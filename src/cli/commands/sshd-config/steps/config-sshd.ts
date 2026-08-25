@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/config-sshd.ts
- * @brief step3: 配置 Windows sshd
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : config-sshd.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step3: 配置 Windows sshd
+ * ======================================================
  */
 
 import {

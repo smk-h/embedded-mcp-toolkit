@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/remote-mcp-config/run.ts
- * @brief C5. 主菜单与主入口
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : run.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: C5. 主菜单与主入口
  *
  * 显示主菜单并等待用户选择、打印 banner，以及 remote-mcp-config 命令主入口：
  * 交互收集地址+密码 → SSH 连接 → 打开 SFTP 会话 → 交互式菜单循环。
+ * ======================================================
  */
 
 import { Client, type SFTPWrapper } from "ssh2";

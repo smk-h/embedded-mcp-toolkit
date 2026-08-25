@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/show-info.ts
- * @brief step6: 查看本机连接信息
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : show-info.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step6: 查看本机连接信息
+ * ======================================================
  */
 
 import { log } from "@clack/prompts";

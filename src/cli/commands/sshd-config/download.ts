@@ -1,8 +1,14 @@
 /**
- * @file src/cli/commands/sshd-config/download.ts
- * @brief HTTP 下载（MSI 离线安装包）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : download.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: HTTP 下载（MSI 离线安装包）
  *
  * 下载文件到本地，支持 HTTPS 重定向（GitHub releases 会 301/302 重定向到 CDN）。
+ * ======================================================
  */
 
 import { createWriteStream, unlinkSync } from "fs";

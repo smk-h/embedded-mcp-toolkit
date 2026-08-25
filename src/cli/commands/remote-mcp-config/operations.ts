@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/remote-mcp-config/operations.ts
- * @brief C4-后半. 配置 / 删除 / 诊断 业务流程
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : operations.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: C4-后半. 配置 / 删除 / 诊断 业务流程
  *
  * 计算本次桥接定义所需的 Windows 端参数、单文件变异操作（备份→读→改写→写→失败回滚）、
  * 以及配置 / 删除 / 只读诊断三个业务流程。
+ * ======================================================
  */
 
 import { Client, type SFTPWrapper } from "ssh2";

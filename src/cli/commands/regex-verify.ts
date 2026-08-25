@@ -1,18 +1,24 @@
 /**
- * @file src/cli/commands/regex-verify.ts
- * @brief embedded-mcp-toolkit regex-verify 命令
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : regex-verify.ts
+ * Author     : sumu
+ * Date       : 2026/07/19
+ * Version    : x.x.x
+ * Description: embedded-mcp-toolkit regex-verify 命令
  *
  * 加载指定设备的 serial.uboot 配置，构造 UbootDetector（自动合并默认值），
  * 跑标准样本矩阵 + 用户自定义样本，展示每条匹配结果。
  *
  * 用于在不连真机的情况下验证 yaml 正则配置能否正确识别 U-Boot 各类输出。
+ * ======================================================
  */
 
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { resolve } from "path";
 import { load } from "js-yaml";
-import { UbootDetector } from "../../mcp/shared/prompt-detector.js";
-import type { UbootYaml } from "../../shared/config.js";
+import { UbootDetector } from "../../sdk/exec/prompt-detector.js";
+import type { UbootYaml } from "../../sdk/shared/config.js";
 
 // ============================================================
 // 选项

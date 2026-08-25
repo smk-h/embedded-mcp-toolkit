@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/split.ts
- * @brief embedded-mcp-toolkit split 命令
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : split.ts
+ * Author     : sumu
+ * Date       : 2026/07/09
+ * Version    : x.x.x
+ * Description: embedded-mcp-toolkit split 命令
  *
  * 将单文件 config.yaml 的 devices 段拆分为 devices/<设备名>.yaml 独立文件，
  * 帮助现有用户从旧的单文件布局迁移到分文件布局。
+ * ======================================================
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";

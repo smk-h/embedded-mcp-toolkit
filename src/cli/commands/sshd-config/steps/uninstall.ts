@@ -1,6 +1,12 @@
 /**
- * @file src/cli/commands/sshd-config/steps/uninstall.ts
- * @brief step5: 卸载 Windows SSH 服务（含卸载流程专用工具函数）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : uninstall.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: step5: 卸载 Windows SSH 服务（含卸载流程专用工具函数）
+ * ======================================================
  */
 
 import {

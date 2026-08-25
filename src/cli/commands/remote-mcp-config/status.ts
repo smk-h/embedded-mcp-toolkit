@@ -1,9 +1,15 @@
 /**
- * @file src/cli/commands/remote-mcp-config/status.ts
- * @brief C3. 状态判定与 bridge 构造
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : status.ts
+ * Author     : sumu
+ * Date       : 2026/07/30
+ * Version    : x.x.x
+ * Description: C3. 状态判定与 bridge 构造
  *
  * 构造本次的 SSH 桥接 server 对象、比较现有 server 与桥接定义是否一致、
  * 读取单个落点的状态（三态 + error）、判断落点是否已配置 embedded-board。
+ * ======================================================
  */
 
 import { type SFTPWrapper } from "ssh2";
