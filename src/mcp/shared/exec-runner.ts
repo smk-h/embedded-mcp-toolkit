@@ -32,7 +32,10 @@
 import type { InteractiveShell } from "../../transports/interactive-shell.js";
 import { logger } from "../../shared/logger.js";
 
-import { type ControlChar, PromptDetector } from "./prompt-detector.js";
+import {
+  type ControlChar,
+  PromptDetector,
+} from "../../sdk/shared/prompt-detector.js";
 import { classifyResident, type ResidentVerdict } from "./resident-detector.js";
 
 /** @brief 常驻命令采样超时时长（毫秒），到点发 Ctrl+C 终止（中性语义） */

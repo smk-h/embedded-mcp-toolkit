@@ -21,7 +21,10 @@
 
 import type { InteractiveShell } from "../../transports/interactive-shell.js";
 
-import { CONTROL_CHAR_MAP, type ControlChar } from "./prompt-detector.js";
+import {
+  CONTROL_CHAR_MAP,
+  type ControlChar,
+} from "../../sdk/shared/prompt-detector.js";
 
 /** @brief 控制字符信号生效的默认等待时长（毫秒） */
 const DEFAULT_SETTLE_MS = 200;

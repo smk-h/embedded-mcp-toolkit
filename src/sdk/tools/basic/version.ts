@@ -1,5 +1,15 @@
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : version.ts
+ * Author     : sumu
+ * Date       : 2026/08/25
+ * Version    : 1.0.0
+ * Description: version SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
+ * ======================================================
+ */
+
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { pkg } from "../../../shared/package-info.js";
 
@@ -7,23 +17,22 @@ import { pkg } from "../../../shared/package-info.js";
 
 // ── 声明 ──
 
-export const versionConfig = {
+export const versionConfig: SdkToolConfig = {
   description: "Get the MCP server version and toolkit information",
-  inputSchema: fromJsonSchema<Record<string, never>>({
+  inputSchema: {
     type: "object",
     properties: {},
-  }),
+  },
 };
 
 // ── 实现 ──
 
-export async function versionHandler() {
+export async function versionHandler(): Promise<string> {
   logger.info("[version_tool]");
-  const info = [
+  return [
     `Name:    ${pkg.name}`,
     `Version: ${pkg.version}`,
     `Node:    ${process.version}`,
     `Platform: ${process.platform} ${process.arch}`,
   ].join("\n");
-  return { content: [text(info)] };
 }

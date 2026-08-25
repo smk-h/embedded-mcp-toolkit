@@ -11,7 +11,7 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { resolve } from "path";
 import { load } from "js-yaml";
-import { UbootDetector } from "../../mcp/shared/prompt-detector.js";
+import { UbootDetector } from "../../sdk/shared/prompt-detector.js";
 import type { UbootYaml } from "../../shared/config.js";
 
 // ============================================================

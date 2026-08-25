@@ -1,14 +1,13 @@
-import { fromJsonSchema } from "@modelcontextprotocol/server";
+import type { SdkToolConfig } from "../../types.js";
 import { getAllConfig, listDevices } from "../../../shared/config.js";
-import { text } from "../../tool-registry.js";
 import { logger } from "../../../shared/logger.js";
 
 // ── 声明 ──
 
-export const deviceInfoConfig = {
+export const deviceInfoConfig: SdkToolConfig = {
   description:
     "Get device configuration. Uses the default device when no name is given; returns all devices when 'all' is specified.",
-  inputSchema: fromJsonSchema<{ device?: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -17,7 +16,7 @@ export const deviceInfoConfig = {
           "Device name (optional). Omit to use the default device; pass 'all' to list every configured device.",
       },
     },
-  }),
+  },
 };
 
 // ── 辅助函数 ──
@@ -81,7 +80,7 @@ export async function deviceInfoHandler(args: { device?: string }) {
   // 未指定设备名 → 使用默认设备
   if (!args.device) {
     const cfg = getAllConfig();
-    return { content: [text(formatDeviceBlock(cfg).join("\n"))] };
+    return formatDeviceBlock(cfg).join("\n");
   }
 
   // 指定了 "all" → 返回所有设备
@@ -97,7 +96,7 @@ export async function deviceInfoHandler(args: { device?: string }) {
         sections.push(...block, "");
       }
     }
-    return { content: [text(sections.join("\n"))] };
+    return sections.join("\n");
   }
 
   // 指定了具体设备名 → 校验存在性后返回该设备
@@ -112,5 +111,5 @@ export async function deviceInfoHandler(args: { device?: string }) {
   }
 
   const cfg = getAllConfig(args.device);
-  return { content: [text(formatDeviceBlock(cfg).join("\n"))] };
+  return formatDeviceBlock(cfg).join("\n");
 }

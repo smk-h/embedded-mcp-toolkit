@@ -36,7 +36,7 @@ import {
   type ControlChar,
   PromptDetector,
   UbootDetector,
-} from "../../shared/prompt-detector.js";
+} from "../../../sdk/shared/prompt-detector.js";
 import { sendControlChar } from "../../shared/send-ctrl.js";
 import { runExec } from "../../shared/exec-runner.js";
 

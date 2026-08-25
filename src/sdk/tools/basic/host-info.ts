@@ -5,7 +5,7 @@
  * Author     : embedded-mcp-toolkit
  * Date       : 2026/07/30
  * Version    : 1.0.0
- * Description: host_info MCP 工具
+ * Description: host_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
  *
  *   查询 MCP 宿主端点信息（username@ip），用于跨机部署场景下 AI 客户端
  *   构造 scp 等文件传输命令。作为 instructions 字段未被客户端采纳时的兜底通道。
@@ -15,14 +15,16 @@
  * ======================================================
  */
 
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { pkg } from "../../../shared/package-info.js";
-import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
-import { resolveLogPaths, type LogPaths } from "../../shared/log-paths.js";
-import { buildRoutingHint } from "../../shared/build-routing.js";
+// 过渡期反向依赖：宿主端点/日志目录/路由提示仍在 mcp/shared（整体迁移为后续阶段）
+import { resolveHostEndpoint } from "../../../mcp/shared/host-endpoint.js";
+import {
+  resolveLogPaths,
+  type LogPaths,
+} from "../../../mcp/shared/log-paths.js";
+import { buildRoutingHint } from "../../../mcp/shared/build-routing.js";
 
 // ── 声明 ────────────────────────────────────────────────────
 
@@ -32,15 +34,15 @@ import { buildRoutingHint } from "../../shared/build-routing.js";
  *          供 AI 客户端在跨机部署（MCP 在 Windows、AI 客户端在 Linux）下
  *          构造 scp 文件传输命令。
  */
-export const hostInfoConfig = {
+export const hostInfoConfig: SdkToolConfig = {
   description:
     `Query the MCP host endpoint (username@ip) of ${pkg.name} for constructing cross-machine file transfers (scp) when this MCP (${pkg.name}) runs on Windows and the AI client runs on Linux. ` +
     `Also returns the ${pkg.name} log save directories (business log & raw data log absolute paths) for locating/cleaning up logs. ` +
     "Returns 'local started' with no endpoint for local launches.",
-  inputSchema: fromJsonSchema<Record<string, never>>({
+  inputSchema: {
     type: "object",
     properties: {},
-  }),
+  },
 };
 
 // ── 辅助函数 ────────────────────────────────────────────────
@@ -132,12 +134,11 @@ function formatHostEndpoint(
  * @brief host_info 处理函数
  * @details 查询当前 MCP 宿主端点。远程 SSH 启动返回 username@ip；
  *          本地启动返回 local 状态；解析失败返回 unavailable 状态。
- * @returns MCP 响应，包含端点信息文本
+ * @returns 端点信息文本
  */
-export async function hostInfoHandler() {
+export async function hostInfoHandler(): Promise<string> {
   logger.info("[host_info]");
   const ep = resolveHostEndpoint();
   const lp = resolveLogPaths();
-  const info = formatHostEndpoint(ep, lp).join("\n");
-  return { content: [text(info)] };
+  return formatHostEndpoint(ep, lp).join("\n");
 }

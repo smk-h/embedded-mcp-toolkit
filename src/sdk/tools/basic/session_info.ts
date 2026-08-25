@@ -5,7 +5,7 @@
  * Author     : opencode
  * Date       : 2026/06/09
  * Version    : 1.0.0
- * Description: session_info MCP 工具
+ * Description: session_info SDK 工具（协议无关，MCP 注册见 src/mcp/tools/basic）
  *
  *   提供跨连接类型的会话查询能力：
  *     - 按 session_id 查询 → 返回该会话的完整元数据
@@ -14,11 +14,10 @@
  * ======================================================
  */
 
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
-import { registry, type SessionMeta } from "../../sessions/registry.js";
+// 过渡期反向依赖：registry 仍在 mcp/sessions（sessions 域整体迁移为后续阶段）
+import { registry, type SessionMeta } from "../../../mcp/sessions/registry.js";
 import { formatBeijingTime } from "../../../utils/timestamp.js";
 
 // ── session_info ──────────────────────────────────────────
@@ -31,15 +30,12 @@ import { formatBeijingTime } from "../../../utils/timestamp.js";
  *   - 传 device    → 返回该设备下所有会话
  *   - 都不传       → 返回当前全部活跃会话
  */
-export const sessionInfoConfig = {
+export const sessionInfoConfig: SdkToolConfig = {
   description:
     "Query active session metadata. Pass session_id for one session, device for all sessions of a device, or neither for all active sessions. " +
     "Each session returns: session id, connection type (serial/ssh/adb), device name, connection info (e.g. COM3@115200), creation time, " +
     "and the raw session log file path (serial/ssh/adb traffic recorded continuously by the server, including full boot logs after reset/reboot).",
-  inputSchema: fromJsonSchema<{
-    session_id?: string;
-    device?: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -53,7 +49,7 @@ export const sessionInfoConfig = {
           "Device name (e.g. board-a). Lists all sessions for this device.",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -83,7 +79,7 @@ function formatSessionMeta(s: SessionMeta): string[] {
  *   3. 都未传入 → 列出全部活跃会话
  *
  * @param args 工具参数，包含可选的 session_id 和 device
- * @returns MCP 响应
+ * @returns 格式化后的会话信息文本
  */
 export function sessionInfoHandler(args: {
   session_id?: string;
@@ -94,12 +90,10 @@ export function sessionInfoHandler(args: {
     logger.info(`[session_info] session_id=${args.session_id}`);
     const meta = registry.getBySession(args.session_id);
     if (!meta) {
-      return {
-        content: [text(`Session '${args.session_id}' not found in registry.`)],
-      };
+      return `Session '${args.session_id}' not found in registry.`;
     }
     const lines = formatSessionMeta(meta);
-    return { content: [text(lines.join("\n").trim())] };
+    return lines.join("\n").trim();
   }
 
   // 模式 2：按 device 查询该设备所有会话
@@ -107,9 +101,7 @@ export function sessionInfoHandler(args: {
     logger.info(`[session_info] device=${args.device}`);
     const sessions = registry.getByDevice(args.device);
     if (sessions.length === 0) {
-      return {
-        content: [text(`No active sessions for device '${args.device}'.`)],
-      };
+      return `No active sessions for device '${args.device}'.`;
     }
     const lines: string[] = [
       `Sessions for device '${args.device}' (${sessions.length}):`,
@@ -118,18 +110,18 @@ export function sessionInfoHandler(args: {
     for (const s of sessions) {
       lines.push(...formatSessionMeta(s));
     }
-    return { content: [text(lines.join("\n").trim())] };
+    return lines.join("\n").trim();
   }
 
   // 模式 3：列出全部活跃会话
   logger.info("[session_info] list all");
   const all = registry.listAll();
   if (all.length === 0) {
-    return { content: [text("No active sessions.")] };
+    return "No active sessions.";
   }
   const lines: string[] = [`All active sessions (${all.length}):`, ""];
   for (const s of all) {
     lines.push(...formatSessionMeta(s));
   }
-  return { content: [text(lines.join("\n").trim())] };
+  return lines.join("\n").trim();
 }
