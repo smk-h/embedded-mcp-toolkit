@@ -22,8 +22,8 @@ import {
 import { interactiveLoop } from "./loop.js";
 import { BaseShell } from "./base-shell.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
-import { PshState, PshStateMachine } from "../services/psh.js";
-import { KeyProvider } from "../services/key-provider.js";
+import { PshState, PshStateMachine } from "../auth/psh.js";
+import { KeyProvider } from "../auth/key-provider.js";
 import { getKeyProviderConfig } from "../shared/config.js";
 import { type TransferResult } from "../shared/transfer-result.js";
 

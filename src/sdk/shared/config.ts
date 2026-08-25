@@ -15,8 +15,8 @@ import { load } from "js-yaml";
 import { logger } from "./logger.js";
 import type { SSHShellConfig } from "../transports/ssh.js";
 import type { SerialShellConfig } from "../transports/serial.js";
-import type { KeyProviderConfig } from "../services/key-provider.js";
-import type { ExecTimeoutConfig } from "../sdk/shared/exec-runner.js";
+import type { KeyProviderConfig } from "../auth/key-provider.js";
+import type { ExecTimeoutConfig } from "../exec/exec-runner.js";
 
 /** KeyProvider 配置片段（YAML 中可选项） */
 interface KeyProviderYaml {

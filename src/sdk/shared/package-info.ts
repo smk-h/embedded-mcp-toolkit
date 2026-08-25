@@ -45,11 +45,11 @@ function loadPackageInfo(): PackageInfo {
     return JSON.parse(injected) as PackageInfo;
   }
 
-  // npm/源码模式：out/shared/package-info.js → 仓库根 package.json
+  // npm/源码模式：out/sdk/shared/package-info.js → 仓库根 package.json
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   return JSON.parse(
-    readFileSync(resolve(__dirname, "../../package.json"), "utf-8")
+    readFileSync(resolve(__dirname, "../../../package.json"), "utf-8")
   ) as PackageInfo;
 }
 

@@ -10,29 +10,29 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
-import { SSHShell, type SSHShellConfig } from "../../../transports/ssh.js";
+import { logger } from "../../../sdk/shared/logger.js";
+import { SSHShell, type SSHShellConfig } from "../../../sdk/transports/ssh.js";
 import {
   getPromptPattern,
   getExecTimeoutConfig,
   getSSHConfig,
   getKeyProviderConfig,
   resolveDeviceName,
-} from "../../../shared/config.js";
+} from "../../../sdk/shared/config.js";
 import {
   PshState,
   PshStateMachine,
   PSH_STATE_DESC,
-} from "../../../services/psh.js";
-import { KeyProvider } from "../../../services/key-provider.js";
+} from "../../../sdk/auth/psh.js";
+import { KeyProvider } from "../../../sdk/auth/key-provider.js";
 import { sshStore } from "./sessions.js";
 import {
   CONTROL_CHAR_MAP,
   type ControlChar,
   PromptDetector,
-} from "../../shared/prompt-detector.js";
-import { sendControlChar } from "../../shared/send-ctrl.js";
-import { runExec } from "../../shared/exec-runner.js";
+} from "../../exec/prompt-detector.js";
+import { sendControlChar } from "../../exec/send-ctrl.js";
+import { runExec } from "../../exec/exec-runner.js";
 
 // ── ssh_shell_open ─────────────────────────────────────────
 

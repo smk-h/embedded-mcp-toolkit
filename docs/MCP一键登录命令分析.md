@@ -20,10 +20,10 @@ MCP 一键登录命令是嵌入式设备自动化连接的核心能力，用于�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/services/user-login.ts`](src/services/user-login.ts) | 用户登录：`UserLoginStateMachine`（状态机）+ `UserLoginHandler`（登录序列） |
-| [`src/services/psh.ts`](src/services/psh.ts) | PSH 解锁：`PshStateMachine`（状态机）+ `PshHandler`（解锁序列） |
-| [`src/transports/serial.ts`](src/transports/serial.ts) | 串口通道封装 + 一键登录 / PSH 解锁演示编排 |
-| [`src/transports/ssh.ts`](src/transports/ssh.ts) | SSH 通道封装 + PSH 解锁演示编排 |
+| [`src/sdk/auth/user-login.ts`](src/sdk/auth/user-login.ts) | 用户登录：`UserLoginStateMachine`（状态机）+ `UserLoginHandler`（登录序列） |
+| [`src/sdk/auth/psh.ts`](src/sdk/auth/psh.ts) | PSH 解锁：`PshStateMachine`（状态机）+ `PshHandler`（解锁序列） |
+| [`src/sdk/transports/serial.ts`](src/sdk/transports/serial.ts) | 串口通道封装 + 一键登录 / PSH 解锁演示编排 |
+| [`src/sdk/transports/ssh.ts`](src/sdk/transports/ssh.ts) | SSH 通道封装 + PSH 解锁演示编排 |
 
 ### 2. 状态机与执行器分工
 

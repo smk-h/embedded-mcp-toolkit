@@ -8,7 +8,7 @@
  *   2. `bun build --compile` 把 out/cli/index.js 连同全部 JS 依赖（含 serialport 的
  *      JS 部分）与 Bun 运行时打进单个原生可执行文件；
  *   3. 通过 `--define:globalThis.__PACKAGE_JSON__=...` 把 package.json 以字面量
- *      注入二进制（见 src/shared/package-info.ts），exe 内自带版本信息；
+ *      注入二进制（见 src/sdk/shared/package-info.ts），exe 内自带版本信息；
  *   4. serialport 的原生绑定（.node，C++ 编译产物）无法进入 Bun 的快照文件系统
  *      （$bunfs），单独拷到 exe 旁的 prebuilds/<平台>-<架构>/ 目录——node-gyp-build
  *      加载时会兜底探测 process.execPath 同目录的 prebuilds（nearby 分支），
@@ -304,7 +304,7 @@ function main() {
   //    - serialport 的 JS 全部打进 exe（不加 --external），避免运行时从磁盘
   //      解析 node_modules 的不确定性；
   //    - package.json 通过 define 注入（globalThis 成员表达式，node 下自然为
-  //      undefined 并走磁盘读取分支，见 src/shared/package-info.ts）。
+  //      undefined 并走磁盘读取分支，见 src/sdk/shared/package-info.ts）。
   console.log("\n④ Bun 打包单文件可执行...");
   const define = `globalThis.__PACKAGE_JSON__=${JSON.stringify(JSON.stringify(PKG))}`;
   const exeOut = join(DIST_DIR, EXE_NAME);

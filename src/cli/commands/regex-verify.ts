@@ -17,8 +17,8 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { resolve } from "path";
 import { load } from "js-yaml";
-import { UbootDetector } from "../../sdk/shared/prompt-detector.js";
-import type { UbootYaml } from "../../shared/config.js";
+import { UbootDetector } from "../../sdk/exec/prompt-detector.js";
+import type { UbootYaml } from "../../sdk/shared/config.js";
 
 // ============================================================
 // 选项

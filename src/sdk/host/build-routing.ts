@@ -16,7 +16,7 @@
  * ======================================================
  */
 
-import { pkg } from "../../shared/package-info.js";
+import { pkg } from "../../sdk/shared/package-info.js";
 
 // ── 单行指引（instructions 用） ──────────────────────────────
 

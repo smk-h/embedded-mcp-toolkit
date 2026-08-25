@@ -14,11 +14,11 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
-import { sanitize } from "../../../utils/terminal-sanitizer.js";
+import { logger } from "../../../sdk/shared/logger.js";
+import { sanitize } from "../../../sdk/utils/terminal-sanitizer.js";
 import { sshStore } from "./sessions.js";
-import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
-import { buildRoutingHint } from "../../shared/build-routing.js";
+import { resolveHostEndpoint } from "../../host/host-endpoint.js";
+import { buildRoutingHint } from "../../host/build-routing.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
 const BUILD_MARKER = "___MCP_BUILD_DONE___";

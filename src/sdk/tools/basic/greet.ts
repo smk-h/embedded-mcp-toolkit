@@ -10,7 +10,7 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
+import { logger } from "../../../sdk/shared/logger.js";
 
 // ── 声明 ──
 

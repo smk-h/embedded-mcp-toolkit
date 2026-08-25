@@ -19,7 +19,7 @@
  * ======================================================
  */
 
-import type { InteractiveShell } from "../../transports/interactive-shell.js";
+import type { InteractiveShell } from "../../sdk/transports/interactive-shell.js";
 
 import { CONTROL_CHAR_MAP, type ControlChar } from "./prompt-detector.js";
 

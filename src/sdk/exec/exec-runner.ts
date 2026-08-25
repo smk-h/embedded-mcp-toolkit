@@ -29,8 +29,8 @@
  * ======================================================
  */
 
-import type { InteractiveShell } from "../../transports/interactive-shell.js";
-import { logger } from "../../shared/logger.js";
+import type { InteractiveShell } from "../../sdk/transports/interactive-shell.js";
+import { logger } from "../../sdk/shared/logger.js";
 
 import { type ControlChar, PromptDetector } from "./prompt-detector.js";
 import { classifyResident, type ResidentVerdict } from "./resident-detector.js";

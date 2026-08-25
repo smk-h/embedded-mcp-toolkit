@@ -14,11 +14,11 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as os from "os";
-import { resolveHostEndpoint } from "../sdk/shared/host-endpoint.js";
-import { buildRoutingInstructions } from "../sdk/shared/build-routing.js";
+import { resolveHostEndpoint } from "../sdk/host/host-endpoint.js";
+import { buildRoutingInstructions } from "../sdk/host/build-routing.js";
 
-import { logger } from "../shared/logger.js";
-import { pkg } from "../shared/package-info.js";
+import { logger } from "../sdk/shared/logger.js";
+import { pkg } from "../sdk/shared/package-info.js";
 import {
   mcpBasicTools,
   mcpSshTools,

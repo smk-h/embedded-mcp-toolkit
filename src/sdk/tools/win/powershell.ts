@@ -16,11 +16,11 @@
  * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
+import { logger } from "../../../sdk/shared/logger.js";
 import {
   PowerShellShell,
   type PowerShellShellConfig,
-} from "../../../transports/powershell.js";
+} from "../../../sdk/transports/powershell.js";
 import { powerStore } from "./sessions.js";
 
 // ── power_shell_open ────────────────────────────────────────

@@ -8,7 +8,7 @@
  * Description: zmodem.js 第三方包的类型声明
  *
  *   zmodem.js@0.1.10 是纯 JS 实现且无官方类型定义，
- *   此处提供最小可用声明，覆盖 services/zmodem/zmodem-bridge.ts 用到的 API。
+ *   此处提供最小可用声明，覆盖 zmodem/zmodem-bridge.ts 用到的 API。
  *   运行时对象的具体形态由 bridge 内部的 ZmodemNS（any）承接，
  *   本声明只解决 tsc 的 "implicitly has any" 报错。
  * ======================================================

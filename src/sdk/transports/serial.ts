@@ -14,8 +14,8 @@ import type { SerialPort } from "serialport";
 import { interactiveLoop } from "./loop.js";
 import { BaseShell } from "./base-shell.js";
 import { sanitize } from "../utils/terminal-sanitizer.js";
-import { PshState, PshStateMachine } from "../services/psh.js";
-import { KeyProvider } from "../services/key-provider.js";
+import { PshState, PshStateMachine } from "../auth/psh.js";
+import { KeyProvider } from "../auth/key-provider.js";
 import { getKeyProviderConfig } from "../shared/config.js";
 import {
   ensureSerialNativeBindings,
@@ -27,7 +27,7 @@ import {
   UserLoginHandler,
   UserLoginStateMachine,
   UserLoginStepDelays,
-} from "../services/user-login.js";
+} from "../auth/user-login.js";
 
 /**
  * @brief 串口 Shell 连接配置
@@ -107,7 +107,7 @@ export class SerialShell extends BaseShell {
    * serialport.write 本就接受 string | Buffer，两种形态共用一条出口。
    *
    * 注：相对基类的 protected 抽象方法，此处提为 public，
-   * 让 services/zmodem 层能直接发送 ZMODEM 帧，无需另造 public 别名。
+   * 让 zmodem 层能直接发送 ZMODEM 帧，无需另造 public 别名。
    *
    * @param payload 已拼换行的文本，或原始字节 Buffer
    * @throws 串口未打开时抛出 "Serial not open. Call open() first."

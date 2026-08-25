@@ -41,9 +41,9 @@ import Zmodem, {
   type ZmodemHeader,
 } from "zmodem.js";
 
-import type { SerialShell } from "../../transports/serial.js";
-import type { TransferResult } from "../../shared/transfer-result.js";
-import { logger } from "../../shared/logger.js";
+import type { SerialShell } from "../transports/serial.js";
+import type { TransferResult } from "../shared/transfer-result.js";
+import { logger } from "../shared/logger.js";
 
 // ── 类型定义 ────────────────────────────────────────────────
 

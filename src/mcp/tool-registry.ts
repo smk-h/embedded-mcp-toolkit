@@ -10,7 +10,7 @@
  */
 
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { logger } from "../shared/logger.js";
+import { logger } from "../sdk/shared/logger.js";
 
 // ── 辅助函数 ────────────────────────────────────────────────
 

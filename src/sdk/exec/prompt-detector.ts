@@ -21,7 +21,7 @@
  * ======================================================
  */
 
-import type { UbootYaml } from "../../shared/config.js";
+import type { UbootYaml } from "../../sdk/shared/config.js";
 
 /**
  * @brief 支持的控制字符类型

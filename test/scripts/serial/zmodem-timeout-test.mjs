@@ -16,8 +16,8 @@
  * ======================================================
  */
 
-import { SerialShell } from "../out/transports/serial.js";
-import { zmodemSend, zmodemReceive } from "../out/services/zmodem/index.js";
+import { SerialShell } from "../../../out/sdk/transports/serial.js";
+import { zmodemSend, zmodemReceive } from "../../../out/sdk/zmodem/index.js";
 
 const PORT = "COM3";
 const BAUD_RATE = 115200;

@@ -13,14 +13,14 @@
 ### 1. JS 全量内联与版本注入
 
 - `out/cli/index.js`（tsc 产物）连同全部 JS 依赖（含 serialport 的 JS 部分）与 Bun 运行时打进单个 exe，运行时不依赖磁盘上的 node_modules；
-- 打包时通过 `--define:globalThis.__PACKAGE_JSON__=...` 把包信息以字面量注入（见 [src/shared/package-info.ts](../src/shared/package-info.ts)），exe 内 `--version`、MCP 握手版本号均不依赖磁盘文件。
+- 打包时通过 `--define:globalThis.__PACKAGE_JSON__=...` 把包信息以字面量注入（见 [src/sdk/shared/package-info.ts](../src/sdk/shared/package-info.ts)），exe 内 `--version`、MCP 握手版本号均不依赖磁盘文件。
 
 ### 2. 串口原生绑定外置
 
 `@serialport/bindings-cpp` 的 `.node`（C++ 编译产物）无法进入 Bun 的快照文件系统（$bunfs），单独放在 exe 旁的 `prebuilds/<平台>-<架构>/` 目录：
 
 - node-gyp-build 加载时会兜底探测 `process.execPath` 同目录的 `prebuilds/`（nearby 机制），无需任何环境变量即可从真实磁盘加载；
-- 引导与报错指引见 [src/shared/native-bootstrap.ts](../src/shared/native-bootstrap.ts)——缺少绑定时串口命令会给出中文修复提示。
+- 引导与报错指引见 [src/sdk/shared/native-bootstrap.ts](../src/sdk/shared/native-bootstrap.ts)——缺少绑定时串口命令会给出中文修复提示。
 
 #### 2.1 Bun 兼容性：exe 使用 @dimava 分支绑定（仅影响 Windows exe）
 
@@ -149,7 +149,7 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 ##### 1.2.1 第一步：锁定差异在串口读取回调
 
-用同一份 raw JSON-RPC 测试脚本分别启动 node 与 exe，确认只有 exe 异常。随后在 [src/transports/serial.ts](../src/transports/serial.ts) 加 DEBUG_SERIAL 插桩，分别打印写入与读取事件：
+用同一份 raw JSON-RPC 测试脚本分别启动 node 与 exe，确认只有 exe 异常。随后在 [src/sdk/transports/serial.ts](../src/sdk/transports/serial.ts) 加 DEBUG_SERIAL 插桩，分别打印写入与读取事件：
 
 - 写入事件（`[DBG write]`）：每次发送命令都触发；
 - 读取事件（`[DBG data]`）：exe 下**一次都不触发**。
@@ -184,7 +184,7 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 改为正确拆法：官方 `@serialport/bindings-cpp@13.0.0` 保持顶层（全平台 prebuilds，node 用），`@dimava/serialport-bindings-cpp@13.0.2` 作为 devDependency（仅构建期用），[scripts/build-exe.mjs](../scripts/build-exe.mjs) 的 `BINDINGS_SRC` 指向 dimava。重建 exe 后验证**仍然失败**（data 事件依旧不触发），连续 3 次复现。
 
-此时在 [src/shared/native-bootstrap.ts](../src/shared/native-bootstrap.ts) 与 [src/transports/serial.ts](../src/transports/serial.ts) 加插桩观察绑定解析路径：
+此时在 [src/sdk/shared/native-bootstrap.ts](../src/sdk/shared/native-bootstrap.ts) 与 [src/sdk/transports/serial.ts](../src/sdk/transports/serial.ts) 加插桩观察绑定解析路径：
 
 - `hasNodeModulesBindings()` 返回 `false`：exe 内 `require.resolve('@serialport/bindings-cpp')` 在 `$bunfs` 虚拟路径下解析失败（报 `Cannot find module ... from 'B:\~BUN\root\...'`）；
 - `hasNearbyPrebuilds()` 返回 `true`：`exe-out/prebuilds/win32-x64/` 存在。

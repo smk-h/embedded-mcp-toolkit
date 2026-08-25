@@ -22,9 +22,9 @@
  * ======================================================
  */
 
-import { BaseShell } from "../../transports/base-shell.js";
+import { BaseShell } from "../../sdk/transports/base-shell.js";
 import { registry, type SessionType } from "./registry.js";
-import { logger } from "../../shared/logger.js";
+import { logger } from "../../sdk/shared/logger.js";
 
 // ── 类型 ────────────────────────────────────────────────────
 

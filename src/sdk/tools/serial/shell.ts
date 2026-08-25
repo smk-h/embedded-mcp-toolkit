@@ -10,11 +10,11 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
+import { logger } from "../../../sdk/shared/logger.js";
 import {
   SerialShell,
   type SerialShellConfig,
-} from "../../../transports/serial.js";
+} from "../../../sdk/transports/serial.js";
 import {
   getPromptPattern,
   getExecTimeoutConfig,
@@ -22,18 +22,18 @@ import {
   getKeyProviderConfig,
   getUbootConfig,
   resolveDeviceName,
-} from "../../../shared/config.js";
+} from "../../../sdk/shared/config.js";
 import {
   PshState,
   PshStateMachine,
   PshHandler,
   PSH_STATE_DESC,
-} from "../../../services/psh.js";
+} from "../../../sdk/auth/psh.js";
 import {
   UserLoginHandler,
   UserLoginStatus,
-} from "../../../services/user-login.js";
-import { KeyProvider } from "../../../services/key-provider.js";
+} from "../../../sdk/auth/user-login.js";
+import { KeyProvider } from "../../../sdk/auth/key-provider.js";
 import {
   serialStore,
   portToSession,
@@ -46,9 +46,9 @@ import {
   type ControlChar,
   PromptDetector,
   UbootDetector,
-} from "../../shared/prompt-detector.js";
-import { sendControlChar } from "../../shared/send-ctrl.js";
-import { runExec } from "../../shared/exec-runner.js";
+} from "../../exec/prompt-detector.js";
+import { sendControlChar } from "../../exec/send-ctrl.js";
+import { runExec } from "../../exec/exec-runner.js";
 
 // ── serial_open ─────────────────────────────────────────────
 

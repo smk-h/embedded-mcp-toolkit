@@ -20,7 +20,7 @@
  * SSH 操作基于 ssh2 库实现，传输层（sshConnect / sshExec / sshDownload /
  * sshUpload / sshDisconnect）与终端交互辅助（prompt / clearScreen / askPassword 等）
  * 已抽取至 src/cli/shared/ssh.ts 与 src/cli/shared/cli-helpers.ts，本目录直接 import
- * 复用，不复用 src/transports/ssh.ts 的 SSHShell（后者绑定 MCP 会话注册、
+ * 复用，不复用 src/sdk/transports/ssh.ts 的 SSHShell（后者绑定 MCP 会话注册、
  * PSH 解锁等业务机制，不适合一次性运维命令）。
  *
  * 目录结构：

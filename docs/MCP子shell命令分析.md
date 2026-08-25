@@ -71,10 +71,10 @@ cmd; echo "___MCP_EXEC_DONE_<rand>___:$?"
 
 ### 2. 封装代码位置
 
-命令拼接发生在 [`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L294-L302) 的 `runExec()` 中：
+命令拼接发生在 [`exec-runner.ts`](../src/sdk/exec/exec-runner.ts#L294-L302) 的 `runExec()` 中：
 
 ```ts
-// src/sdk/shared/exec-runner.ts
+// src/sdk/exec/exec-runner.ts
 const marker: string = generateMarker();
 const markerRegex: RegExp = buildMarkerRegex(marker);
 const fullCommand: string =
@@ -87,15 +87,15 @@ logger.info(
 input.shell.write(fullCommand, clear);
 ```
 
-- `MarkerStyle` 类型定义在 [`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L130)：`"subshell"`（默认）与 `"plain"` 两种取值
+- `MarkerStyle` 类型定义在 [`exec-runner.ts`](../src/sdk/exec/exec-runner.ts#L130)：`"subshell"`（默认）与 `"plain"` 两种取值
 - `ExecInput.markerStyle` 字段由各通道 handler 注入，SSH 与 ADB 恒为默认 `subshell`；串口在 U-Boot 态会话注入 `plain`（见第三章）
 
 ### 3. marker 检测与防误判
 
-marker 的匹配正则构造于 [`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L91-L93)：
+marker 的匹配正则构造于 [`exec-runner.ts`](../src/sdk/exec/exec-runner.ts#L91-L93)：
 
 ```ts
-// src/sdk/shared/exec-runner.ts
+// src/sdk/exec/exec-runner.ts
 function buildMarkerRegex(marker: string): RegExp {
   return new RegExp(`(?<!")${marker}:(\\d+|\\$\\?)`);
 }
@@ -104,7 +104,7 @@ function buildMarkerRegex(marker: string): RegExp {
 - 捕获退出码支持两种形态：`\d+`（shell 展开后的数字退出码）与 `\$?`（U-Boot 老 simple parser 不展开、原样输出的字面量，此时退出码未知，按 null 处理）
 - 负向后行断言 `(?<!")` 排除 PTY 回显行里的字面 marker：注入的命令是 `echo "<marker>:$?"`，回显行中 marker 前紧邻双引号；真实输出的 marker 前是行首或换行。即使回显剥离失败，回显行残留也不会被误判为命令完成
 
-检测采用两级策略（[`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L350-L394)）：
+检测采用两级策略（[`exec-runner.ts`](../src/sdk/exec/exec-runner.ts#L350-L394)）：
 
 | 级别 | 检测方式 | 特点 |
 | --- | --- | --- |
@@ -115,7 +115,7 @@ function buildMarkerRegex(marker: string): RegExp {
 
 ### 4. 完整执行流程
 
-`runExec()` 的完整流程（[`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L249-L431)）：
+`runExec()` 的完整流程（[`exec-runner.ts`](../src/sdk/exec/exec-runner.ts#L249-L431)）：
 
 1. **常驻分类**：判定命令是否常驻（`ping` / `logcat` / `top` 等永不返回提示符的命令），据此选择超时时长与超时动作
 2. **前置冲刷**：`shell.drain()` 丢弃缓冲区残留，避免上次未终止的输出污染本次结果

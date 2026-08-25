@@ -16,22 +16,22 @@
  * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
+import { logger } from "../../../sdk/shared/logger.js";
 import {
   getPromptPattern,
   getExecTimeoutConfig,
   resolveAdbSerial,
   resolveDeviceName,
-} from "../../../shared/config.js";
-import { AdbShell, type AdbShellConfig } from "../../../transports/adb.js";
+} from "../../../sdk/shared/config.js";
+import { AdbShell, type AdbShellConfig } from "../../../sdk/transports/adb.js";
 import { adbStore } from "./sessions.js";
 import {
   CONTROL_CHAR_MAP,
   type ControlChar,
   PromptDetector,
-} from "../../shared/prompt-detector.js";
-import { sendControlChar } from "../../shared/send-ctrl.js";
-import { runExec } from "../../shared/exec-runner.js";
+} from "../../exec/prompt-detector.js";
+import { sendControlChar } from "../../exec/send-ctrl.js";
+import { runExec } from "../../exec/exec-runner.js";
 import { resolveAdbDeviceName } from "./device-resolver.js";
 
 // ── adb_shell_open ──────────────────────────────────────────

@@ -13,9 +13,9 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../shared/logger.js";
+import { logger } from "../../../sdk/shared/logger.js";
 import { sshStore } from "./sessions.js";
-import { formatTransferSummary } from "../../../shared/transfer-result.js";
+import { formatTransferSummary } from "../../../sdk/shared/transfer-result.js";
 
 // ── ssh_sftp_upload ─────────────────────────────────────────
 

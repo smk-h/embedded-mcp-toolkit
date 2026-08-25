@@ -10,18 +10,18 @@
  */
 
 import { Command } from "commander";
-import { interactiveShell, pshDemoSsh } from "../transports/ssh.js";
+import { interactiveShell, pshDemoSsh } from "../sdk/transports/ssh.js";
 import {
   interactiveSerialShell,
   pshDemoSerial,
   userLoginDemoSerial,
-} from "../transports/serial.js";
+} from "../sdk/transports/serial.js";
 import {
   getSSHConfig,
   getSerialConfig,
   getAllConfig,
-} from "../shared/config.js";
-import { pkg } from "../shared/package-info.js";
+} from "../sdk/shared/config.js";
+import { pkg } from "../sdk/shared/package-info.js";
 import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
