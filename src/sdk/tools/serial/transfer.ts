@@ -1,10 +1,10 @@
 /**
- * @file MCP Serial ZMODEM 文件传输工具
+ * @file SDK Serial ZMODEM 文件传输工具（协议无关，MCP 注册见 src/mcp/tools/serial）
  *
  * 在已建立的串口会话上，通过 ZMODEM 协议（依赖设备端 lrzsz 的 rz/sz）传输二进制文件。
  * 复用同一条串口连接，传输全程不释放串口、会话保持不断。
- *   - serial_upload   MCP 当发送端，设备端 rz 接收
- *   - serial_download MCP 当接收端，设备端 sz 发送
+ *   - serial_upload   发送端，设备端 rz 接收
+ *   - serial_download 接收端，设备端 sz 发送
  *
  * 工具采用阻塞式调用（对齐 serial_exec 风格），传输过程中通过 logger 在 stderr 输出进度，
  * 完成或失败或超时后返回传输摘要（字节数/耗时/速率）。
@@ -13,9 +13,7 @@
 import { basename } from "node:path";
 import { stat } from "node:fs/promises";
 
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { formatTransferSummary } from "../../../shared/transfer-result.js";
 import { serialStore } from "./sessions.js";
@@ -326,7 +324,7 @@ function formatAbortedSummary(
  * @param idle_timeout  空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15）
  * @param timeout       总时长超时秒数，兜底防无限挂起（默认 300）
  */
-export const serialUploadConfig = {
+export const serialUploadConfig: SdkToolConfig = {
   description:
     "Upload a binary file to the device over ZMODEM via an existing serial session. " +
     "The device must have lrzsz installed (rz command). " +
@@ -338,14 +336,7 @@ export const serialUploadConfig = {
     "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
     "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
     "timeout caps total duration and reports a suggested value if still progressing.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    local_path: string;
-    remote_name?: string;
-    recv_cmd?: string;
-    idle_timeout?: number;
-    timeout?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -384,7 +375,7 @@ export const serialUploadConfig = {
       },
     },
     required: ["session_id", "local_path"],
-  }),
+  },
 };
 
 /**
@@ -408,18 +399,17 @@ export async function serialUploadHandler(args: {
   recv_cmd?: string;
   idle_timeout?: number;
   timeout?: number;
-}): Promise<{ content: { type: "text"; text: string }[] }> {
+}): Promise<string> {
   const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
   const idleTimeoutSec = resolveIdleTimeoutSec(args.idle_timeout);
   logger.info(
     `[serial_upload] session_id=${args.session_id} local=${args.local_path} remote_name=${args.remote_name ?? "(auto)"} recv_cmd=${args.recv_cmd ?? "(default rz)"} timeout=${timeoutSec} idle_timeout=${idleTimeoutSec}`
   );
 
-  const lookup = serialStore.getOrNotFound(args.session_id);
-  if (!lookup.ok) {
-    return lookup.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-  const shell = lookup.shell;
 
   // 本地文件存在性校验（桥接层 zmodemSend 还会再 stat 一次拿 offer size，
   // 此处仅为快速失败；总大小由 onProgress 的 p.total 带回，不再重复 stat）
@@ -429,7 +419,7 @@ export async function serialUploadHandler(args: {
   } catch (err) {
     const msg = `Local file not found: ${args.local_path} (${err instanceof Error ? err.message : String(err)})`;
     logger.warn(`[serial_upload] ${msg}`);
-    return { content: [text(msg)] };
+    return msg;
   }
 
   const remoteName = args.remote_name ?? basename(args.local_path);
@@ -486,24 +476,18 @@ export async function serialUploadHandler(args: {
       // 若是被超时守卫中止的，按中止原因生成面向用户的文案（区分真故障/timeout过小）
       const reason = guard.reason();
       if (!result.success && reason) {
-        return {
-          content: [
-            text(
-              formatAbortedSummary(
-                reason,
-                "Upload",
-                args.local_path,
-                remoteName,
-                { bytes: result.bytes, durationMs: result.durationMs },
-                timeoutSec,
-                idleTimeoutSec,
-                offerTotalSize
-              )
-            ),
-          ],
-        };
+        return formatAbortedSummary(
+          reason,
+          "Upload",
+          args.local_path,
+          remoteName,
+          { bytes: result.bytes, durationMs: result.durationMs },
+          timeoutSec,
+          idleTimeoutSec,
+          offerTotalSize
+        );
       }
-      return { content: [text(formatTransferSummary(result))] };
+      return formatTransferSummary(result);
     } finally {
       guard.clear();
       // ZMODEM 结束后恢复 shell 到正常提示符状态（rz 退出后 shell 可能停在异常终端态）。
@@ -528,7 +512,7 @@ export async function serialUploadHandler(args: {
  * @param idle_timeout  空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15）
  * @param timeout       总时长超时秒数，兜底防无限挂起（默认 300）
  */
-export const serialDownloadConfig = {
+export const serialDownloadConfig: SdkToolConfig = {
   description:
     "Download a binary file from the device over ZMODEM via an existing serial session. " +
     "The device must have lrzsz installed (sz command). " +
@@ -544,14 +528,7 @@ export const serialDownloadConfig = {
     "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
     "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
     "timeout caps total duration and reports a suggested value if still progressing.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    remote_path: string;
-    local_path: string;
-    send_cmd?: string;
-    idle_timeout?: number;
-    timeout?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -592,7 +569,7 @@ export const serialDownloadConfig = {
       },
     },
     required: ["session_id", "remote_path", "local_path"],
-  }),
+  },
 };
 
 /**
@@ -614,18 +591,17 @@ export async function serialDownloadHandler(args: {
   send_cmd?: string;
   idle_timeout?: number;
   timeout?: number;
-}): Promise<{ content: { type: "text"; text: string }[] }> {
+}): Promise<string> {
   const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
   const idleTimeoutSec = resolveIdleTimeoutSec(args.idle_timeout);
   logger.info(
     `[serial_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path} send_cmd=${args.send_cmd ?? "(default sz)"} timeout=${timeoutSec} idle_timeout=${idleTimeoutSec}`
   );
 
-  const lookup = serialStore.getOrNotFound(args.session_id);
-  if (!lookup.ok) {
-    return lookup.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-  const shell = lookup.shell;
 
   // 触发设备端 sz（{remote} 占位符替换为远端路径）
   const sendCmd = (args.send_cmd ?? "sz {remote}").replace(
@@ -685,24 +661,18 @@ export async function serialDownloadHandler(args: {
       // 注意：底层 zmodemReceive 在 abort 时已删除残缺本地文件，此处只负责文案。
       const reason = guard.reason();
       if (!result.success && reason) {
-        return {
-          content: [
-            text(
-              formatAbortedSummary(
-                reason,
-                "Download",
-                args.local_path,
-                args.remote_path,
-                { bytes: result.bytes, durationMs: result.durationMs },
-                timeoutSec,
-                idleTimeoutSec,
-                offerTotalSize
-              )
-            ),
-          ],
-        };
+        return formatAbortedSummary(
+          reason,
+          "Download",
+          args.local_path,
+          args.remote_path,
+          { bytes: result.bytes, durationMs: result.durationMs },
+          timeoutSec,
+          idleTimeoutSec,
+          offerTotalSize
+        );
       }
-      return { content: [text(formatTransferSummary(result))] };
+      return formatTransferSummary(result);
     } finally {
       guard.clear();
       // ZMODEM 结束后恢复 shell 到正常提示符状态。

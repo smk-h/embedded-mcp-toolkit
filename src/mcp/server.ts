@@ -83,7 +83,7 @@ async function cleanupAllSessions() {
     { disposeAllPowerShellSessions },
     { disposeAllAdbShellSessions },
   ] = await Promise.all([
-    import("./tools/serial/sessions.js"),
+    import("../sdk/tools/serial/sessions.js"),
     import("../sdk/tools/ssh/sessions.js"),
     import("./tools/win/sessions.js"),
     import("../sdk/tools/adb/sessions.js"),

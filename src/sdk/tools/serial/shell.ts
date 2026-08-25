@@ -1,5 +1,4 @@
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import {
   SerialShell,
@@ -36,9 +35,10 @@ import {
   type ControlChar,
   PromptDetector,
   UbootDetector,
-} from "../../../sdk/shared/prompt-detector.js";
-import { sendControlChar } from "../../shared/send-ctrl.js";
-import { runExec } from "../../shared/exec-runner.js";
+} from "../../shared/prompt-detector.js";
+// 过渡期反向依赖：send-ctrl / exec-runner 仍在 mcp/shared（整体迁移为后续阶段）
+import { sendControlChar } from "../../../mcp/shared/send-ctrl.js";
+import { runExec } from "../../../mcp/shared/exec-runner.js";
 
 // ── serial_open ─────────────────────────────────────────────
 
@@ -54,17 +54,10 @@ import { runExec } from "../../shared/exec-runner.js";
  * @param stopBits  停止位（1/1.5/2，默认 1）
  * @param parity    校验位（none/even/odd，默认 none）
  */
-export const serialOpenConfig = {
+export const serialOpenConfig: SdkToolConfig = {
   description:
     "Open a serial port connection and start an interactive shell session. Returns the initial banner output.",
-  inputSchema: fromJsonSchema<{
-    device?: string;
-    port?: string;
-    baudRate?: number;
-    dataBits?: number;
-    stopBits?: number;
-    parity?: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -93,7 +86,7 @@ export const serialOpenConfig = {
         description: "Parity: none, even, or odd (default: none)",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -126,17 +119,10 @@ export async function serialOpenHandler(args: {
     port: args.port ?? baseConfig.port,
     baudRate: args.baudRate ?? baseConfig.baudRate,
     dataBits: (args.dataBits ?? baseConfig.dataBits) as
-      | 8
-      | 5
-      | 6
-      | 7
-      | undefined,
+      8 | 5 | 6 | 7 | undefined,
     stopBits: (args.stopBits ?? baseConfig.stopBits) as 1 | 1.5 | 2 | undefined,
     parity: (args.parity ?? baseConfig.parity) as
-      | "none"
-      | "even"
-      | "odd"
-      | undefined,
+      "none" | "even" | "odd" | undefined,
     lineEnding: baseConfig.lineEnding,
     deviceName,
   };
@@ -144,19 +130,13 @@ export async function serialOpenHandler(args: {
   if (config.port === "none") {
     const msg = `Device '${deviceName}' does not support serial (port is none).`;
     logger.warn(msg);
-    return { content: [text(msg)] };
+    return msg;
   }
 
   // 检查该 COM 口是否已有活跃会话
   const existingId = portToSession.get(config.port);
   if (existingId && serialStore.get(existingId)) {
-    return {
-      content: [
-        text(
-          `Serial port ${config.port} is already open as session ${existingId}.`
-        ),
-      ],
-    };
+    return `Serial port ${config.port} is already open as session ${existingId}.`;
   }
 
   const shell = new SerialShell(config);
@@ -165,13 +145,7 @@ export async function serialOpenHandler(args: {
   try {
     banner = await shell.open();
   } catch (err) {
-    return {
-      content: [
-        text(
-          `Serial open failed: ${err instanceof Error ? err.message : String(err)}`
-        ),
-      ],
-    };
+    return `Serial open failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
   // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
@@ -186,13 +160,7 @@ export async function serialOpenHandler(args: {
   portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
 
-  return {
-    content: [
-      text(
-        `Session ${sessionId} opened on ${config.port} @ ${config.baudRate ?? 115200}.\n${banner || "(no banner)"}`
-      ),
-    ],
-  };
+  return `Session ${sessionId} opened on ${config.port} @ ${config.baudRate ?? 115200}.\n${banner || "(no banner)"}`;
 }
 
 // ── serial_close ─────────────────────────────────────────────
@@ -204,9 +172,9 @@ export async function serialOpenHandler(args: {
  *
  * @param session_id  由 serial_open 返回的会话 ID
  */
-export const serialCloseConfig = {
+export const serialCloseConfig: SdkToolConfig = {
   description: "Close a serial port session and release the port.",
-  inputSchema: fromJsonSchema<{ session_id: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -215,7 +183,7 @@ export const serialCloseConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -231,15 +199,15 @@ export const serialCloseConfig = {
  */
 export async function serialCloseHandler(args: { session_id: string }) {
   logger.info(`[serial_close] session_id=${args.session_id}`);
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
-  const port = result.shell.getPort();
+  const port = shell.getPort();
   // 在锁内执行 close，确保没有其他操作正在使用 shell
   await serialStore.withLock(args.session_id, async () => {
-    await result.shell.close();
+    await shell.close();
   });
   // close 完成后再 remove（同时清理 mutex）
   serialStore.remove(args.session_id);
@@ -248,7 +216,7 @@ export async function serialCloseHandler(args: { session_id: string }) {
   }
   clearUbootSession(args.session_id);
 
-  return { content: [text(`Session ${args.session_id} closed.`)] };
+  return `Session ${args.session_id} closed.`;
 }
 
 // ── serial_write ─────────────────────────────────────────────
@@ -262,16 +230,12 @@ export async function serialCloseHandler(args: { session_id: string }) {
  * @param command     要发送的命令字符串
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const serialWriteConfig = {
+export const serialWriteConfig: SdkToolConfig = {
   description:
     "Send a command to a serial shell session. " +
     "Do NOT call this concurrently with serial_exec/serial_read on the same session_id — " +
     "concurrent access to the same serial console corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    clear?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -289,7 +253,7 @@ export const serialWriteConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -309,14 +273,14 @@ export async function serialWriteHandler(args: {
   logger.info(
     `[serial_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
   );
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return serialStore.withLock(args.session_id, async () => {
-    result.shell.write(args.command, args.clear ?? 1);
-    return { content: [text(`Command sent: ${args.command}`)] };
+    shell.write(args.command, args.clear ?? 1);
+    return `Command sent: ${args.command}`;
   });
 }
 
@@ -330,12 +294,12 @@ export async function serialWriteHandler(args: {
  * @param session_id  由 serial_open 返回的会话 ID
  * @param clear       缓冲区清空标志（1=读取后清空，0=保留缓冲区，默认 1）
  */
-export const serialReadConfig = {
+export const serialReadConfig: SdkToolConfig = {
   description:
     "Read output from a serial shell session. " +
     "Do NOT call this concurrently with serial_exec/serial_write on the same session_id — " +
     "concurrent access to the same serial console corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -349,7 +313,7 @@ export const serialReadConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -369,14 +333,14 @@ export async function serialReadHandler(args: {
   logger.info(
     `[serial_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
   );
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return serialStore.withLock(args.session_id, async () => {
-    const output = result.shell.read(args.clear ?? 1);
-    return { content: [text(output || "(no output)")] };
+    const output = shell.read(args.clear ?? 1);
+    return output || "(no output)";
   });
 }
 
@@ -392,20 +356,14 @@ export async function serialReadHandler(args: {
  * @param delay       发送后等待时间（毫秒，默认 1000）
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const serialExecConfig = {
+export const serialExecConfig: SdkToolConfig = {
   description:
     "Send a command to a serial shell session and wait for the output. Combines write + delay + read in one call. " +
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the serial console is a single " +
     "channel; concurrent calls will interleave output and corrupt results. " +
     "Always wait for the previous command to finish before sending the next one. " +
     "If you need parallel execution, open multiple sessions via serial_open.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    delay?: number;
-    clear?: number;
-    maxDuration?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -441,7 +399,7 @@ export const serialExecConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -467,12 +425,11 @@ export async function serialExecHandler(args: {
   logger.info(
     `[serial_exec] session_id=${args.session_id} command=${args.command} delay=${delayVal} clear=${clearVal} maxDuration=${maxDurationVal ?? "(default)"}`
   );
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
-  const shell = result.shell;
   const deviceName = resolveDeviceName();
 
   const execTimeoutConfig = getExecTimeoutConfig(deviceName);
@@ -539,8 +496,7 @@ export async function serialExecHandler(args: {
     let output = execResult.output;
     if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
       output =
-        (output ? output + "\n" : "") +
-        `[exit code: ${execResult.exitCode}]`;
+        (output ? output + "\n" : "") + `[exit code: ${execResult.exitCode}]`;
     } else if (execResult.timeoutKind === "sampling") {
       output =
         (output ? output + "\n" : "") +
@@ -551,7 +507,7 @@ export async function serialExecHandler(args: {
         `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
     }
 
-    return { content: [text(output || "(no output)")] };
+    return output || "(no output)";
   });
 }
 
@@ -575,13 +531,10 @@ const CTRL_LABEL: Readonly<Record<ControlChar, string>> = {
  * @param session_id  由 serial_open 返回的会话 ID
  * @param key         控制字符类型：c(Ctrl+C)/u(Ctrl+U)/d(Ctrl+D)/z(Ctrl+Z)
  */
-export const serialSendCtrlConfig = {
+export const serialSendCtrlConfig: SdkToolConfig = {
   description:
     "Send a control character (Ctrl+C/U/D/Z) to a serial shell session without appending a newline.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    key: ControlChar;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -596,7 +549,7 @@ export const serialSendCtrlConfig = {
       },
     },
     required: ["session_id", "key"],
-  }),
+  },
 };
 
 /**
@@ -614,17 +567,15 @@ export async function serialSendCtrlHandler(args: {
   logger.info(
     `[serial_send_ctrl] session_id=${args.session_id} key=${args.key}`
   );
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return serialStore.withLock(args.session_id, async () => {
-    const byte = await sendControlChar(result.shell, args.key);
+    const byte = await sendControlChar(shell, args.key);
     const label = CTRL_LABEL[args.key];
-    return {
-      content: [text(`${label} sent (${byte})`)],
-    };
+    return `${label} sent (${byte})`;
   });
 }
 
@@ -640,14 +591,10 @@ export async function serialSendCtrlHandler(args: {
  * @param key      解锁密钥（可选，提供时直接使用；未提供时走 KeyProvider 获取）
  * @param timeout  解锁步骤间等待时间（毫秒，默认 1500）
  */
-export const serialShellLoginConfig = {
+export const serialShellLoginConfig: SdkToolConfig = {
   description:
     "One-click serial login: connect, detect PSH state, auto-unlock if locked, and return a ready session. Combines open + PSH detect + unlock into a single call.",
-  inputSchema: fromJsonSchema<{
-    device?: string;
-    key?: string;
-    timeout?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -664,7 +611,7 @@ export const serialShellLoginConfig = {
         description: "Unlock step delay in milliseconds (default: 1500)",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -703,7 +650,7 @@ export async function serialShellLoginHandler(args: {
   if (baseConfig.port === "none") {
     const msg = `Device '${deviceName}' does not support serial (port is none).`;
     logger.warn(msg);
-    return { content: [text(msg)] };
+    return msg;
   }
 
   const stepDelay = args.timeout ?? 1500;
@@ -763,13 +710,7 @@ async function serialShellLoginInner(
     try {
       banner = await shell.open();
     } catch (err) {
-      return {
-        content: [
-          text(
-            `Serial open failed: ${err instanceof Error ? err.message : String(err)}`
-          ),
-        ],
-      };
+      return `Serial open failed: ${err instanceof Error ? err.message : String(err)}`;
     }
     // open 成功后立即注册会话并启用日志，确保解锁/探测过程的串口数据被保存
     // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
@@ -866,13 +807,7 @@ async function serialShellLoginInner(
       if (!existingId) {
         await cleanupNewSession();
       }
-      return {
-        content: [
-          text(
-            "PSH is in UNLOCKING state (dangling password prompt). Provide a key to complete login."
-          ),
-        ],
-      };
+      return "PSH is in UNLOCKING state (dangling password prompt). Provide a key to complete login.";
     }
     logger.info(
       `[serial_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`
@@ -895,26 +830,14 @@ async function serialShellLoginInner(
       `[serial_shell_login] UNLOCKING状态解锁失败, finalState=${state}`
     );
     if (!existingId) await shell.close();
-    return {
-      content: [
-        text(
-          `PSH unlock from UNLOCKING state failed. State: ${state}\nOutput: ${output}`
-        ),
-      ],
-    };
+    return `PSH unlock from UNLOCKING state failed. State: ${state}\nOutput: ${output}`;
   }
 
   // --- 错误状态：前次解锁失败 ---
   if (action.state === PshState.ERROR) {
     logger.error(`[serial_shell_login] PSH处于ERROR状态`);
     if (!existingId) await shell.close();
-    return {
-      content: [
-        text(
-          "PSH is in ERROR state (previous unlock may have failed). Close and retry."
-        ),
-      ],
-    };
+    return "PSH is in ERROR state (previous unlock may have failed). Close and retry.";
   }
 
   // --- 锁定状态：执行解锁序列 ---
@@ -924,7 +847,7 @@ async function serialShellLoginInner(
       if (!existingId) {
         await cleanupNewSession();
       }
-      return { content: [text("PSH LOCKED but no matching handler found.")] };
+      return "PSH LOCKED but no matching handler found.";
     }
 
     const unlockKey = args.key ?? "";
@@ -962,13 +885,7 @@ async function serialShellLoginInner(
       `[serial_shell_login] 解锁失败, state=${result.state}, error=${result.error ?? "无"}`
     );
     if (!existingId) await shell.close();
-    return {
-      content: [
-        text(
-          `PSH unlock failed.\nState: ${result.state}\nChallenge: ${result.challengeCode ?? "(none)"}\nAttempts left: ${result.attemptsLeft ?? "(unknown)"}\nError: ${result.error ?? "(none)"}`
-        ),
-      ],
-    };
+    return `PSH unlock failed.\nState: ${result.state}\nChallenge: ${result.challengeCode ?? "(none)"}\nAttempts left: ${result.attemptsLeft ?? "(unknown)"}\nError: ${result.error ?? "(none)"}`;
   }
 
   // --- 未知状态：探测后仍无法判断，返回 session 但可能需手动交互 ---
@@ -1064,24 +981,20 @@ async function performUserLogin(
       `[serial_shell_login] 用户登录失败: 未配置 loginUsername/loginPassword`
     );
     if (!existingId) await shell.close();
-    return {
-      content: [
-        text(
-          "User login required but loginUsername/loginPassword not configured for this device."
-        ),
-      ],
-    };
+    return "User login required but loginUsername/loginPassword not configured for this device.";
   }
 
-  logger.info(
-    `[serial_shell_login] 用户登录开始 (username=${username})`
-  );
+  logger.info(`[serial_shell_login] 用户登录开始 (username=${username})`);
 
   // 终端复位：若探测命令被 login 提示符当用户名吞掉，终端停在 Password:。
   // 发送 Ctrl+C 中止当前登录并返回 login:，避免用户名被当成密码输入。
   const danglingPassword = /Password:\s*$/im;
   let pending = shell.read(0);
-  for (let attempt = 0; attempt < 3 && danglingPassword.test(pending); attempt++) {
+  for (
+    let attempt = 0;
+    attempt < 3 && danglingPassword.test(pending);
+    attempt++
+  ) {
     logger.info(
       `[serial_shell_login] 检测到悬挂的 Password:, 发 Ctrl+C 复位登录`
     );
@@ -1102,13 +1015,7 @@ async function performUserLogin(
       `[serial_shell_login] 用户登录失败, status=${result.status}, error=${result.error ?? "无"}`
     );
     if (!existingId) await shell.close();
-    return {
-      content: [
-        text(
-          `User login failed.\nStatus: ${result.status}\nError: ${result.error ?? "(none)"}\nOutput: ${result.output}`
-        ),
-      ],
-    };
+    return `User login failed.\nStatus: ${result.status}\nError: ${result.error ?? "(none)"}\nOutput: ${result.output}`;
   }
 
   logger.info(`[serial_shell_login] 用户登录成功`);
@@ -1131,17 +1038,14 @@ async function performUserLogin(
  * @param session_id  由 serial_open 返回的会话 ID
  * @param timeout     等待 autoboot 提示的总超时时间（秒，默认 60）
  */
-export const serialEnterUbootConfig = {
+export const serialEnterUbootConfig: SdkToolConfig = {
   description:
     "Enter U-Boot by rebooting the device and stopping autoboot. " +
     "Detection rules (autoboot prompts, command prompt, verify env keys) " +
     "are configurable via device config serial.uboot; falls back to built-in defaults. " +
     "Two-layer strategy: prompt match first; if not matched within a short window, " +
     "sends 'printenv' and verifies U-Boot env keys. Fails fast on kernel boot or verify timeout.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    timeout?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -1155,7 +1059,7 @@ export const serialEnterUbootConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -1184,12 +1088,10 @@ export async function serialEnterUbootHandler(args: {
     `[serial_enter_uboot] session_id=${args.session_id} timeout=${timeoutSec}s`
   );
 
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-
-  const shell = result.shell;
 
   return serialStore.withLock(args.session_id, async () => {
     // 构造 U-Boot 检测器：从设备配置读 uboot 子段，未配置走默认值
@@ -1200,9 +1102,7 @@ export async function serialEnterUbootHandler(args: {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn(`[serial_enter_uboot] config error: ${msg}`);
-      return {
-        content: [text(`Failed to build U-Boot detector (config error): ${msg}`)],
-      };
+      return `Failed to build U-Boot detector (config error): ${msg}`;
     }
 
     // 发送 reboot 重启设备
@@ -1250,13 +1150,7 @@ export async function serialEnterUbootHandler(args: {
         logger.warn(
           "[serial_enter_uboot] kernel boot detected, abort (device bypassed U-Boot)"
         );
-        return {
-          content: [
-            text(
-              `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
-            ),
-          ],
-        };
+        return `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
       }
 
       // 阶段 2：主层 — 提示符命中即成功
@@ -1267,13 +1161,7 @@ export async function serialEnterUbootHandler(args: {
           `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
         );
         markUbootSession(args.session_id);
-        return {
-          content: [
-            text(
-              `Entered U-Boot successfully (via prompt, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
-            ),
-          ],
-        };
+        return `Entered U-Boot successfully (via prompt, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`;
       }
 
       // 主层窗口耗尽 → 触发验证层（仅一次）
@@ -1297,13 +1185,7 @@ export async function serialEnterUbootHandler(args: {
             "[serial_enter_uboot] verify key matched (via verify), entered U-Boot"
           );
           markUbootSession(args.session_id);
-          return {
-            content: [
-              text(
-                `Entered U-Boot successfully (via verify, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`
-              ),
-            ],
-          };
+          return `Entered U-Boot successfully (via verify, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`;
         }
 
         // 验证层窗口耗尽 → 快速失败
@@ -1311,13 +1193,7 @@ export async function serialEnterUbootHandler(args: {
           logger.warn(
             `[serial_enter_uboot] verify timeout (${verifyTimeoutMs}ms), no env key matched`
           );
-          return {
-            content: [
-              text(
-                `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`
-              ),
-            ],
-          };
+          return `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
         }
       }
     }
@@ -1329,13 +1205,7 @@ export async function serialEnterUbootHandler(args: {
     logger.warn(
       `[serial_enter_uboot] overall timeout after ${timeoutSec}s, interruptKey=${interruptKey || "(none)"}`
     );
-    return {
-      content: [
-        text(
-          `Timeout after ${timeoutSec}s waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`
-        ),
-      ],
-    };
+    return `Timeout after ${timeoutSec}s waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`;
   });
 }
 
@@ -1350,7 +1220,7 @@ export async function serialEnterUbootHandler(args: {
  * @param session_id  由 serial_open 返回的会话 ID
  * @param action      detect（默认）/ set / clear / status
  */
-export const serialUbootStateConfig = {
+export const serialUbootStateConfig: SdkToolConfig = {
   description:
     "Query, detect, or force-set the U-Boot mark of a serial session. " +
     "The mark decides serial_exec's marker wrapping (U-Boot sessions use plain style without subshell). " +
@@ -1361,10 +1231,7 @@ export const serialUbootStateConfig = {
     "the probe Enter could answer it. " +
     "'set'/'clear' — force the mark when auto-detection is out of sync; " +
     "'status' — read the mark only, no device I/O.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    action?: "detect" | "set" | "clear" | "status";
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -1379,7 +1246,7 @@ export const serialUbootStateConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -1462,43 +1329,30 @@ export async function serialUbootStateHandler(args: {
   logger.info(
     `[serial_uboot_state] session_id=${args.session_id} action=${action}`
   );
-  const result = serialStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = serialStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-  const shell = result.shell;
 
   return serialStore.withLock(args.session_id, async () => {
     const wasMarked = isUbootSession(args.session_id);
 
     if (action === "status") {
-      return { content: [text(ubootMarkText(wasMarked, "queried, no device I/O"))] };
+      return ubootMarkText(wasMarked, "queried, no device I/O");
     }
     if (action === "set") {
       markUbootSession(args.session_id);
-      return {
-        content: [
-          text(
-            ubootMarkText(
-              true,
-              "forced set — serial_exec will use plain marker (no subshell)"
-            )
-          ),
-        ],
-      };
+      return ubootMarkText(
+        true,
+        "forced set — serial_exec will use plain marker (no subshell)"
+      );
     }
     if (action === "clear") {
       clearUbootSession(args.session_id);
-      return {
-        content: [
-          text(
-            ubootMarkText(
-              false,
-              "forced clear — serial_exec will use subshell marker wrapper"
-            )
-          ),
-        ],
-      };
+      return ubootMarkText(
+        false,
+        "forced clear — serial_exec will use subshell marker wrapper"
+      );
     }
 
     // ── detect ──
@@ -1508,11 +1362,7 @@ export async function serialUbootStateHandler(args: {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn(`[serial_uboot_state] config error: ${msg}`);
-      return {
-        content: [
-          text(`Failed to build U-Boot detector (config error): ${msg}`),
-        ],
-      };
+      return `Failed to build U-Boot detector (config error): ${msg}`;
     }
     const promptDetector = new PromptDetector();
 
@@ -1543,7 +1393,9 @@ export async function serialUbootStateHandler(args: {
       markChanged = wasMarked;
     }
 
-    const lines: string[] = [`Environment: ${kind ?? "unknown"} (via ${source})`];
+    const lines: string[] = [
+      `Environment: ${kind ?? "unknown"} (via ${source})`,
+    ];
     if (!kind) {
       lines.push(
         "(no conclusive evidence within probe window — shell may be busy running a command)"
@@ -1558,7 +1410,7 @@ export async function serialUbootStateHandler(args: {
     logger.info(
       `[serial_uboot_state] detected=${kind ?? "unknown"} via=${source} mark=${nowMarked ? "set" : "clear"}`
     );
-    return { content: [text(lines.join("\n"))] };
+    return lines.join("\n");
   });
 }
 
@@ -1576,11 +1428,7 @@ function registerSession(
     logger.info(
       `[serial_shell_login] session reused: ${registeredId} port=${port}`
     );
-    return {
-      content: [
-        text(`Session ${registeredId} on ${port} (existing, ${detail})`),
-      ],
-    };
+    return `Session ${registeredId} on ${port} (existing, ${detail})`;
   }
   // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
   const sessionId = serialStore.peekNextId();
@@ -1593,7 +1441,5 @@ function registerSession(
   });
   portToSession.set(port, sessionId);
   logger.info(`[serial_shell_login] session opened: ${sessionId} port=${port}`);
-  return {
-    content: [text(`Session ${sessionId} opened on ${port} ${detail}`)],
-  };
+  return `Session ${sessionId} opened on ${port} ${detail}`;
 }

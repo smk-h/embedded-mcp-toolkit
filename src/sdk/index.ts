@@ -28,3 +28,4 @@ export { sdkDefineTool } from "./types.js";
 export { sdkBasicTools } from "./tools/basic/index.js";
 export { sdkAdbTools } from "./tools/adb/index.js";
 export { sdkSshTools } from "./tools/ssh/index.js";
+export { sdkSerialTools } from "./tools/serial/index.js";

@@ -1,66 +1,25 @@
-// MCP Serial 工具 — 串口相关工具的统一定义入口（只导出工具，注册由 src/mcp.ts 负责）
+/**
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : index.ts
+ * Author     : sumu
+ * Date       : 2026/08/25
+ * Version    : 1.0.0
+ * Description: MCP Serial 工具 — sdk Serial 工具的 MCP 适配入口
+ *
+ *   本文件不再定义任何工具，仅把 src/sdk 的协议无关定义经
+ *   adapter 适配为 MCP ToolEntry（注册由 src/mcp/server.ts 负责）。
+ * ======================================================
+ */
 
-import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
-
-import {
-  serialOpenConfig,
-  serialOpenHandler,
-  serialCloseConfig,
-  serialCloseHandler,
-  serialWriteConfig,
-  serialWriteHandler,
-  serialReadConfig,
-  serialReadHandler,
-  serialExecConfig,
-  serialExecHandler,
-  serialSendCtrlConfig,
-  serialSendCtrlHandler,
-  serialShellLoginConfig,
-  serialShellLoginHandler,
-  serialEnterUbootConfig,
-  serialEnterUbootHandler,
-  serialUbootStateConfig,
-  serialUbootStateHandler,
-} from "./shell.js";
-import {
-  serialUploadConfig,
-  serialUploadHandler,
-  serialDownloadConfig,
-  serialDownloadHandler,
-} from "./transfer.js";
+import { sdkSerialTools } from "../../../sdk/index.js";
+import { adaptSdkTool } from "../../adapter.js";
+import type { ToolEntry } from "../../tool-registry.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
 /**
- * 所有已定义的串口工具列表。
- * 添加新工具时只需在此数组中追加一项即可。
+ * 所有已定义的串口工具列表（由 sdkSerialTools 适配而来）。
+ * 添加新工具改到 src/sdk/tools/serial/index.ts，此处无需变动。
  */
-export const mcpSerialTools: ToolEntry[] = [
-  mcpDefineTool("serial_open", serialOpenConfig, serialOpenHandler),
-  mcpDefineTool("serial_close", serialCloseConfig, serialCloseHandler),
-  mcpDefineTool("serial_write", serialWriteConfig, serialWriteHandler),
-  mcpDefineTool("serial_read", serialReadConfig, serialReadHandler),
-  mcpDefineTool("serial_exec", serialExecConfig, serialExecHandler),
-  mcpDefineTool(
-    "serial_send_ctrl",
-    serialSendCtrlConfig,
-    serialSendCtrlHandler
-  ),
-  mcpDefineTool(
-    "serial_shell_login",
-    serialShellLoginConfig,
-    serialShellLoginHandler
-  ),
-  mcpDefineTool(
-    "serial_enter_uboot",
-    serialEnterUbootConfig,
-    serialEnterUbootHandler
-  ),
-  mcpDefineTool(
-    "serial_uboot_state",
-    serialUbootStateConfig,
-    serialUbootStateHandler
-  ),
-  mcpDefineTool("serial_upload", serialUploadConfig, serialUploadHandler),
-  mcpDefineTool("serial_download", serialDownloadConfig, serialDownloadHandler),
-];
+export const mcpSerialTools: ToolEntry[] = sdkSerialTools.map(adaptSdkTool);
