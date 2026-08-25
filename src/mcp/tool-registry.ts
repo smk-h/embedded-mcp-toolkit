@@ -19,11 +19,6 @@ export function text(content: string) {
   return { type: "text" as const, text: content };
 }
 
-/** 获取错误的可读消息 */
-export function getErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 // ── 类型 ────────────────────────────────────────────────────
 
 /** MCP 工具回调：接收参数，返回 content 数组 */
@@ -84,7 +79,9 @@ function withInvocationLog(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const ms = Date.now() - started;
-      logger.error(`<<< Tool invocation FAILED [${name}] elapsed=${ms}ms err=${msg}`);
+      logger.error(
+        `<<< Tool invocation FAILED [${name}] elapsed=${ms}ms err=${msg}`
+      );
       throw err;
     }
   };
