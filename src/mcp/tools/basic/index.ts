@@ -5,7 +5,6 @@ import { mcpDefineTool, ToolEntry } from "../../tool-registry.js";
 import { greetConfig, greetHandler } from "./greet.js";
 import { versionConfig, versionHandler } from "./version.js";
 import { deviceInfoConfig, deviceInfoHandler } from "./device-info.js";
-import { notifyDemoConfig, notifyDemoHandler } from "./notify-demo.js";
 import { sessionInfoConfig, sessionInfoHandler } from "./session_info.js";
 import { hostInfoConfig, hostInfoHandler } from "./host-info.js";
 
@@ -19,7 +18,6 @@ export const mcpBasicTools: ToolEntry[] = [
   mcpDefineTool("greet_tool", greetConfig, greetHandler),
   mcpDefineTool("version_tool", versionConfig, versionHandler),
   mcpDefineTool("device_info_tool", deviceInfoConfig, deviceInfoHandler),
-  mcpDefineTool("notify_demo_tool", notifyDemoConfig, notifyDemoHandler),
   mcpDefineTool("session_info", sessionInfoConfig, sessionInfoHandler),
   mcpDefineTool("host_info", hostInfoConfig, hostInfoHandler),
 ];

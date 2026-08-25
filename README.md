@@ -142,7 +142,6 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `device_info_tool` | 获取设备配置；不传 `device` 用默认设备，传 `all` 列出全部设备 | `当前设备信息是什么` / `列出所有可用设备` |
 | `session_info` | 查询活跃会话元数据（串口/SSH/ADB 通用）：按 `session_id`、按 `device` 或全部，返回连接信息与原始日志路径 | `当前有哪些会话` / `列出 board-a 的会话` |
 | `host_info` | 查询 MCP 宿主端点（username@ip）与日志保存目录；跨机部署下供构造 scp 命令，并暴露业务日志 / 原始数据日志的绝对路径供 AI 清理；本地启动返回 local | `宿主端点是什么` / `日志保存在哪里` |
-| `notify_demo_tool` | 演示 server 主动通知（logging 日志 / tool_list_changed 刷新工具列表） | — |
 | `greet_tool` | 演示用打招呼工具 | — |
 
 #### 5.2 串口工具
