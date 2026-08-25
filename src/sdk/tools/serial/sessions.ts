@@ -15,8 +15,8 @@
  */
 
 import { ShellSessionStore } from "../../sessions/index.js";
-import { SerialShell } from "../../../sdk/transports/serial.js";
-import { logger } from "../../../sdk/shared/logger.js";
+import { SerialShell } from "../../transports/serial.js";
+import { logger } from "../../shared/logger.js";
 
 /** @brief Serial 会话存储实例（前缀 "serial" → 生成 serial_1、serial_2 ...） */
 export const serialStore = new ShellSessionStore<SerialShell>("serial");

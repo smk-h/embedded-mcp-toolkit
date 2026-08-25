@@ -20,10 +20,10 @@ import { basename } from "node:path";
 import { stat } from "node:fs/promises";
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { formatTransferSummary } from "../../../sdk/shared/transfer-result.js";
+import { logger } from "../../shared/logger.js";
+import { formatTransferSummary } from "../../shared/transfer-result.js";
 import { serialStore } from "./sessions.js";
-import { zmodemSend, zmodemReceive } from "../../../sdk/zmodem/index.js";
+import { zmodemSend, zmodemReceive } from "../../zmodem/index.js";
 
 // ── 常量 ────────────────────────────────────────────────────
 

@@ -29,13 +29,14 @@ import {
   serialExecHandler,
   serialSendCtrlConfig,
   serialSendCtrlHandler,
-  serialShellLoginConfig,
-  serialShellLoginHandler,
+} from "./shell.js";
+import { serialShellLoginConfig, serialShellLoginHandler } from "./login.js";
+import {
   serialEnterUbootConfig,
   serialEnterUbootHandler,
   serialUbootStateConfig,
   serialUbootStateHandler,
-} from "./shell.js";
+} from "./uboot.js";
 import {
   serialUploadConfig,
   serialUploadHandler,
