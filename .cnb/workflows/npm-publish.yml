@@ -28,7 +28,13 @@
             case "$CNB_COMMIT_MESSAGE" in *"[publish]"* ) true ;; * ) false ;; esac
           imports: https://cnb.cool/sumu.k/secret-key/-/blob/main/access-token.yml
           script: |
-            echo "//registry.npmjs.org/:_authToken=${NPM_ACCESS_TOKENS}" > ~/.npmrc
-            npm config set registry https://registry.npmjs.org/
-            npm publish --access public
-            echo "✅ 发布成功！版本: $(node -p "require('./package.json').version")"
+            VERSION=$(node -p "require('./package.json').version")
+            PKG_NAME=$(node -p "require('./package.json').name")
+            if npm view "${PKG_NAME}@${VERSION}" version >/dev/null 2>&1; then
+              echo "⏭️ 版本 ${PKG_NAME}@${VERSION} 已存在于 npm，跳过发布"
+            else
+              echo "//registry.npmjs.org/:_authToken=${NPM_ACCESS_TOKENS}" > ~/.npmrc
+              npm config set registry https://registry.npmjs.org/
+              npm publish --access public
+              echo "✅ 发布成功！版本: ${PKG_NAME}@${VERSION}"
+            fi
