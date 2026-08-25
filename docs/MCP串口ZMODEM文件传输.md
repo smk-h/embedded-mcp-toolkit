@@ -83,8 +83,8 @@ serialPort.on("data", (data: Buffer) => {
 |---|---|---|
 | [`src/services/zmodem/zmodem-bridge.ts`](../src/services/zmodem/zmodem-bridge.ts) | 新增 | 协议桥接层，`zmodemSend`/`zmodemReceive` |
 | [`src/services/zmodem/index.ts`](../src/services/zmodem/index.ts) | 新增 | 模块导出 |
-| [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) | 新增 | 工具层，两个 handler |
-| [`src/mcp/tools/serial/index.ts`](../src/mcp/tools/serial/index.ts) | 修改 | 注册新工具 |
+| [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) | 新增 | 工具层，两个 handler |
+| [`src/sdk/tools/serial/index.ts`](../src/sdk/tools/serial/index.ts) | 修改 | 注册新工具 |
 | [`src/transports/serial.ts`](../src/transports/serial.ts) | 修改 | 字节旁路、rawWrite、drainPort |
 | [`src/shared/transfer-result.ts`](../src/shared/transfer-result.ts) | 新增 | 传输结果摘要格式化 |
 | [`src/mcp/server.ts`](../src/mcp/server.ts) | 修改 | 全局异常兜底 |
@@ -662,10 +662,10 @@ ZMODEM 协议自带的**逐子包 CRC 校验**是第一道防线——任何被�
 
 ### 3. 超时守卫实现
 
-代码在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 中实现，核心判定逻辑：
+代码在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 中实现，核心判定逻辑：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 function createTransferTimeoutGuard(
   controller: AbortController,
   timeoutSec: number,
@@ -1021,7 +1021,7 @@ catch (err) {
 传输结束后（无论成功失败），工具层都会调 `recoverShell()` 清理 shell 缓冲：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 async function recoverShell(shell): Promise<void> {
   shell.read(1);                          // 丢弃缓冲残留
   shell.write("", 1);                     // 发回车触发提示符
@@ -1046,7 +1046,7 @@ async function recoverShell(shell): Promise<void> {
 `disableFlowControl()` 在每次传输前执行：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 const STTY_DISABLE_FLOW_CTRL = "stty -ixon -ixoff";
 
 async function disableFlowControl(shell): Promise<void> {
@@ -1079,10 +1079,10 @@ async function disableFlowControl(shell): Promise<void> {
 
 ##### 1.1.1 serialUploadHandler()
 
-该函数在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 文件中声明：
+该函数在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 文件中声明：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 export async function serialUploadHandler(args: {
   session_id: string;
   local_path: string;
@@ -1123,10 +1123,10 @@ serial_upload:
 
 ##### 1.2.1 serialDownloadHandler()
 
-该函数在 [`src/mcp/tools/serial/transfer.ts`](../src/mcp/tools/serial/transfer.ts) 文件中声明：
+该函数在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 文件中声明：
 
 ```typescript
-// src/mcp/tools/serial/transfer.ts
+// src/sdk/tools/serial/transfer.ts
 export async function serialDownloadHandler(args: {
   session_id: string;
   remote_path: string;

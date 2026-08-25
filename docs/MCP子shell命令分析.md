@@ -71,10 +71,10 @@ cmd; echo "___MCP_EXEC_DONE_<rand>___:$?"
 
 ### 2. 封装代码位置
 
-命令拼接发生在 [`exec-runner.ts`](../src/mcp/shared/exec-runner.ts#L294-L302) 的 `runExec()` 中：
+命令拼接发生在 [`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L294-L302) 的 `runExec()` 中：
 
 ```ts
-// src/mcp/shared/exec-runner.ts
+// src/sdk/shared/exec-runner.ts
 const marker: string = generateMarker();
 const markerRegex: RegExp = buildMarkerRegex(marker);
 const fullCommand: string =
@@ -87,15 +87,15 @@ logger.info(
 input.shell.write(fullCommand, clear);
 ```
 
-- `MarkerStyle` 类型定义在 [`exec-runner.ts`](../src/mcp/shared/exec-runner.ts#L130)：`"subshell"`（默认）与 `"plain"` 两种取值
+- `MarkerStyle` 类型定义在 [`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L130)：`"subshell"`（默认）与 `"plain"` 两种取值
 - `ExecInput.markerStyle` 字段由各通道 handler 注入，SSH 与 ADB 恒为默认 `subshell`；串口在 U-Boot 态会话注入 `plain`（见第三章）
 
 ### 3. marker 检测与防误判
 
-marker 的匹配正则构造于 [`exec-runner.ts`](../src/mcp/shared/exec-runner.ts#L91-L93)：
+marker 的匹配正则构造于 [`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L91-L93)：
 
 ```ts
-// src/mcp/shared/exec-runner.ts
+// src/sdk/shared/exec-runner.ts
 function buildMarkerRegex(marker: string): RegExp {
   return new RegExp(`(?<!")${marker}:(\\d+|\\$\\?)`);
 }
@@ -104,7 +104,7 @@ function buildMarkerRegex(marker: string): RegExp {
 - 捕获退出码支持两种形态：`\d+`（shell 展开后的数字退出码）与 `\$?`（U-Boot 老 simple parser 不展开、原样输出的字面量，此时退出码未知，按 null 处理）
 - 负向后行断言 `(?<!")` 排除 PTY 回显行里的字面 marker：注入的命令是 `echo "<marker>:$?"`，回显行中 marker 前紧邻双引号；真实输出的 marker 前是行首或换行。即使回显剥离失败，回显行残留也不会被误判为命令完成
 
-检测采用两级策略（[`exec-runner.ts`](../src/mcp/shared/exec-runner.ts#L350-L394)）：
+检测采用两级策略（[`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L350-L394)）：
 
 | 级别 | 检测方式 | 特点 |
 | --- | --- | --- |
@@ -115,7 +115,7 @@ function buildMarkerRegex(marker: string): RegExp {
 
 ### 4. 完整执行流程
 
-`runExec()` 的完整流程（[`exec-runner.ts`](../src/mcp/shared/exec-runner.ts#L249-L431)）：
+`runExec()` 的完整流程（[`exec-runner.ts`](../src/sdk/shared/exec-runner.ts#L249-L431)）：
 
 1. **常驻分类**：判定命令是否常驻（`ping` / `logcat` / `top` 等永不返回提示符的命令），据此选择超时时长与超时动作
 2. **前置冲刷**：`shell.drain()` 丢弃缓冲区残留，避免上次未终止的输出污染本次结果
@@ -152,15 +152,15 @@ U-Boot 的命令行解释器是 hush shell 的一个精简实现，与 POSIX she
 
 | 环节 | 行为 | 代码位置 |
 | --- | --- | --- |
-| `serial_enter_uboot` | 成功进入 U-Boot 后 `markUbootSession(session_id)` 置位 | [`shell.ts`](../src/mcp/tools/serial/shell.ts#L1269) |
-| `serial_uboot_state` | `detect` 自动同步（检测到 uboot 置位 / 检测到系统清除），`set` / `clear` 强制设置 | [`shell.ts`](../src/mcp/tools/serial/shell.ts#L1541-L1545) |
-| `serial_exec` | 读取 `isUbootSession()`，据此注入 `markerStyle: "plain"` | [`shell.ts`](../src/mcp/tools/serial/shell.ts#L509) |
-| `serial_close` / 进程退出 | 清理标记，避免残留 | [`sessions.ts`](../src/mcp/tools/serial/sessions.ts#L46) |
+| `serial_enter_uboot` | 成功进入 U-Boot 后 `markUbootSession(session_id)` 置位 | [`shell.ts`](../src/sdk/tools/serial/shell.ts#L1269) |
+| `serial_uboot_state` | `detect` 自动同步（检测到 uboot 置位 / 检测到系统清除），`set` / `clear` 强制设置 | [`shell.ts`](../src/sdk/tools/serial/shell.ts#L1541-L1545) |
+| `serial_exec` | 读取 `isUbootSession()`，据此注入 `markerStyle: "plain"` | [`shell.ts`](../src/sdk/tools/serial/shell.ts#L509) |
+| `serial_close` / 进程退出 | 清理标记，避免残留 | [`sessions.ts`](../src/sdk/tools/serial/sessions.ts#L46) |
 
-标记的增删统一收敛在 [`sessions.ts`](../src/mcp/tools/serial/sessions.ts#L36-L48) 的 `markUbootSession()` / `clearUbootSession()` 两个函数，任何路径的置位与清理都会打印日志：
+标记的增删统一收敛在 [`sessions.ts`](../src/sdk/tools/serial/sessions.ts#L36-L48) 的 `markUbootSession()` / `clearUbootSession()` 两个函数，任何路径的置位与清理都会打印日志：
 
 ```ts
-// src/mcp/tools/serial/sessions.ts
+// src/sdk/tools/serial/sessions.ts
 export function markUbootSession(sessionId: string): void {
   ubootSessions.add(sessionId);
   logger.info(`[serial] U-Boot mark set for session ${sessionId}`);
@@ -188,7 +188,7 @@ cmd; echo "___MCP_EXEC_DONE_<rand>___:$?"
 
 ### 4. 离开 U-Boot 的自校正
 
-U-Boot 会话标记并非一成不变。`serial_exec` 在 U-Boot 态执行完命令后，会做一次自校正（[`shell.ts`](../src/mcp/tools/serial/shell.ts#L519-L537)），检测本次执行是否表明设备已离开 U-Boot：
+U-Boot 会话标记并非一成不变。`serial_exec` 在 U-Boot 态执行完命令后，会做一次自校正（[`shell.ts`](../src/sdk/tools/serial/shell.ts#L519-L537)），检测本次执行是否表明设备已离开 U-Boot：
 
 - 输出出现内核启动特征（`Starting kernel` / `Linux version`）→ 清除标记
 - 2级提示符锚定正常结束、且末尾提示符**已不是** U-Boot 提示符 → 清除标记

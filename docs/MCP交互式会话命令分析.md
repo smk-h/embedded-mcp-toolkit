@@ -4,7 +4,7 @@
 
 本文档分析本仓库中串口（Serial）、SSH、ADB 三种交互式会话通道的命令执行逻辑，重点介绍命令执行流程的**框架**、**原理**以及**命令结束的判定**机制，并以串口为例进行详细剖析。
 
-命令执行的核心编排逻辑集中在 `src/mcp/shared/exec-runner.ts`（统一编排器）、`src/mcp/shared/prompt-detector.ts`（提示符检测）、`src/mcp/shared/resident-detector.ts`（常驻命令分类）与 `src/mcp/shared/send-ctrl.ts`（控制字符发送）。三个通道的传输层类继承自 `src/transports/base-shell.ts` 的统一基类，通过依赖注入将通道差异交给编排层处理，实现「机制统一、通道无关」的设计。
+命令执行的核心编排逻辑集中在 `src/sdk/shared/exec-runner.ts`（统一编排器）、`src/sdk/shared/prompt-detector.ts`（提示符检测）、`src/sdk/shared/resident-detector.ts`（常驻命令分类）与 `src/sdk/shared/send-ctrl.ts`（控制字符发送）。三个通道的传输层类继承自 `src/transports/base-shell.ts` 的统一基类，通过依赖注入将通道差异交给编排层处理，实现「机制统一、通道无关」的设计。
 
 ## 二、 整体架构框架
 
@@ -13,9 +13,9 @@
 命令执行涉及四层结构，自下而上依次为：
 
 - **传输层**（`src/transports/`）：负责建立物理连接、收发原始字节、维护输出缓冲区，提供统一的 `open / write / read / drain / close` 五方法契约
-- **编排层**（`src/mcp/shared/`）：负责命令发送、输出轮询、命令结束判定、超时熔断的统一流程
-- **工具层**（`src/mcp/tools/{serial,ssh,adb}/shell.ts`）：提供 MCP 工具（如 `serial_exec`、`ssh_exec`、`adb_shell_exec`），构造输入并调用编排层
-- **会话管理层**（`src/mcp/sessions/`）：维护会话注册表与并发锁
+- **编排层**（`src/sdk/shared/`）：负责命令发送、输出轮询、命令结束判定、超时熔断的统一流程
+- **工具层**（`src/sdk/tools/{serial,ssh,adb}/shell.ts`）：提供 MCP 工具（如 `serial_exec`、`ssh_exec`、`adb_shell_exec`），构造输入并调用编排层
+- **会话管理层**（`src/sdk/sessions/`）：维护会话注册表与并发锁
 
 ### 2. 传输层类结构
 
