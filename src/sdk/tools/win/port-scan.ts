@@ -8,20 +8,19 @@
  *              只能查找到串口    Get-CimInstance -ClassName Win32_SerialPort | Select-Object Name, DeviceID, Description
  *  LPT端口: 并行端口（Line Printer Terminal的缩写），也称为打印机端口或Centronics接口，逐渐已经被USB代替了，没怎么见过，所以下面只扫描USB口了
  */
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { execPowerShell } from "../../../transports/powershell.js";
 
 // ── 声明 ──
 
-export const portScanConfig = {
+export const portScanConfig: SdkToolConfig = {
   description:
     "Scan Windows Device Manager for available COM (serial) and LPT (parallel) ports",
-  inputSchema: fromJsonSchema<Record<string, never>>({
+  inputSchema: {
     type: "object",
     properties: {},
-  }),
+  },
 };
 
 // ── 实现 ──
@@ -72,21 +71,13 @@ export async function portScanHandler() {
   logger.info("[port_scan_tool] scanning Windows Device Manager ports");
 
   if (process.platform !== "win32") {
-    return {
-      content: [text("This tool only works on Windows.")],
-    };
+    return "This tool only works on Windows.";
   }
 
   const ports = scanPnPEntity();
 
   if (ports.length === 0) {
-    return {
-      content: [
-        text(
-          "No COM/LPT ports found.\n(Try running as Administrator if ports are expected)"
-        ),
-      ],
-    };
+    return "No COM/LPT ports found.\n(Try running as Administrator if ports are expected)";
   }
 
   const comPorts = ports.filter((p) => /COM\d+/.test(p.name));
@@ -130,5 +121,5 @@ export async function portScanHandler() {
     }
   }
 
-  return { content: [text(lines.join("\n"))] };
+  return lines.join("\n");
 }

@@ -3,20 +3,19 @@
  *              查询网络适配器：Get-CimInstance -ClassName Win32_NetworkAdapter | Select-Object Name, DeviceID, Speed, NetConnectionStatus, MACAddress, Manufacturer | Format-Table -AutoSize
  *              查询网络适配器配置：Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true } | Select-Object Description, IPAddress, MACAddress, DHCPEnabled | Format-Table -AutoSize
  */
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { execPowerShell } from "../../../transports/powershell.js";
 
 // ── 声明 ──
 
-export const networkScanConfig = {
+export const networkScanConfig: SdkToolConfig = {
   description:
     "Scan Windows network adapters and configurations (IP, MAC, status, speed)",
-  inputSchema: fromJsonSchema<Record<string, never>>({
+  inputSchema: {
     type: "object",
     properties: {},
-  }),
+  },
 };
 
 // ── 常量 ──
@@ -126,9 +125,7 @@ export async function networkScanHandler() {
   logger.info("[network_scan_tool] scanning Windows network adapters");
 
   if (process.platform !== "win32") {
-    return {
-      content: [text("This tool only works on Windows.")],
-    };
+    return "This tool only works on Windows.";
   }
 
   const adapters = scanNetworkAdapters();
@@ -172,5 +169,5 @@ export async function networkScanHandler() {
     lines.push("No network adapters found.");
   }
 
-  return { content: [text(lines.join("\n"))] };
+  return lines.join("\n");
 }

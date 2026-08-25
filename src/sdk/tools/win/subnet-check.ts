@@ -62,19 +62,18 @@
  *   /24  → 可用主机 254 个（1 ~ 254），网关 192.168.16.14 有效
  */
 
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { execPowerShell } from "../../../transports/powershell.js";
 
-/** @brief Subnet Check 工具声明（MCP schema） */
-export const subnetCheckConfig = {
+/** @brief Subnet Check 工具声明（JSON Schema） */
+export const subnetCheckConfig: SdkToolConfig = {
   description:
     "Analyze subnet information for a target IP address. " +
     "Retrieves host IP, subnet mask, and gateway, calculates subnet range " +
     "(network address, broadcast address, usable host range, CIDR), " +
     "and determines whether the target IP falls within the same subnet as the host.",
-  inputSchema: fromJsonSchema<{ target_ip: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       target_ip: {
@@ -83,7 +82,7 @@ export const subnetCheckConfig = {
       },
     },
     required: ["target_ip"],
-  }),
+  },
 };
 
 // ── 类型定义 ──
@@ -274,42 +273,30 @@ function getHostIPConfigs(): IPConfig[] {
 /**
  * @brief Subnet Check 工具入口
  * @param args  包含 target_ip 的对象
- * @returns     MCP 响应内容
+ * @returns     响应文本
  */
 export async function subnetCheckHandler(args: unknown) {
   const { target_ip } = args as { target_ip: string };
   logger.info(`[subnet_check_tool] checking target IP: ${target_ip}`);
 
   if (process.platform !== "win32") {
-    return {
-      content: [text("This tool only works on Windows.")],
-    };
+    return "This tool only works on Windows.";
   }
 
   // 验证目标 IP 格式
   try {
     ipToInt(target_ip);
   } catch {
-    return {
-      content: [
-        text(
-          `Invalid target IP address: "${target_ip}". Expected format: x.x.x.x`
-        ),
-      ],
-    };
+    return `Invalid target IP address: "${target_ip}". Expected format: x.x.x.x`;
   }
 
   const configs = getHostIPConfigs();
 
   if (configs.length === 0) {
-    return {
-      content: [
-        text(
-          "No active network adapters with IP configuration found.\n" +
-            "Ensure you are connected to a network and try again."
-        ),
-      ],
-    };
+    return (
+      "No active network adapters with IP configuration found.\n" +
+      "Ensure you are connected to a network and try again."
+    );
   }
 
   const lines: string[] = [];
@@ -371,5 +358,5 @@ export async function subnetCheckHandler(args: unknown) {
     lines.push("");
   }
 
-  return { content: [text(lines.join("\n"))] };
+  return lines.join("\n");
 }

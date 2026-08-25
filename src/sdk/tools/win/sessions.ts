@@ -5,7 +5,8 @@
  * disposeAllPowerShellSessions 保持原名，server.ts cleanup 钩子按名引用。
  */
 
-import { ShellSessionStore } from "../../sessions/index.js";
+// 过渡期反向依赖：sessions 域仍在 mcp/（整体迁移为后续阶段）
+import { ShellSessionStore } from "../../../mcp/sessions/index.js";
 import { PowerShellShell } from "../../../transports/powershell.js";
 
 /** @brief PowerShell 会话存储实例（前缀 "power" → 生成 power_1、power_2 ...） */

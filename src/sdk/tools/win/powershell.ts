@@ -1,5 +1,5 @@
 /**
- * @brief PowerShell 交互式 Shell MCP 工具
+ * @brief PowerShell 交互式 Shell SDK 工具（协议无关，MCP 注册见 src/mcp/tools/win）
  *
  * 提供对本地 Windows PowerShell 进程的会话管理，
  * 支持 open / close / write / read / list / exec 六个操作。
@@ -8,8 +8,7 @@
  * 区别在于 PowerShell 连接的是本地持久化 powershell.exe 进程，
  * 而非远程串口或 SSH。
  */
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import {
   PowerShellShell,
@@ -26,12 +25,10 @@ import { powerStore } from "./sessions.js";
  *
  * @param workingDir  工作目录（可选，默认使用当前进程的工作目录）
  */
-export const powerShellOpenConfig = {
+export const powerShellOpenConfig: SdkToolConfig = {
   description:
     "Open an interactive PowerShell shell session on the local Windows machine. Returns the initial banner output.",
-  inputSchema: fromJsonSchema<{
-    workingDir?: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       workingDir: {
@@ -40,7 +37,7 @@ export const powerShellOpenConfig = {
           "Working directory for the PowerShell process (default: current working directory)",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -53,15 +50,13 @@ export const powerShellOpenConfig = {
  *   4. 将 shell 存入会话表，返回 session_id
  *
  * @param args  工具参数，包含可选的 workingDir
- * @return MCP 响应，包含 session_id 和 banner 内容
+ * @return 响应文本，包含 session_id 和 banner 内容
  */
 export async function powerShellOpenHandler(args: { workingDir?: string }) {
   logger.info(`[power_shell_open] workingDir=${args.workingDir ?? "(cwd)"}`);
 
   if (process.platform !== "win32") {
-    return {
-      content: [text("This tool only works on Windows.")],
-    };
+    return "This tool only works on Windows.";
   }
 
   const config: PowerShellShellConfig = {
@@ -73,13 +68,7 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
   try {
     banner = await shell.open();
   } catch (err) {
-    return {
-      content: [
-        text(
-          `PowerShell open failed: ${err instanceof Error ? err.message : String(err)}`
-        ),
-      ],
-    };
+    return `PowerShell open failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
   const sessionId = powerStore.create(shell, {
@@ -90,13 +79,7 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
   logger.info(`[power_shell_open] session opened: ${sessionId}`);
   shell.fileLogger.enableFromEnv(sessionId, "local");
 
-  return {
-    content: [
-      text(
-        `Session ${sessionId} opened. Working dir: ${shell.getWorkingDir()}\n${banner || "(no banner)"}`
-      ),
-    ],
-  };
+  return `Session ${sessionId} opened. Working dir: ${shell.getWorkingDir()}\n${banner || "(no banner)"}`;
 }
 
 // ── power_shell_close ───────────────────────────────────────
@@ -108,9 +91,9 @@ export async function powerShellOpenHandler(args: { workingDir?: string }) {
  *
  * @param session_id  由 power_shell_open 返回的会话 ID
  */
-export const powerShellCloseConfig = {
+export const powerShellCloseConfig: SdkToolConfig = {
   description: "Close a PowerShell shell session and terminate the process.",
-  inputSchema: fromJsonSchema<{ session_id: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -119,7 +102,7 @@ export const powerShellCloseConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -131,21 +114,21 @@ export const powerShellCloseConfig = {
  *   3. 从会话表中移除该条目
  *
  * @param args  工具参数，包含 session_id
- * @return MCP 响应，确认会话已关闭
+ * @return 响应文本，确认会话已关闭
  */
 export async function powerShellCloseHandler(args: { session_id: string }) {
   logger.info(`[power_shell_close] session_id=${args.session_id}`);
-  const result = powerStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = powerStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   await powerStore.withLock(args.session_id, async () => {
-    await result.shell.close();
+    await shell.close();
   });
   powerStore.remove(args.session_id);
 
-  return { content: [text(`Session ${args.session_id} closed.`)] };
+  return `Session ${args.session_id} closed.`;
 }
 
 // ── power_shell_write ───────────────────────────────────────
@@ -159,16 +142,12 @@ export async function powerShellCloseHandler(args: { session_id: string }) {
  * @param command     要发送的 PowerShell 命令字符串
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const powerShellWriteConfig = {
+export const powerShellWriteConfig: SdkToolConfig = {
   description:
     "Send a command to a PowerShell shell session. " +
     "Do NOT call this concurrently with power_shell_exec/power_shell_read on the same session_id — " +
     "concurrent access to the same PowerShell process corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    clear?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -186,7 +165,7 @@ export const powerShellWriteConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -196,7 +175,7 @@ export const powerShellWriteConfig = {
  * 注意：此函数仅发送命令，不等待输出，需配合 power_shell_read 读取结果。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 clear
- * @return MCP 响应，确认命令已发送
+ * @return 响应文本，确认命令已发送
  */
 export async function powerShellWriteHandler(args: {
   session_id: string;
@@ -206,14 +185,14 @@ export async function powerShellWriteHandler(args: {
   logger.info(
     `[power_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
   );
-  const result = powerStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = powerStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return powerStore.withLock(args.session_id, async () => {
-    result.shell.write(args.command, args.clear ?? 1);
-    return { content: [text(`Command sent: ${args.command}`)] };
+    shell.write(args.command, args.clear ?? 1);
+    return `Command sent: ${args.command}`;
   });
 }
 
@@ -227,12 +206,12 @@ export async function powerShellWriteHandler(args: {
  * @param session_id  由 power_shell_open 返回的会话 ID
  * @param clear       缓冲区清空标志（1=读取后清空，0=保留缓冲区，默认 1）
  */
-export const powerShellReadConfig = {
+export const powerShellReadConfig: SdkToolConfig = {
   description:
     "Read output from a PowerShell shell session. " +
     "Do NOT call this concurrently with power_shell_exec/power_shell_write on the same session_id — " +
     "concurrent access to the same PowerShell process corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -246,7 +225,7 @@ export const powerShellReadConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -257,7 +236,7 @@ export const powerShellReadConfig = {
  * clear=0 时保留缓冲区内容，可重复读取。
  *
  * @param args  工具参数，包含 session_id 和可选的 clear
- * @return MCP 响应，包含读取到的输出内容
+ * @return 响应文本，读取到的输出内容
  */
 export async function powerShellReadHandler(args: {
   session_id: string;
@@ -266,14 +245,14 @@ export async function powerShellReadHandler(args: {
   logger.info(
     `[power_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
   );
-  const result = powerStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = powerStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return powerStore.withLock(args.session_id, async () => {
-    const output = result.shell.read(args.clear ?? 1);
-    return { content: [text(output || "(no output)")] };
+    const output = shell.read(args.clear ?? 1);
+    return output || "(no output)";
   });
 }
 
@@ -289,18 +268,13 @@ export async function powerShellReadHandler(args: {
  * @param delay       发送后等待时间（毫秒，默认 1000）
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const powerShellExecConfig = {
+export const powerShellExecConfig: SdkToolConfig = {
   description:
     "Send a command to a PowerShell shell session and wait for the output. Combines write + delay + read in one call. " +
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the PowerShell process is a single " +
     "channel; concurrent calls will interleave output and corrupt results. " +
     "Always wait for the previous command to finish before sending the next one.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    delay?: number;
-    clear?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -323,7 +297,7 @@ export const powerShellExecConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -333,7 +307,7 @@ export const powerShellExecConfig = {
  * 对于需要精细控制缓冲区或多次交互的场景，应分别使用 write + read。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 delay、clear
- * @return MCP 响应，包含命令执行后的输出内容
+ * @return 响应文本，命令执行后的输出内容
  */
 export async function powerShellExecHandler(args: {
   session_id: string;
@@ -344,12 +318,10 @@ export async function powerShellExecHandler(args: {
   logger.info(
     `[power_shell_exec] session_id=${args.session_id} command=${args.command} delay=${args.delay ?? 1000} clear=${args.clear ?? 1}`
   );
-  const result = powerStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = powerStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-
-  const shell = result.shell;
 
   return powerStore.withLock(args.session_id, async () => {
     shell.write(args.command, args.clear ?? 1);
@@ -359,6 +331,6 @@ export async function powerShellExecHandler(args: {
 
     const output = shell.read(1);
 
-    return { content: [text(output || "(no output)")] };
+    return output || "(no output)";
   });
 }
