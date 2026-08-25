@@ -1,5 +1,5 @@
 /**
- * @file MCP SSH Build 工具
+ * @file SDK SSH Build 工具（协议无关，MCP 注册见 src/mcp/tools/ssh）
  *
  * 在远端编译服务器上执行编译命令并等待完成，返回编译结果。
  * 通过完成标记（completion marker）机制检测编译结束，
@@ -7,13 +7,13 @@
  * 适用于 make、cmake、shell 脚本等长时间编译场景。
  */
 
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { sanitize } from "../../../utils/terminal-sanitizer.js";
 import { sshStore } from "./sessions.js";
-import { resolveHostEndpoint } from "../../shared/host-endpoint.js";
-import { buildRoutingHint } from "../../shared/build-routing.js";
+// 过渡期反向依赖：host-endpoint / build-routing 仍在 mcp/shared（整体迁移为后续阶段）
+import { resolveHostEndpoint } from "../../../mcp/shared/host-endpoint.js";
+import { buildRoutingHint } from "../../../mcp/shared/build-routing.js";
 
 /** @brief 编译完成标记，用于检测命令执行结束 */
 const BUILD_MARKER = "___MCP_BUILD_DONE___";
@@ -244,20 +244,13 @@ function buildRemoteCommand(
  * @param pollInterval  轮询间隔（毫秒，默认 2000）
  * @param classify      是否对输出进行分类采集（默认 true）
  */
-export const sshBuildConfig = {
+export const sshBuildConfig: SdkToolConfig = {
   description:
     "Execute a build command on the remote server via SSH, wait for completion, " +
     "classify errors/warnings, and return structured build results for AI analysis. " +
     "IMPORTANT: Each session supports only ONE build at a time. " +
     "For concurrent builds, open multiple sessions via ssh_shell_open and assign one build per session.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    cwd?: string;
-    maxWait?: number;
-    pollInterval?: number;
-    classify?: boolean;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -294,7 +287,7 @@ export const sshBuildConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -310,7 +303,7 @@ export const sshBuildConfig = {
  *   7. 以结构化格式返回编译结果
  *
  * @param args  工具参数
- * @return MCP 响应，包含结构化编译结果
+ * @return 响应文本，包含结构化编译结果
  */
 export async function sshBuildHandler(args: {
   session_id: string;
@@ -338,11 +331,10 @@ export async function sshBuildHandler(args: {
   );
 
   // ── 步骤 1：查找 SSH 会话 ──
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-  const shell = result.shell;
 
   // 整个构建过程（发命令 → 剥离回显 → 轮询检测完成标记 → 分类输出）都在 session 锁保护内
   return sshStore.withLock(args.session_id, async () => {
@@ -443,17 +435,9 @@ export async function sshBuildHandler(args: {
       const prefix = timedOut
         ? `${header}\nPartial: ${collector.errors.length} error(s), ${collector.warnings.length} warning(s).\n\n`
         : "";
-      return {
-        content: [text(routingHint + prefix + formatted)],
-      };
+      return routingHint + prefix + formatted;
     }
 
-    return {
-      content: [
-        text(
-          `${routingHint}${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`
-        ),
-      ],
-    };
+    return `${routingHint}${header}\n\n${timedOut ? "Partial output:\n" : ""}${tailLines(allOutput, TAIL_LINES)}`;
   });
 }

@@ -1,14 +1,12 @@
 /**
- * @file MCP SSH SFTP 工具
+ * @file SDK SSH SFTP 工具（协议无关，MCP 注册见 src/mcp/tools/ssh）
  *
  * 在已建立的 SSH 会话上提供文件上传/下载能力，复用同一条 TCP+SSH 连接。
  * 通过 ssh2 的 SFTP 子系统（fastGet/fastPut）流式传输，适用于大文件场景。
  * 传输完成后返回字节数/耗时/速率摘要。
  */
 
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { sshStore } from "./sessions.js";
 import { formatTransferSummary } from "../../../shared/transfer-result.js";
@@ -24,14 +22,10 @@ import { formatTransferSummary } from "../../../shared/transfer-result.js";
  * @param local_path  本地源文件路径
  * @param remote_path 远端目标文件路径
  */
-export const sshSftpUploadConfig = {
+export const sshSftpUploadConfig: SdkToolConfig = {
   description:
     "Upload a local file to the remote board over SFTP, reusing an existing SSH session.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    local_path: string;
-    remote_path: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -49,7 +43,7 @@ export const sshSftpUploadConfig = {
       },
     },
     required: ["session_id", "local_path", "remote_path"],
-  }),
+  },
 };
 
 /**
@@ -61,7 +55,7 @@ export const sshSftpUploadConfig = {
  *   3. 格式化传输摘要并返回
  *
  * @param args 工具参数，包含 session_id、local_path、remote_path
- * @return MCP 响应，包含传输摘要文本
+ * @return 响应文本，包含传输摘要文本
  */
 export async function sshSftpUploadHandler(args: {
   session_id: string;
@@ -71,18 +65,17 @@ export async function sshSftpUploadHandler(args: {
   logger.info(
     `[ssh_sftp_upload] session_id=${args.session_id} local=${args.local_path} remote=${args.remote_path}`
   );
-  const lookup = sshStore.getOrNotFound(args.session_id);
-  if (!lookup.ok) {
-    return lookup.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-  const shell = lookup.shell;
 
   return sshStore.withLock(args.session_id, async () => {
     const result = await shell.uploadFile(args.local_path, args.remote_path);
     logger.info(
       `[ssh_sftp_upload] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
     );
-    return { content: [text(formatTransferSummary(result))] };
+    return formatTransferSummary(result);
   });
 }
 
@@ -97,14 +90,10 @@ export async function sshSftpUploadHandler(args: {
  * @param remote_path 远端源文件路径
  * @param local_path  本地目标文件路径
  */
-export const sshSftpDownloadConfig = {
+export const sshSftpDownloadConfig: SdkToolConfig = {
   description:
     "Download a remote file from the board to local over SFTP, reusing an existing SSH session.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    remote_path: string;
-    local_path: string;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -122,7 +111,7 @@ export const sshSftpDownloadConfig = {
       },
     },
     required: ["session_id", "remote_path", "local_path"],
-  }),
+  },
 };
 
 /**
@@ -134,7 +123,7 @@ export const sshSftpDownloadConfig = {
  *   3. 格式化传输摘要并返回
  *
  * @param args 工具参数，包含 session_id、remote_path、local_path
- * @return MCP 响应，包含传输摘要文本
+ * @return 响应文本，包含传输摘要文本
  */
 export async function sshSftpDownloadHandler(args: {
   session_id: string;
@@ -144,17 +133,16 @@ export async function sshSftpDownloadHandler(args: {
   logger.info(
     `[ssh_sftp_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path}`
   );
-  const lookup = sshStore.getOrNotFound(args.session_id);
-  if (!lookup.ok) {
-    return lookup.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-  const shell = lookup.shell;
 
   return sshStore.withLock(args.session_id, async () => {
     const result = await shell.downloadFile(args.remote_path, args.local_path);
     logger.info(
       `[ssh_sftp_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
     );
-    return { content: [text(formatTransferSummary(result))] };
+    return formatTransferSummary(result);
   });
 }

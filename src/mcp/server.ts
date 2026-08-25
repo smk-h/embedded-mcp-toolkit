@@ -84,7 +84,7 @@ async function cleanupAllSessions() {
     { disposeAllAdbShellSessions },
   ] = await Promise.all([
     import("./tools/serial/sessions.js"),
-    import("./tools/ssh/sessions.js"),
+    import("../sdk/tools/ssh/sessions.js"),
     import("./tools/win/sessions.js"),
     import("../sdk/tools/adb/sessions.js"),
   ]);

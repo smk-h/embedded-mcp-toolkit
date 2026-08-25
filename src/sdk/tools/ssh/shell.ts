@@ -1,5 +1,4 @@
-import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { text } from "../../tool-registry.js";
+import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../../shared/logger.js";
 import { SSHShell, type SSHShellConfig } from "../../../transports/ssh.js";
 import {
@@ -20,9 +19,10 @@ import {
   CONTROL_CHAR_MAP,
   type ControlChar,
   PromptDetector,
-} from "../../../sdk/shared/prompt-detector.js";
-import { sendControlChar } from "../../shared/send-ctrl.js";
-import { runExec } from "../../shared/exec-runner.js";
+} from "../../shared/prompt-detector.js";
+// 过渡期反向依赖：send-ctrl / exec-runner 仍在 mcp/shared（整体迁移为后续阶段）
+import { sendControlChar } from "../../../mcp/shared/send-ctrl.js";
+import { runExec } from "../../../mcp/shared/exec-runner.js";
 
 // ── ssh_shell_open ─────────────────────────────────────────
 
@@ -34,10 +34,10 @@ import { runExec } from "../../shared/exec-runner.js";
  * @param device   设备名（可选，默认使用当前活跃设备）
  * @param timeout  连接超时时间（秒，默认 10）
  */
-export const sshShellOpenConfig = {
+export const sshShellOpenConfig: SdkToolConfig = {
   description:
     "Open an interactive SSH shell session to the board. Returns the initial banner output.",
-  inputSchema: fromJsonSchema<{ device?: string; timeout?: number }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -49,7 +49,7 @@ export const sshShellOpenConfig = {
         description: "Connection timeout in seconds (default: 10)",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -62,7 +62,7 @@ export const sshShellOpenConfig = {
  *   4. 将 shell 存入会话表，返回 session_id
  *
  * @param args  工具参数，包含 device 和 timeout
- * @return MCP 响应，包含 session_id 和 banner 内容
+ * @return 响应文本，包含 session_id 和 banner 内容
  */
 export async function sshShellOpenHandler(args: {
   device?: string;
@@ -78,7 +78,7 @@ export async function sshShellOpenHandler(args: {
   if (config.host === "none") {
     const msg = `Device '${deviceName}' does not support SSH (host is none).`;
     logger.warn(msg);
-    return { content: [text(msg)] };
+    return msg;
   }
 
   const shell = new SSHShell(config);
@@ -87,13 +87,7 @@ export async function sshShellOpenHandler(args: {
   try {
     banner = await shell.open();
   } catch (err) {
-    return {
-      content: [
-        text(
-          `SSH connection failed: ${err instanceof Error ? err.message : String(err)}`
-        ),
-      ],
-    };
+    return `SSH connection failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
   // 先用预览 ID 建日志文件拿到路径，再 create 一次性写入元数据（含 logPath）
@@ -107,9 +101,7 @@ export async function sshShellOpenHandler(args: {
   });
   logger.info(`[ssh_shell_open] session opened: ${sessionId}`);
 
-  return {
-    content: [text(`Session ${sessionId} opened.\n${banner || "(no banner)"}`)],
-  };
+  return `Session ${sessionId} opened.\n${banner || "(no banner)"}`;
 }
 
 // ── ssh_shell_close ─────────────────────────────────────────
@@ -121,9 +113,9 @@ export async function sshShellOpenHandler(args: {
  *
  * @param session_id  由 ssh_shell_open 返回的会话 ID
  */
-export const sshShellCloseConfig = {
+export const sshShellCloseConfig: SdkToolConfig = {
   description: "Close an SSH shell session and release the connection.",
-  inputSchema: fromJsonSchema<{ session_id: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -132,7 +124,7 @@ export const sshShellCloseConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -144,21 +136,21 @@ export const sshShellCloseConfig = {
  *   3. 从会话表中移除该条目
  *
  * @param args  工具参数，包含 session_id
- * @return MCP 响应，确认会话已关闭
+ * @return 响应文本，确认会话已关闭
  */
 export async function sshShellCloseHandler(args: { session_id: string }) {
   logger.info(`[ssh_shell_close] session_id=${args.session_id}`);
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   await sshStore.withLock(args.session_id, async () => {
-    await result.shell.close();
+    await shell.close();
   });
   sshStore.remove(args.session_id);
 
-  return { content: [text(`Session ${args.session_id} closed.`)] };
+  return `Session ${args.session_id} closed.`;
 }
 
 // ── ssh_shell_write ─────────────────────────────────────────
@@ -172,16 +164,12 @@ export async function sshShellCloseHandler(args: { session_id: string }) {
  * @param command     要发送的命令字符串
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const sshShellWriteConfig = {
+export const sshShellWriteConfig: SdkToolConfig = {
   description:
     "Send a command to an SSH shell session. " +
     "Do NOT call this concurrently with ssh_shell_exec/ssh_shell_read on the same session_id — " +
     "concurrent access to the same SSH shell corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    clear?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -199,7 +187,7 @@ export const sshShellWriteConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -209,7 +197,7 @@ export const sshShellWriteConfig = {
  * 注意：此函数仅发送命令，不等待输出，需配合 ssh_shell_read 读取结果。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 clear
- * @return MCP 响应，确认命令已发送
+ * @return 响应文本，确认命令已发送
  */
 export async function sshShellWriteHandler(args: {
   session_id: string;
@@ -219,14 +207,14 @@ export async function sshShellWriteHandler(args: {
   logger.info(
     `[ssh_shell_write] session_id=${args.session_id} command=${args.command} clear=${args.clear ?? 1}`
   );
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return sshStore.withLock(args.session_id, async () => {
-    result.shell.write(args.command, args.clear ?? 1);
-    return { content: [text(`Command sent: ${args.command}`)] };
+    shell.write(args.command, args.clear ?? 1);
+    return `Command sent: ${args.command}`;
   });
 }
 
@@ -240,12 +228,12 @@ export async function sshShellWriteHandler(args: {
  * @param session_id  由 ssh_shell_open 返回的会话 ID
  * @param clear       缓冲区清空标志（1=读取后清空，0=保留缓冲区，默认 1）
  */
-export const sshShellReadConfig = {
+export const sshShellReadConfig: SdkToolConfig = {
   description:
     "Read output from an SSH shell session. " +
     "Do NOT call this concurrently with ssh_shell_exec/ssh_shell_write on the same session_id — " +
     "concurrent access to the same SSH shell corrupts the output buffer.",
-  inputSchema: fromJsonSchema<{ session_id: string; clear?: number }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -259,7 +247,7 @@ export const sshShellReadConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -270,7 +258,7 @@ export const sshShellReadConfig = {
  * clear=0 时保留缓冲区内容，可重复读取。
  *
  * @param args  工具参数，包含 session_id 和可选的 clear
- * @return MCP 响应，包含读取到的输出内容
+ * @return 响应文本，包含读取到的输出内容
  */
 export async function sshShellReadHandler(args: {
   session_id: string;
@@ -279,14 +267,14 @@ export async function sshShellReadHandler(args: {
   logger.info(
     `[ssh_shell_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
   );
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return sshStore.withLock(args.session_id, async () => {
-    const output = result.shell.read(args.clear ?? 1);
-    return { content: [text(output || "(no output)")] };
+    const output = shell.read(args.clear ?? 1);
+    return output || "(no output)";
   });
 }
 
@@ -302,20 +290,14 @@ export async function sshShellReadHandler(args: {
  * @param delay       发送后等待时间（毫秒，默认 1000）
  * @param clear       缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
  */
-export const sshShellExecConfig = {
+export const sshShellExecConfig: SdkToolConfig = {
   description:
     "Send a command to an SSH shell session and wait for the output. Combines write + delay + read in one call. " +
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the SSH shell is a single " +
     "channel; concurrent calls will interleave output and corrupt results. " +
     "Always wait for the previous command to finish before sending the next one. " +
     "If you need parallel execution, open multiple sessions via ssh_shell_open.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    command: string;
-    delay?: number;
-    clear?: number;
-    maxDuration?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -351,7 +333,7 @@ export const sshShellExecConfig = {
       },
     },
     required: ["session_id", "command"],
-  }),
+  },
 };
 
 /**
@@ -362,7 +344,7 @@ export const sshShellExecConfig = {
  * 普通命令靠提示符检测返回，仅提示符未匹配时走兜底超时（不发 Ctrl+C，返回兜底超时标注）。
  *
  * @param args  工具参数，包含 session_id、command 和可选的 delay、clear、maxDuration
- * @return MCP 响应，包含命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
+ * @return 响应文本，包含命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
  */
 export async function sshShellExecHandler(args: {
   session_id: string;
@@ -377,12 +359,11 @@ export async function sshShellExecHandler(args: {
   logger.info(
     `[ssh_shell_exec] session_id=${args.session_id} command=${args.command} delay=${delayVal} clear=${clearVal} maxDuration=${maxDurationVal ?? "(default)"}`
   );
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
-  const shell = result.shell;
   const deviceName = resolveDeviceName();
 
   const promptDetector = new PromptDetector(getPromptPattern(deviceName));
@@ -421,7 +402,7 @@ export async function sshShellExecHandler(args: {
         `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
     }
 
-    return { content: [text(output || "(no output)")] };
+    return output || "(no output)";
   });
 }
 
@@ -445,13 +426,10 @@ const CTRL_LABEL: Readonly<Record<ControlChar, string>> = {
  * @param session_id  由 ssh_shell_open 返回的会话 ID
  * @param key         控制字符类型：c(Ctrl+C)/u(Ctrl+U)/d(Ctrl+D)/z(Ctrl+Z)
  */
-export const sshShellSendCtrlConfig = {
+export const sshShellSendCtrlConfig: SdkToolConfig = {
   description:
     "Send a control character (Ctrl+C/U/D/Z) to an SSH shell session without appending a newline.",
-  inputSchema: fromJsonSchema<{
-    session_id: string;
-    key: ControlChar;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -466,7 +444,7 @@ export const sshShellSendCtrlConfig = {
       },
     },
     required: ["session_id", "key"],
-  }),
+  },
 };
 
 /**
@@ -475,7 +453,7 @@ export const sshShellSendCtrlConfig = {
  * 复用共享 sendControlChar，以不追加换行的方式发送控制字符。
  *
  * @param args  工具参数，包含 session_id 和 key
- * @return MCP 响应，确认控制字符已发送
+ * @return 响应文本，确认控制字符已发送
  */
 export async function sshShellSendCtrlHandler(args: {
   session_id: string;
@@ -484,17 +462,15 @@ export async function sshShellSendCtrlHandler(args: {
   logger.info(
     `[ssh_shell_send_ctrl] session_id=${args.session_id} key=${args.key}`
   );
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
 
   return sshStore.withLock(args.session_id, async () => {
-    const byte = await sendControlChar(result.shell, args.key);
+    const byte = await sendControlChar(shell, args.key);
     const label = CTRL_LABEL[args.key];
-    return {
-      content: [text(`${label} sent (${byte})`)],
-    };
+    return `${label} sent (${byte})`;
   });
 }
 
@@ -507,10 +483,10 @@ export async function sshShellSendCtrlHandler(args: {
  *
  * @param session_id  由 ssh_shell_open 返回的会话 ID
  */
-export const sshConnectionsConfig = {
+export const sshConnectionsConfig: SdkToolConfig = {
   description:
     "Check active SSH connections on the remote board. Shows which client IPs are connected to the SSH service (port 22).",
-  inputSchema: fromJsonSchema<{ session_id: string }>({
+  inputSchema: {
     type: "object",
     properties: {
       session_id: {
@@ -519,7 +495,7 @@ export const sshConnectionsConfig = {
       },
     },
     required: ["session_id"],
-  }),
+  },
 };
 
 /**
@@ -529,16 +505,14 @@ export const sshConnectionsConfig = {
  * 首个返回有效结果的命令即停止，兼容不同嵌入式 Linux 环境。
  *
  * @param args  工具参数，包含 session_id
- * @return MCP 响应，包含 SSH 连接信息
+ * @return 响应文本，包含 SSH 连接信息
  */
 export async function sshConnectionsHandler(args: { session_id: string }) {
   logger.info(`[ssh_shell_connection] session_id=${args.session_id}`);
-  const result = sshStore.getOrNotFound(args.session_id);
-  if (!result.ok) {
-    return result.response;
+  const shell = sshStore.get(args.session_id);
+  if (!shell) {
+    return `Session ${args.session_id} not found.`;
   }
-
-  const shell = result.shell;
 
   return sshStore.withLock(args.session_id, async () => {
     const commands = [
@@ -561,7 +535,7 @@ export async function sshConnectionsHandler(args: { session_id: string }) {
       }
     }
 
-    return { content: [text(output || "No SSH connection info available.")] };
+    return output || "No SSH connection info available.";
   });
 }
 
@@ -577,14 +551,10 @@ export async function sshConnectionsHandler(args: { session_id: string }) {
  * @param key      解锁密钥（可选，提供时直接使用；未提供时走 KeyProvider 获取）
  * @param timeout  解锁步骤间等待时间（毫秒，默认 1500）
  */
-export const sshShellLoginConfig = {
+export const sshShellLoginConfig: SdkToolConfig = {
   description:
     "One-click SSH login: connect, detect PSH state, auto-unlock if locked, and return a ready session. Combines open + PSH detect + unlock into a single call.",
-  inputSchema: fromJsonSchema<{
-    device?: string;
-    key?: string;
-    timeout?: number;
-  }>({
+  inputSchema: {
     type: "object",
     properties: {
       device: {
@@ -601,7 +571,7 @@ export const sshShellLoginConfig = {
         description: "Unlock step delay in milliseconds (default: 1500)",
       },
     },
-  }),
+  },
 };
 
 /**
@@ -620,7 +590,7 @@ export const sshShellLoginConfig = {
  *     适用于交互式或外部工具提供密钥的场景
  *
  * @param args  工具参数，包含可选的 device、key 和 timeout
- * @return MCP 响应，包含 session_id 和登录结果信息
+ * @return 响应文本，包含 session_id 和登录结果信息
  */
 export async function sshShellLoginHandler(args: {
   device?: string;
@@ -637,7 +607,7 @@ export async function sshShellLoginHandler(args: {
   if (config.host === "none") {
     const msg = `Device '${deviceName}' does not support SSH (host is none).`;
     logger.warn(msg);
-    return { content: [text(msg)] };
+    return msg;
   }
 
   const stepDelay = args.timeout ?? 1500;
@@ -667,13 +637,7 @@ async function sshShellLoginInner(
   try {
     banner = await shell.open();
   } catch (err) {
-    return {
-      content: [
-        text(
-          `SSH connection failed: ${err instanceof Error ? err.message : String(err)}`
-        ),
-      ],
-    };
+    return `SSH connection failed: ${err instanceof Error ? err.message : String(err)}`;
   }
 
   // open 成功后立即注册会话，确保后续解锁/探测过程可被其他工具访问
@@ -711,9 +675,7 @@ async function sshShellLoginInner(
         logger.warn(`[ssh_shell_login] PSH 已锁定但无匹配 handler, 关闭连接`);
         await shell.close();
         sshStore.remove(sessionId);
-        return {
-          content: [text("PSH detected as LOCKED but no handler available.")],
-        };
+        return "PSH detected as LOCKED but no handler available.";
       }
 
       // key 参数决定密钥获取方式：
@@ -741,13 +703,7 @@ async function sshShellLoginInner(
 
       if (result.success) {
         logger.info(`[ssh_shell_login] 解锁成功, session=${sessionId}`);
-        return {
-          content: [
-            text(
-              `Session ${sessionId} opened (PSH unlock succeeded).\nProfile: ${handler.profile.name}\nChallenge: ${result.challengeCode ?? "(none)"}`
-            ),
-          ],
-        };
+        return `Session ${sessionId} opened (PSH unlock succeeded).\nProfile: ${handler.profile.name}\nChallenge: ${result.challengeCode ?? "(none)"}`;
       }
 
       logger.error(
@@ -755,26 +711,14 @@ async function sshShellLoginInner(
       );
       await shell.close();
       sshStore.remove(sessionId);
-      return {
-        content: [
-          text(
-            `PSH unlock failed.\nState: ${result.state}\nChallenge: ${result.challengeCode ?? "(none)"}\nAttempts left: ${result.attemptsLeft ?? "(unknown)"}\nError: ${result.error ?? "(none)"}`
-          ),
-        ],
-      };
+      return `PSH unlock failed.\nState: ${result.state}\nChallenge: ${result.challengeCode ?? "(none)"}\nAttempts left: ${result.attemptsLeft ?? "(unknown)"}\nError: ${result.error ?? "(none)"}`;
     }
 
     case PshState.READY: {
       logger.info(
         `[ssh_shell_login] shell已可用, session=${sessionId}, profile=${handler?.profile.name ?? "(无)"}`
       );
-      return {
-        content: [
-          text(
-            `Session ${sessionId} opened (PSH already unlocked).\nProfile: ${handler?.profile.name ?? "(none)"}`
-          ),
-        ],
-      };
+      return `Session ${sessionId} opened (PSH already unlocked).\nProfile: ${handler?.profile.name ?? "(none)"}`;
     }
 
     case PshState.UNLOCKING: {
@@ -784,13 +728,7 @@ async function sshShellLoginInner(
         );
         await shell.close();
         sshStore.remove(sessionId);
-        return {
-          content: [
-            text(
-              "PSH is in UNLOCKING state (dangling password prompt). Provide a key to complete login."
-            ),
-          ],
-        };
+        return "PSH is in UNLOCKING state (dangling password prompt). Provide a key to complete login.";
       }
       logger.info(
         `[ssh_shell_login] PSH处于UNLOCKING状态, 使用提供的密钥完成解锁`
@@ -805,39 +743,21 @@ async function sshShellLoginInner(
         logger.info(
           `[ssh_shell_login] UNLOCKING状态解锁成功, session=${sessionId}`
         );
-        return {
-          content: [
-            text(
-              `Session ${sessionId} opened (PSH unlock completed from UNLOCKING state).\nProfile: ${handler?.profile.name ?? "(none)"}`
-            ),
-          ],
-        };
+        return `Session ${sessionId} opened (PSH unlock completed from UNLOCKING state).\nProfile: ${handler?.profile.name ?? "(none)"}`;
       }
       logger.error(
         `[ssh_shell_login] UNLOCKING状态解锁失败, finalState=${finalState}`
       );
       await shell.close();
       sshStore.remove(sessionId);
-      return {
-        content: [
-          text(
-            `PSH unlock from UNLOCKING state failed. State: ${finalState}\nOutput: ${output}`
-          ),
-        ],
-      };
+      return `PSH unlock from UNLOCKING state failed. State: ${finalState}\nOutput: ${output}`;
     }
 
     case PshState.ERROR: {
       logger.error(`[ssh_shell_login] PSH处于ERROR状态, 关闭连接`);
       await shell.close();
       sshStore.remove(sessionId);
-      return {
-        content: [
-          text(
-            "PSH is in ERROR state (previous unlock may have failed). Close and retry."
-          ),
-        ],
-      };
+      return "PSH is in ERROR state (previous unlock may have failed). Close and retry.";
     }
 
     default: {
@@ -845,13 +765,7 @@ async function sshShellLoginInner(
       logger.info(
         `[ssh_shell_login] PSH状态不明, session=${sessionId}, 可能需手动交互`
       );
-      return {
-        content: [
-          text(
-            `Session ${sessionId} opened (PSH state unknown, shell may need manual interaction).\nProfile: ${handler?.profile.name ?? "(none)"}\nBanner: ${banner}`
-          ),
-        ],
-      };
+      return `Session ${sessionId} opened (PSH state unknown, shell may need manual interaction).\nProfile: ${handler?.profile.name ?? "(none)"}\nBanner: ${banner}`;
     }
   }
 }
