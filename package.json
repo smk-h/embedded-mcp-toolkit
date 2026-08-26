@@ -19,8 +19,6 @@
     "inspector": "npm run inspector:win",
     "inspector:win": "powershell -ExecutionPolicy Bypass -File scripts/run-inspector.ps1",
     "git-sync-force": "node scripts/sync-force.mjs",
-    "psh-demo-ssh": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-ssh",
-    "psh-demo-serial": "node ./bin/embedded-mcp-toolkit-cli.js psh-demo-serial",
     "cmd:sshd-config": "node ./bin/embedded-mcp-toolkit-cli.js sshd-config",
     "cmd:remote-mcp-config": "node ./bin/embedded-mcp-toolkit-cli.js remote-mcp-config",
     "format:check": "prettier ./src --check",
