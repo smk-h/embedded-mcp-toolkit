@@ -14,18 +14,17 @@
  *   设备不可达 / 未配置 SSH 时标记「⊘ 跳过」并正常退出，
  *   便于在无硬件环境下批量回归不误报。
  *
+ *   设备名通过 serverEnv 注入 MCP server 子进程（DEVICE 字段）。
+ *   换设备时改下方 DEVICE 常量即可。
+ *
  *   运行前置：已 build（out/ 存在）；目标设备 SSH 可达
  *   运行：node test/client/ssh/test_psh_login_ssh.mjs
- *         TEST_DEVICE=board-a node test/client/ssh/test_psh_login_ssh.mjs
  * ======================================================
  */
 
 import { connect } from "../client.mjs";
 import { pass, fail, skip, printResult } from "../common.mjs";
 import { extractSessionId, splitOutputAndAnnotation } from "../common-exec.mjs";
-
-/** 被测设备名（可用环境变量 TEST_DEVICE 覆盖） */
-const device = process.env.TEST_DEVICE ?? "board-b";
 
 const TOOLS = {
   login: "ssh_shell_login",
@@ -41,13 +40,15 @@ const KNOWN_OK_MARKERS = [
 ];
 
 async function main() {
-  // 通过 serverEnv 注入 MCP server 子进程
+  // 设备名与运行配置通过 serverEnv 注入 MCP server 子进程
   const serverEnv = {
-    DEVICE: device,
+    DEVICE: "board-b",
     BOARD_CONFIG_PATH: "./.embedded/configs/config.yaml",
     LOG_SAVE: "1",
     LOG_DIR: "./.embedded/log",
+    SAVE2FILE_PATH: "./.embedded/log",
   };
+  const device = serverEnv.DEVICE;
 
   console.log("╔══════════════════════════════════════════════╗");
   console.log(`║  PSH 登录测试 —— SSH 通道 (${device.padEnd(12)}) ║`);
