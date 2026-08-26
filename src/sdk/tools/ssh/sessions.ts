@@ -13,7 +13,7 @@
  */
 
 import { ShellSessionStore } from "../../sessions/index.js";
-import { SSHShell } from "../../../sdk/transports/ssh.js";
+import { SSHShell } from "../../transports/ssh.js";
 
 /** @brief SSH 会话存储实例（前缀 "ssh" → 生成 ssh_1、ssh_2 ...） */
 export const sshStore = new ShellSessionStore<SSHShell>("ssh");

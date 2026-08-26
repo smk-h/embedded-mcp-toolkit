@@ -15,9 +15,9 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
+import { logger } from "../../shared/logger.js";
 import { registry, type SessionMeta } from "../../sessions/registry.js";
-import { formatBeijingTime } from "../../../sdk/utils/timestamp.js";
+import { formatBeijingTime } from "../../utils/timestamp.js";
 
 // ── session_info ──────────────────────────────────────────
 

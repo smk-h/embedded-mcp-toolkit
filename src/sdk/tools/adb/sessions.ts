@@ -12,7 +12,7 @@
  */
 
 import { ShellSessionStore } from "../../sessions/index.js";
-import { AdbShell } from "../../../sdk/transports/adb.js";
+import { AdbShell } from "../../transports/adb.js";
 
 /** @brief ADB 会话存储实例（前缀 "adb" → 生成 adb_1、adb_2 ...） */
 export const adbStore = new ShellSessionStore<AdbShell>("adb");

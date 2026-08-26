@@ -10,8 +10,8 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { pkg } from "../../../sdk/shared/package-info.js";
+import { logger } from "../../shared/logger.js";
+import { pkg } from "../../shared/package-info.js";
 
 // ── 版本信息来自 package-info（npm/源码模式读磁盘，exe 模式用注入字面量） ──
 

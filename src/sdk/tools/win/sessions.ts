@@ -12,7 +12,7 @@
  */
 
 import { ShellSessionStore } from "../../sessions/index.js";
-import { PowerShellShell } from "../../../sdk/transports/powershell.js";
+import { PowerShellShell } from "../../transports/powershell.js";
 
 /** @brief PowerShell 会话存储实例（前缀 "power" → 生成 power_1、power_2 ...） */
 export const powerStore = new ShellSessionStore<PowerShellShell>("power");

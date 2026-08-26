@@ -10,21 +10,17 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { SSHShell, type SSHShellConfig } from "../../../sdk/transports/ssh.js";
+import { logger } from "../../shared/logger.js";
+import { SSHShell, type SSHShellConfig } from "../../transports/ssh.js";
 import {
   getPromptPattern,
   getExecTimeoutConfig,
   getSSHConfig,
   getKeyProviderConfig,
   resolveDeviceName,
-} from "../../../sdk/shared/config.js";
-import {
-  PshState,
-  PshStateMachine,
-  PSH_STATE_DESC,
-} from "../../../sdk/auth/psh.js";
-import { KeyProvider } from "../../../sdk/auth/key-provider.js";
+} from "../../shared/config.js";
+import { PshState, PshStateMachine, PSH_STATE_DESC } from "../../auth/psh.js";
+import { KeyProvider } from "../../auth/key-provider.js";
 import { sshStore } from "./sessions.js";
 import {
   CONTROL_CHAR_MAP,
@@ -400,8 +396,7 @@ export async function sshShellExecHandler(args: {
     let output = execResult.output;
     if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
       output =
-        (output ? output + "\n" : "") +
-        `[exit code: ${execResult.exitCode}]`;
+        (output ? output + "\n" : "") + `[exit code: ${execResult.exitCode}]`;
     } else if (execResult.timeoutKind === "sampling") {
       output =
         (output ? output + "\n" : "") +

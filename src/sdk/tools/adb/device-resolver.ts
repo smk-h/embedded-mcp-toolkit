@@ -23,8 +23,8 @@
 import {
   isValidSerialNo,
   resolveDeviceNameBySerialNo,
-} from "../../../sdk/shared/config.js";
-import { logger } from "../../../sdk/shared/logger.js";
+} from "../../shared/config.js";
+import { logger } from "../../shared/logger.js";
 
 /**
  * @brief ADB 通道 deviceName 解析（三级降级）

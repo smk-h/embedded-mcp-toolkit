@@ -16,13 +16,10 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { pkg } from "../../../sdk/shared/package-info.js";
+import { logger } from "../../shared/logger.js";
+import { pkg } from "../../shared/package-info.js";
 import { resolveHostEndpoint } from "../../host/host-endpoint.js";
-import {
-  resolveLogPaths,
-  type LogPaths,
-} from "../../host/log-paths.js";
+import { resolveLogPaths, type LogPaths } from "../../host/log-paths.js";
 import { buildRoutingHint } from "../../host/build-routing.js";
 
 // ── 声明 ────────────────────────────────────────────────────

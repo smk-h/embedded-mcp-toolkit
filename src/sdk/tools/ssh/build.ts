@@ -14,8 +14,8 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { sanitize } from "../../../sdk/utils/terminal-sanitizer.js";
+import { logger } from "../../shared/logger.js";
+import { sanitize } from "../../utils/terminal-sanitizer.js";
 import { sshStore } from "./sessions.js";
 import { resolveHostEndpoint } from "../../host/host-endpoint.js";
 import { buildRoutingHint } from "../../host/build-routing.js";
@@ -366,7 +366,10 @@ export async function sshBuildHandler(args: {
       if (nlIdx !== -1) {
         allOutput = echoBuffer.substring(nlIdx + 1);
         logger.info(
-          { retries: 10 - echoRetries, echoLine: echoBuffer.substring(0, nlIdx) },
+          {
+            retries: 10 - echoRetries,
+            echoLine: echoBuffer.substring(0, nlIdx),
+          },
           "PTY echo stripped successfully"
         );
         break;

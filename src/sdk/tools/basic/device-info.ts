@@ -10,8 +10,8 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { getAllConfig, listDevices } from "../../../sdk/shared/config.js";
-import { logger } from "../../../sdk/shared/logger.js";
+import { getAllConfig, listDevices } from "../../shared/config.js";
+import { logger } from "../../shared/logger.js";
 
 // ── 声明 ──
 

@@ -18,8 +18,8 @@
 import { spawnSync } from "child_process";
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { resolveAdbSerial, resolveDeviceName } from "../../../sdk/shared/config.js";
+import { logger } from "../../shared/logger.js";
+import { resolveAdbSerial, resolveDeviceName } from "../../shared/config.js";
 import { resolveAdbDeviceName } from "./device-resolver.js";
 
 // ── 通用 ADB 执行函数 ──────────────────────────────────────

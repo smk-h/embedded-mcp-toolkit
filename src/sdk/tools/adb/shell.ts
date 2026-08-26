@@ -16,14 +16,14 @@
  * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
+import { logger } from "../../shared/logger.js";
 import {
   getPromptPattern,
   getExecTimeoutConfig,
   resolveAdbSerial,
   resolveDeviceName,
-} from "../../../sdk/shared/config.js";
-import { AdbShell, type AdbShellConfig } from "../../../sdk/transports/adb.js";
+} from "../../shared/config.js";
+import { AdbShell, type AdbShellConfig } from "../../transports/adb.js";
 import { adbStore } from "./sessions.js";
 import {
   CONTROL_CHAR_MAP,
@@ -452,8 +452,7 @@ export async function adbShellExecHandler(args: {
     let output = execResult.output;
     if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
       output =
-        (output ? output + "\n" : "") +
-        `[exit code: ${execResult.exitCode}]`;
+        (output ? output + "\n" : "") + `[exit code: ${execResult.exitCode}]`;
     } else if (execResult.timeoutKind === "sampling") {
       output =
         (output ? output + "\n" : "") +

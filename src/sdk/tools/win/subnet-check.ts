@@ -70,8 +70,8 @@
  */
 
 import type { SdkToolConfig } from "../../types.js";
-import { logger } from "../../../sdk/shared/logger.js";
-import { execPowerShell } from "../../../sdk/transports/powershell.js";
+import { logger } from "../../shared/logger.js";
+import { execPowerShell } from "../../transports/powershell.js";
 
 /** @brief Subnet Check 工具声明（JSON Schema） */
 export const subnetCheckConfig: SdkToolConfig = {
