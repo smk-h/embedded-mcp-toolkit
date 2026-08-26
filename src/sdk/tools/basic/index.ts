@@ -20,7 +20,7 @@ import { sdkDefineTool, type AnySdkToolDef } from "../../types.js";
 import { greetConfig, greetHandler } from "./greet.js";
 import { versionConfig, versionHandler } from "./version.js";
 import { deviceInfoConfig, deviceInfoHandler } from "./device-info.js";
-import { sessionInfoConfig, sessionInfoHandler } from "./session_info.js";
+import { sessionInfoConfig, sessionInfoHandler } from "./session-info.js";
 import { hostInfoConfig, hostInfoHandler } from "./host-info.js";
 
 // ── 工具列表 ────────────────────────────────────────────────

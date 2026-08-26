@@ -18,7 +18,7 @@
  *   换设备时改下方 DEVICE 常量即可。
  *
  *   运行前置：已 build（out/ 存在）；目标设备 SSH 可达
- *   运行：node test/client/ssh/test_psh_login_ssh.mjs
+ *   运行：node test/client/ssh/test-psh-login-ssh.mjs
  * ======================================================
  */
 

@@ -17,7 +17,7 @@
  *   换设备时改下方 DEVICE 常量即可。
  *
  *   运行前置：已 build（out/ 存在）；adb 已连接设备
- *   运行：node test/client/adb/test_exec_timeout_adb.mjs
+ *   运行：node test/client/adb/test-exec-timeout-adb.mjs
  * ======================================================
  */
 

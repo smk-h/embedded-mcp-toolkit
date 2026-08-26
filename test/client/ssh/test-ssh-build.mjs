@@ -24,7 +24,7 @@
  *     BUILD_MAXWAIT = 300000（5 分钟）
  *
  *   运行前置：已 build（out/ 存在）；board-ubuntu SSH 可达
- *   运行：node test/client/ssh/test_ssh_build.mjs
+ *   运行：node test/client/ssh/test-ssh-build.mjs
  * ======================================================
  */
 

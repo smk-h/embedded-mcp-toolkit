@@ -18,7 +18,7 @@
  *   换设备时改下方 DEVICE 常量即可。
  *
  *   运行前置：已 build（out/ 存在）；目标设备串口可用
- *   运行：node test/client/serial/test_exec_timeout_serial.mjs
+ *   运行：node test/client/serial/test-exec-timeout-serial.mjs
  * ======================================================
  */
 

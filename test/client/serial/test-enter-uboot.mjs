@@ -20,7 +20,7 @@
  *   若需继续操作设备，需重新 login。
  *
  *   运行前置：已 build（out/ 存在）；目标设备串口可用
- *   运行：node test/client/serial/test_enter_uboot.mjs
+ *   运行：node test/client/serial/test-enter-uboot.mjs
  * ======================================================
  */
 
