@@ -24,8 +24,10 @@ import {
   mcpSshTools,
   mcpSerialTools,
   mcpWinTools,
+  mcpPshellTools,
   mcpAdbTools,
 } from "./tools.js";
+import { shouldRegisterPshellTools } from "./pshell-policy.js";
 
 // ── package info ───────────────────────────────────────────
 // 经由 package-info 统一读取：npm/源码模式读磁盘，单文件 exe 模式用打包期注入的字面量
@@ -73,6 +75,21 @@ for (const { name, config, handler } of mcpSerialTools) {
 
 for (const { name, config, handler } of mcpWinTools) {
   server.registerTool(name, config, handler);
+}
+
+// ── PowerShell 会话工具的条件注册 ───────────────────────────
+// 本地启动时 AI 客户端（Claude Code/ZCode/OpenCode）原生运行在本机，
+// 自带 shell 工具可直接执行 PowerShell，经 MCP 会话绕行是冗余，不注册；
+// 远程 SSH 启动时客户端在 Linux、无法直接访问本机，必须提供。
+// POWERSHELL_TOOLS=1/0 可强制开/关，策略矩阵见 pshell-policy.ts。
+if (shouldRegisterPshellTools(hostEndpoint.scenario, process.env)) {
+  for (const { name, config, handler } of mcpPshellTools) {
+    server.registerTool(name, config, handler);
+  }
+} else {
+  logger.info(
+    "[mcp] power_shell_* tools not registered (local launch; set POWERSHELL_TOOLS=1 to force enable)"
+  );
 }
 
 for (const { name, config, handler } of mcpAdbTools) {

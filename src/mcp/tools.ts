@@ -18,6 +18,7 @@ import {
   sdkSshTools,
   sdkSerialTools,
   sdkWinTools,
+  sdkPshellTools,
 } from "../sdk/index.js";
 import { adaptSdkTool } from "./adapter.js";
 import type { ToolEntry } from "./tool-registry.js";
@@ -36,5 +37,11 @@ export const mcpSshTools: ToolEntry[] = sdkSshTools.map(adaptSdkTool);
 /** Serial 工具组（11 个）。添加新工具改到 src/sdk/tools/serial/index.ts，此处无需变动。 */
 export const mcpSerialTools: ToolEntry[] = sdkSerialTools.map(adaptSdkTool);
 
-/** Windows 工具组（8 个）。添加新工具改到 src/sdk/tools/win/index.ts，此处无需变动。 */
+/** Windows 域工具组（3 个）。添加新工具改到 src/sdk/tools/win/index.ts，此处无需变动。 */
 export const mcpWinTools: ToolEntry[] = sdkWinTools.map(adaptSdkTool);
+
+/**
+ * PowerShell 会话工具组（5 个）。
+ * 是否注册到 MCP 由 server.ts 按启动场景决定，策略见 pshell-policy.ts。
+ */
+export const mcpPshellTools: ToolEntry[] = sdkPshellTools.map(adaptSdkTool);

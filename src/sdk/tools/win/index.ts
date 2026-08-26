@@ -7,8 +7,11 @@
  * Version    : x.x.x
  * Description: SDK Win 工具统一定义入口
  *
- *   协议无关的 Windows 主机工具聚合（PowerShell 会话 / 端口扫描 /
- *   网络扫描 / 子网检查）；MCP 侧注册见 src/mcp/tools.ts。
+ *   协议无关的 Windows 主机工具聚合，分两组导出：
+ *     - sdkWinTools    域工具（端口扫描/网络扫描/子网检查），任何场景都注册
+ *     - sdkPshellTools PowerShell 会话工具，仅远程 SSH 场景注册到 MCP——
+ *                      本地 Windows 客户端自带 shell 可直执行 PowerShell，
+ *                      经 MCP 会话绕行是冗余；注册策略见 src/mcp/pshell-policy.ts
  * ======================================================
  */
 
@@ -35,13 +38,20 @@ import {
 // ── 工具列表 ────────────────────────────────────────────────
 
 /**
- * 所有已定义的核心工具列表。
+ * Windows 域工具列表（协议无关的查询/分析类工具）。
  * 添加新工具时只需在此数组中追加一项即可。
  */
 export const sdkWinTools: AnySdkToolDef[] = [
   sdkDefineTool("port_scan_tool", portScanConfig, portScanHandler),
   sdkDefineTool("network_scan_tool", networkScanConfig, networkScanHandler),
   sdkDefineTool("subnet_check_tool", subnetCheckConfig, subnetCheckHandler),
+];
+
+/**
+ * PowerShell 会话工具列表（open/close/write/read/exec）。
+ * 是否注册到 MCP 由 server.ts 按启动场景决定，见 pshell-policy.ts。
+ */
+export const sdkPshellTools: AnySdkToolDef[] = [
   sdkDefineTool(
     "power_shell_open",
     powerShellOpenConfig,

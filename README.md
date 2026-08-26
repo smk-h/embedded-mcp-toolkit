@@ -205,6 +205,8 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `power_shell_read` | 读取 PowerShell 会话的输出数据 | `读取 PowerShell 输出` / `PowerShell 返回了什么` |
 | `power_shell_exec` | 向 PowerShell 发送命令并等待输出（write + delay + read） | `PowerShell 执行 ipconfig` / `用 ps 运行 xxx` |
 
+> **注册策略**：`power_shell_*` 五个会话工具默认仅在**远程 SSH 场景**（本 MCP 由 Linux 侧 AI 客户端经 ssh 拉起，客户端无法直接访问本机）注册。若客户端（Claude Code / ZCode / OpenCode 等）**原生运行在本机 Windows**，它自带的 shell 工具可以直接执行 PowerShell，这些工具默认**不注册**，避免 AI 经 MCP 会话绕行。在 `.mcp.json` 的 `env` 中设置 `POWERSHELL_TOOLS=1` 可强制开启，`0` 强制关闭；启动日志中会记录实际决策。
+
 #### <a id="section_exec_timeout">5.6 重要机制：exec 的常驻命令识别与双超时策略</a>
 
 `serial_exec` / `ssh_shell_exec` / `adb_shell_exec` 这三个交互式 exec 工具，采用了**提示符检测 + 分类超时**机制。核心思路：**普通命令靠提示符检测自然结束，常驻命令（ping/logcat/top 等永不返回提示符的）才默认套用短超时熔断**。
