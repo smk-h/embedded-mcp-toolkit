@@ -13,7 +13,7 @@
  *
  * 交互式 Shell 通过 child_process.spawn 启动持久化的 PowerShell 进程，
  * 实现与 SerialShell / SSHShell 相同的缓冲区管理接口，
- * 可复用于 PshHandler 的解锁流程和 interactiveLoop。
+ * 可复用于 PshHandler 的解锁流程。
  * ======================================================
  */
 import {

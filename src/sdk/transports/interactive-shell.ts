@@ -8,7 +8,8 @@
  * Description: 交互式 Shell 的统一读写接口
  *
  *   抽象出 open / write / read / drain / close 五个方法，
- *   供 interactiveLoop（demo 终端循环）与 BaseShell（传输层基类）共用。
+ *   作为 BaseShell（传输层基类）的编译期契约，
+ *   并供 exec/exec-runner、exec/send-ctrl 等执行器按接口编程。
  *
  *   四个传输类（SSHShell / SerialShell / AdbShell / PowerShellShell）
  *   通过继承 BaseShell 间接实现本接口，形成编译期契约约束。
