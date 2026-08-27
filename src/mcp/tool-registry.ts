@@ -59,9 +59,14 @@ export function mcpDefineTool<T>(
   };
 }
 
+/** 工具调用序号：进程内单调递增，用于配对同一次调用的开始/结束行 */
+let invocationSeq = 0;
+
 /**
  * 统一包裹工具执行：记录调用开始（含 AI 传入的原始参数）与调用结束。
- * 日志流据此能精确配对每一次工具调用的开始/完成边界。
+ * 每次调用分配 #N 序号，开始/结束行同带序号，据此能精确配对每一次
+ * 工具调用的边界（含并发同名调用）。┌─/└─ 角朝向不同，连续调用时
+ * 上一条的结束与下一条的开始不会混淆。
  */
 function withInvocationLog(
   name: string,
@@ -69,18 +74,19 @@ function withInvocationLog(
 ): mcpToolCallback {
   return async (args: unknown) => {
     const raw = args === undefined ? "" : JSON.stringify(args);
-    logger.info(`>>> Tool invocation begins! [${name}] args=${raw}`);
+    const seq = ++invocationSeq;
+    logger.info(`┌─ #${seq} BEGIN [${name}] args=${raw}`);
     const started = Date.now();
     try {
       const result = await handler(args);
       const ms = Date.now() - started;
-      logger.info(`<<< Tool invocation completed!!! [${name}] elapsed=${ms}ms`);
+      logger.info(`└─ #${seq} END/SUCCESS [${name}] elapsed=${ms}ms`);
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const ms = Date.now() - started;
       logger.error(
-        `<<< Tool invocation FAILED [${name}] elapsed=${ms}ms err=${msg}`
+        `└─ #${seq} END/FAIL [${name}] elapsed=${ms}ms err=${msg}`
       );
       throw err;
     }
