@@ -71,11 +71,29 @@ export class PromptDetector {
    *   - Linux   :  $  、  #  、  >
    *   - U-Boot  :  =>  、  U-Boot>
    *
+   * 行尾 # 分支带否定后顾 (?<!#)：断言"行尾这个 # 的前一个字符不能
+   * 是 #"。断言只检查、不消费字符，纯粹是个条件闸门——排除且仅排除
+   * "# 前面还是 #"这一种情况：
+   *   - root@board:~#  → 行尾 # 前是空格，断言通过，命中（真提示符）
+   *   - / #            → 同上，命中（裸 # 提示符）
+   *   - Loading: ##### → 行尾 # 前还是 #，断言失败，不命中（进度条刷屏）
+   *   - Loading: #     → # 前是空格，断言通过，命中（已知残留边界，
+   *                      瞬时帧窗口极短，由 1级 marker 与 U-Boot 受限
+   *                      检测器 createUbootPromptDetector 兜底）
+   *
+   * 为何用 (?<!#) 而非 [^#]#：后者要求 # 前必须存在一个字符，整行仅
+   * 一个 # 的极简提示符（行首即 #）会失配；(?<!#) 只加条件不加要求，
+   * 原可匹配的用例一个不少。
+   *
+   * 背景：真实提示符的 # 前不会是 #，而 U-Boot TFTP/升级类命令用连续
+   * # 刷进度条，不排除会把进度帧误判为 root 提示符导致 exec 提前返回
+   * （2026-08-27 实测：alg 升级真实执行 42s，406ms 即被截胡）。
+   *
    * 不追求覆盖所有自定义 PS1，未命中时由 exec 的 maxDuration 熔断兜底
    * （见 spec.md「不做的事」第 5 条）。
    */
   static readonly DEFAULT_PATTERN =
-    /(?:[^\r\n]*[:/]?\s*[/~]\s*[#$]\s*|[^\r\n]*[#>$]\s*|[^\r\n]*=>\s*)$/;
+    /(?:[^\r\n]*[:/]?\s*[/~]\s*[#$]\s*|[^\r\n]*(?<!#)#\s*|[^\r\n]*[$>]\s*|[^\r\n]*=>\s*)$/;
 
   /** @brief 实际使用的提示符正则（末尾锚定，默认或配置覆盖） */
   private readonly pattern: RegExp;
@@ -312,6 +330,19 @@ export class UbootDetector {
   }
 
   /**
+   * @brief 导出合并后的 U-Boot 提示符正则源码
+   *
+   * 供 createUbootPromptDetector 构造 U-Boot 会话专用的受限检测器。
+   * 返回字符串快照（new RegExp 的 source），不是 RegExp 实例，
+   * 外部无法借此修改内部状态。
+   *
+   * @returns 合并（默认 ∪ 用户配置）后的 prompt 正则源码
+   */
+  public getPromptSource(): string {
+    return this.promptRe.source;
+  }
+
+  /**
    * @brief 导出内部状态用于调试（CLI 自测、日志排查）
    *
    * 返回合并默认值后实际生效的正则源码与配置项的只读快照，
@@ -352,6 +383,25 @@ export class UbootDetector {
       verifyTimeoutMs: this.verifyTimeoutMs,
     };
   }
+}
+
+/**
+ * @brief 构造 U-Boot 会话专用的受限提示符检测器
+ *
+ * U-Boot 会话（serial_enter_uboot 标记）的 exec 2级快路径只认 U-Boot
+ * 提示符集（默认 =>/U-Boot> 与用户配置合并），而非通用默认正则：
+ * TFTP/升级类命令用连续 # 刷进度条，通用正则"行尾 #"分支会把进度帧
+ * 误判为 Linux root 提示符导致提前返回。U-Boot 会话 plain 包装必有
+ * marker，命令真结束由 1级 marker 确定性判定；boot/bootm 离开 U-Boot
+ * 后 plain marker 在 Linux sh 下照常展开，环境切换由内核启动特征驱动
+ * 自校正（serial_exec），无需通用提示符参与。
+ *
+ * @param config 设备配置的 uboot 子段（可选）
+ * @returns 只识别 U-Boot 提示符的 PromptDetector
+ * @throws {Error} 配置含非法正则时由 new RegExp 抛出（调用方应捕获并降级）
+ */
+export function createUbootPromptDetector(config?: UbootYaml): PromptDetector {
+  return new PromptDetector(new UbootDetector(config).getPromptSource());
 }
 
 /**

@@ -37,6 +37,7 @@ import {
   type ControlChar,
   PromptDetector,
   UbootDetector,
+  createUbootPromptDetector,
 } from "../../exec/prompt-detector.js";
 import { sendControlChar } from "../../exec/send-ctrl.js";
 import { runExec } from "../../exec/exec-runner.js";
@@ -442,14 +443,27 @@ export async function serialExecHandler(args: {
   return serialStore.withLock(args.session_id, async () => {
     const wasUboot = isUbootSession(args.session_id);
 
-    // U-Boot 态的 2级回落检测用默认提示符正则，而非设备 promptPattern：
-    // promptPattern 是为 Linux PS1 配置的，在 U-Boot 态（=> 提示符）可能永不
-    // 命中——marker 失败的场景（hush 解析错误、无 echo）会等满兜底超时。
-    // 默认正则同时覆盖 U-Boot 与常见 Linux/Android 提示符：留在 U-Boot 时
-    // 锚定 => ，离开 U-Boot 落到 Linux 提示符时也能尽快返回（配合下方自校正）。
-    const promptDetector = new PromptDetector(
-      wasUboot ? undefined : getPromptPattern(deviceName)
-    );
+    // U-Boot 态的 2级回落检测收窄为 U-Boot 提示符集（默认 =>/U-Boot> ∪
+    // 用户配置），而非通用默认正则：U-Boot 下 TFTP/升级类命令用连续 #
+    // 刷进度条，通用正则"行尾 #"分支会把进度帧误判为 Linux root 提示符
+    // 提前返回（实测 alg 升级 42s 的命令 406ms 即被截胡）。U-Boot 会话
+    // plain 包装必有 marker，真结束由 1级 marker 确定性判定；boot/bootm
+    // 离开 U-Boot 后 plain marker 在 Linux sh 下照常展开，环境切换由
+    // 内核启动特征驱动下方自校正，无需通用提示符参与。
+    // 配置含非法正则时退回通用默认检测器，不阻断 exec 主流程。
+    let promptDetector: PromptDetector;
+    if (wasUboot) {
+      try {
+        promptDetector = createUbootPromptDetector(getUbootConfig(deviceName));
+      } catch (err) {
+        logger.warn(
+          `[serial_exec] uboot prompt config error, fallback to default detector: ${err instanceof Error ? err.message : String(err)}`
+        );
+        promptDetector = new PromptDetector();
+      }
+    } else {
+      promptDetector = new PromptDetector(getPromptPattern(deviceName));
+    }
 
     const execResult = await runExec({
       shell,
@@ -467,21 +481,20 @@ export async function serialExecHandler(args: {
       markerStyle: wasUboot ? "plain" : "subshell",
     });
 
-    // U-Boot 态执行后自校正标记：若本次执行表明已离开 U-Boot，清除会话标记，
-    // 后续 serial_exec 恢复 subshell 包装。覆盖两类离开场景：
-    //   1. reset/boot/bootm 等离开 U-Boot：输出出现内核启动特征（任意完成路径均可命中）
-    //   2. 设备自动重启回到内核：exec 经 2级提示符锚定正常结束，且末尾提示符
-    //      已非 U-Boot 提示符。注意仅限 completedBy=prompt——marker 完成的输出
-    //      截断于 marker、不含末尾提示符，无法据此判定环境（此时标记保留：
-    //      plain 包装在 Linux 下同样可用，仅失去子 shell 防护，无功能性破坏）
+    // U-Boot 态执行后自校正标记：输出出现内核启动特征（reset/boot/bootm
+    // 或设备自行重启，任意完成路径均可命中）即判定已离开 U-Boot，清除
+    // 会话标记，后续 serial_exec 恢复 subshell 包装。
+    //
+    // 刻意不用「提示符排除法」（completedBy=prompt 且尾部非 U-Boot 提示符）
+    // 清标记：负向证据不可靠——# 进度帧等垃圾尾部同样能触发（2026-08-27
+    // 事故即由此误清）。标记失同步（两次 exec 之间设备自行进了系统）的
+    // 后果是良性的：plain 包装在 Linux 下同样可用，仅失去子 shell 防护；
+    // 权威同步入口为 serial_uboot_state 的 detect/clear 动作。
     if (wasUboot) {
       let leftUboot = false;
       try {
         const ubootDetector = new UbootDetector(getUbootConfig(deviceName));
-        leftUboot =
-          ubootDetector.matchKernelBoot(execResult.output) ||
-          (execResult.completedBy === "prompt" &&
-            !ubootDetector.matchPrompt(execResult.output));
+        leftUboot = ubootDetector.matchKernelBoot(execResult.output);
       } catch (err) {
         // uboot 配置含非法正则时不应阻断 exec 主流程，跳过本次自校正
         logger.warn(
