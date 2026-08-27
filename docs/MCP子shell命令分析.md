@@ -184,15 +184,13 @@ cmd; echo "___MCP_EXEC_DONE_<rand>___:$?"
 
 - **1级 marker 检测照常生效**：`;` 无条件分隔，`echo` 必然执行，marker 出现即命令结束
 - **退出码分两种**：hush 会展开 `$?`，输出 `marker:0` 等数字；U-Boot 老 simple parser 不做变量展开，原样输出字面量 `marker:$?`，此时框架无法得知退出码，`exitCode` 按 `null` 处理
-- **2级提示符检测固定用默认正则**：U-Boot 态不走设备配置的 `promptPattern`——`promptPattern` 是为 Linux PS1 配置的，在 `=>` 提示符下可能永不命中。默认正则同时覆盖 U-Boot（`=>`、`U-Boot>`）与常见 Linux/Android 提示符，命令执行完既能锚定 U-Boot 提示符，也能在离开 U-Boot 落到 Linux 提示符时尽快返回
+- **2级提示符检测收窄为 U-Boot 提示符集**：U-Boot 态不走设备配置的 `promptPattern`（那是为 Linux PS1 配置的，在 `=>` 提示符下可能永不命中），也不用通用默认正则——U-Boot 下 TFTP/升级类命令用连续 `#` 刷进度条，通用正则的"行尾 `#`"分支会把进度帧误判为 Linux root 提示符导致提前返回（实测 42s 的升级命令 406ms 即被截胡）。收窄后的检测器只认 U-Boot 提示符（默认 `=>`/`U-Boot>` ∪ 用户配置），命令真结束由 1级 marker 确定性判定
 
 ### 4. 离开 U-Boot 的自校正
 
-U-Boot 会话标记并非一成不变。`serial_exec` 在 U-Boot 态执行完命令后，会做一次自校正（[`shell.ts`](../src/sdk/tools/serial/shell.ts#L519-L537)），检测本次执行是否表明设备已离开 U-Boot：
+U-Boot 会话标记并非一成不变。`serial_exec` 在 U-Boot 态执行完命令后，会做一次自校正（[`shell.ts`](../src/sdk/tools/serial/shell.ts)）：输出出现内核启动特征（`Starting kernel` / `Linux version`，任意完成路径均可命中，覆盖 reset/boot/bootm 与设备自行重启）→ 清除标记。
 
-- 输出出现内核启动特征（`Starting kernel` / `Linux version`）→ 清除标记
-- 2级提示符锚定正常结束、且末尾提示符**已不是** U-Boot 提示符 → 清除标记
-- 1级 marker 完成（输出截断于 marker、不含末尾提示符）→ **不判定**，标记保留：plain 包装在 Linux 下同样可用，仅失去子 shell 防护，无功能性破坏
+刻意**不采用**「提示符排除法」（提示符锚定结束且尾部不是 U-Boot 提示符就清）：负向证据不可靠——`#` 进度帧等垃圾尾部同样能触发，曾导致标记被误清、后续命令以 subshell 括号语法发进 hush 报 Unknown command。标记失同步（两次 exec 之间设备自行进了系统）的后果是良性的：plain 包装在 Linux 下同样可用，仅失去子 shell 防护；权威同步入口为 `serial_uboot_state` 的 `detect`/`clear` 动作。
 
 ### 5. 边界与注意
 
