@@ -1,0 +1,37 @@
+digraph exec_decision {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", bgcolor="#FFFFFF", pad=0.3,
+         nodesep=1.1, ranksep=0.6];
+  node  [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+         fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933",
+         fontsize=12, penwidth=1.2, margin="0.16,0.09"];
+  edge  [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333",
+         fontsize=10, arrowsize=0.8];
+
+  exec  [label="serial_exec 入口\nwasUboot = isUbootSession()", fillcolor="#DCE9FB"];
+  style [label="marker\n包装风格?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  plain    [label="plain（U-Boot hush）\ncmd ; echo M:$?", fillcolor="#DDF3E4"];
+  subshell [label="subshell（POSIX）\n(cmd) ; echo M:$?", fillcolor="#F7F9FC"];
+
+  pdir [label="2 级回落\n检测器选型?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  up   [label="仅 U-Boot 提示符集\n防 # 进度条误判", fillcolor="#DDF3E4"];
+  gp   [label="通用默认正则\n（设备可覆盖）", fillcolor="#F7F9FC"];
+
+  run [label="runExec：冲刷 → 发命令 →\n1 级 marker 判定结束", fillcolor="#DCE9FB"];
+  check [label="自校正：flushed + output\n命中内核启动特征？", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  clr  [label="clearUbootSession()\n后续恢复 subshell 包装", fillcolor="#FFE8E8"];
+  keep [label="保持 U-Boot 标记", fillcolor="#F7F9FC"];
+
+  exec -> style;
+  style -> plain    [label="已标记", tailport=w];
+  style -> subshell [label="未标记", tailport=e];
+  plain    -> pdir [headport=nw];
+  subshell -> pdir [headport=ne];
+  pdir -> up [label="已标记", tailport=w];
+  pdir -> gp [label="未标记", tailport=e];
+  up -> run [headport=nw];
+  gp -> run [headport=ne];
+  run -> check;
+  check -> clr  [label="命中", tailport=w];
+  check -> keep [label="未命中", tailport=e];
+}

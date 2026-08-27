@@ -1,0 +1,78 @@
+@startuml enter-uboot-sequence
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title serial_enter_uboot 两层检测时序
+
+participant "调用方\n(AI/脚本)" as C
+participant "enter_uboot\nhandler" as H
+participant "UbootDetector\n(四件套匹配)" as D
+participant "设备串口\n(U-Boot/内核)" as S
+
+== 准备：构造检测器 ==
+
+C -> H : serial_enter_uboot\n(session_id, timeout=60s)
+H -> D : new UbootDetector(\ngetUbootConfig(device))
+alt 配置含非法正则
+  D --> H : throw Error
+  H --> C : 配置错误，快速返回
+end
+
+== 阶段一：重启并打断 autoboot ==
+
+H -> S : write("reboot")
+loop 每 500ms 轮询，直到总超时
+  H -> S : read(0) 累积输出
+  H -> D : matchAutoboot(allOutput)
+  D --> H : 命中 → 中断键\n(\\x03 / \\x15 / \\n)
+  H -> S : sendRaw(中断键)
+  note right of H : 记录 interruptedAt\n清空输出缓冲
+end
+
+== 阶段二：主层 — 提示符判定 ==
+
+loop 主层窗口（verifyTimeoutMs=4s）
+  H -> D : matchKernelBoot(output)
+  D --> H : 命中 → 立即失败
+  H -> D : matchPrompt(output)
+  alt 提示符命中
+    H -> H : markUbootSession()
+    H --> C : 成功（via prompt）
+  else 窗口耗尽未命中
+    H -> S : sendRaw("\\nprintenv\\n")
+    note right of H : 仅发一次\n记录 verifyStartedAt
+  end
+end
+
+== 阶段三：验证层 — 环境变量键判定 ==
+
+loop 验证层窗口（4s）
+  H -> D : matchVerifyKey(output)\n（字面量 key= 匹配）
+  alt 命中 baudrate=/bootdelay=
+    H -> H : markUbootSession()
+    H --> C : 成功（via verify）
+  else 窗口耗尽
+    H --> C : 失败：验证超时\n建议重试
+  end
+end
+
+note over C, S
+  全程兜底：总超时 timeout 秒；
+  任一层命中内核启动特征立即判失败（设备越过 U-Boot）
+end note
+
+@enduml

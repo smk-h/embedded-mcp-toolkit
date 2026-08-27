@@ -1,0 +1,34 @@
+digraph mark_lifecycle {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", bgcolor="#FFFFFF", pad=0.3,
+         nodesep=0.6, ranksep=0.7];
+  node  [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+         fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933",
+         fontsize=12, penwidth=1.2, margin="0.16,0.09"];
+  edge  [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333",
+         fontsize=10, arrowsize=0.8];
+
+  // 触发事件（左列：设置标记；右列：清除标记）
+  s1 [label="serial_enter_uboot 成功\nvia prompt / via verify", fillcolor="#DDF3E4"];
+  s2 [label="uboot_state：detect=uboot\n或 action=set",             fillcolor="#DDF3E4"];
+  c1 [label="exec / read 自校正\n命中内核启动特征",                  fillcolor="#FFE8E8"];
+  c2 [label="uboot_state：detect=system/login\n或 action=clear",    fillcolor="#FFE8E8"];
+
+  { rank=same; s1; c1; }
+  { rank=same; s2; c2; }
+  { rank=same; uboot; clear; }
+
+  // 状态与包装风格
+  uboot [label="已标记（set）\nplain marker 包装",   fillcolor="#DCE9FB"];
+  clear [label="未标记（clear）\nsubshell marker 包装", fillcolor="#F7F9FC"];
+
+  // 销毁
+  gone [label="会话销毁\nserial_close / disposeAllSerialSessions", fillcolor="#FFF3D6"];
+
+  s1 -> uboot [label="设置"];
+  s2 -> uboot [label="设置"];
+  c1 -> clear [label="清除"];
+  c2 -> clear [label="清除"];
+  uboot -> gone [style=dashed];
+  clear -> gone [style=dashed];
+}

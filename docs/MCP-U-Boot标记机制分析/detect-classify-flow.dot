@@ -1,0 +1,38 @@
+digraph detect_flow {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", bgcolor="#FFFFFF", pad=0.3,
+         nodesep=0.55, ranksep=0.6];
+  node  [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+         fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933",
+         fontsize=12, penwidth=1.2, margin="0.16,0.09"];
+  edge  [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333",
+         fontsize=10, arrowsize=0.8];
+
+  start  [label="uboot_state detect\n读缓冲区 read(0)", fillcolor="#DCE9FB"];
+
+  d1 [label="U-Boot 提示符?",     shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d2 [label="login:/password:?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d3 [label="系统 shell 提示符?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d4 [label="内核启动特征?",      shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d5 [label="autoboot 倒计时?",  shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+
+  kuboot [label="uboot → set 标记",        fillcolor="#DDF3E4"];
+  kclear [label="system / login → clear 标记", fillcolor="#DDF3E4"];
+  ktrans [label="booting / autoboot → 保持标记", fillcolor="#FFF3D6"];
+  kunk   [label="unknown → 保持标记",       fillcolor="#FFF3D6"];
+  probe  [label="缓冲无结论：发空回车探测\n500ms × 3 轮再判", fillcolor="#FFE8E8"];
+
+  start -> d1;
+  d1 -> kuboot [label="matchPrompt 命中"];
+  d1 -> d2     [label="否"];
+  d2 -> kclear [label="尾部锚定 login 正则"];
+  d2 -> d3     [label="否"];
+  d3 -> kclear [label="PromptDetector 命中", tailport=sw];
+  d3 -> d4     [label="否", tailport=e];
+  d4 -> ktrans [label="matchKernelBoot"];
+  d4 -> d5     [label="否"];
+  d5 -> ktrans [label="matchAutoboot"];
+  d5 -> probe  [label="均未命中"];
+  probe -> d1  [label="重判", style=dashed];
+  probe -> kunk [label="轮次耗尽仍无结论"];
+}

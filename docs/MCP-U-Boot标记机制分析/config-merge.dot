@@ -1,0 +1,24 @@
+digraph config_merge {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", bgcolor="#FFFFFF", pad=0.2, nodesep=0.4, ranksep=0.55];
+  node  [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled", fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12, penwidth=1.2];
+  edge  [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=10, arrowsize=0.8];
+
+  // 顶框定宽拉长：内容收敛为 2 行，宽度按最宽行实测 + 0.34in 冗余精确设定
+  { rank=same; def; user; }
+  def  [label="内置默认值 UbootDefaults（三个字段均可选覆盖）\lprompt：(?:=>|U-Boot>)\\s*$；autoboot：Hit Ctrl+u / any key；verifyKeys：baudrate、bootdelay\l", width=7.81, fillcolor="#DCE9FB"];
+  user [label="设备配置 serial.uboot（三类字段均可选）\lautobootPrompts / prompt / verifyEnvKeys 按需配置\l", width=4.37, fillcolor="#FFF3D6"];
+
+  m1 [label="autobootPrompts：默认在前\n用户追加，字面相等去重", width=2.56, fillcolor="#F7F9FC"];
+  m2 [label="prompt：字面不同才联合\n剥离尾部 \\s*$ 后 (?:A|B)\\s*$", width=2.39, fillcolor="#F7F9FC"];
+  m3 [label="verifyEnvKeys：默认 ∪ 用户\n去重并小写化", width=2.50, fillcolor="#F7F9FC"];
+
+  det [label="UbootDetector\nnew RegExp(source, flags)", width=2.35, fillcolor="#DDF3E4"];
+  illegal [label="非法正则 → 构造抛错\n调用方快速失败，不轮询", width=2.17, fillcolor="#FFE8E8"];
+
+  def -> m1; user -> m1;
+  def -> m2; user -> m2;
+  def -> m3; user -> m3;
+  m1 -> det; m2 -> det; m3 -> det;
+  det -> illegal [style=dashed, label="throw"];
+}
