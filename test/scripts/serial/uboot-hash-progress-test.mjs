@@ -65,8 +65,9 @@ async function check(name, fn) {
  * （模拟设备原样执行 `echo "MARKER:$?"` 的行为）。
  */
 class MockDevice {
-  constructor(frameSpecs) {
+  constructor(frameSpecs, prefill = "") {
     this.frameSpecs = frameSpecs;
+    this.prefill = prefill; // 预置残留：write 前先进入 buffer（前置冲刷的对象）
     this.written = [];
     this.marker = null;
     this.startTime = null;
@@ -85,18 +86,25 @@ class MockDevice {
   }
 
   drain() {
-    if (this.startTime === null) return "";
-    const now = Date.now() - this.startTime;
     let out = "";
-    while (
-      this.cursor < this.frameSpecs.length &&
-      this.frameSpecs[this.cursor].atMs <= now
-    ) {
-      out += this.frameSpecs[this.cursor].text.replaceAll(
-        "${MARKER}",
-        this.marker ?? ""
-      );
-      this.cursor++;
+    // 预置残留：任何 drain 立即带出（真实 buffer 里已有内容，
+    // 前置冲刷发生在 write 之前，不依赖 startTime）
+    if (this.prefill) {
+      out += this.prefill;
+      this.prefill = "";
+    }
+    if (this.startTime !== null) {
+      const now = Date.now() - this.startTime;
+      while (
+        this.cursor < this.frameSpecs.length &&
+        this.frameSpecs[this.cursor].atMs <= now
+      ) {
+        out += this.frameSpecs[this.cursor].text.replaceAll(
+          "${MARKER}",
+          this.marker ?? ""
+        );
+        this.cursor++;
+      }
     }
     return out;
   }
@@ -335,6 +343,70 @@ await check("UbootDetector.getPromptSource 与受限检测器行为一致", () =
   const manual = new PromptDetector(source);
   assert.ok(manual.detect("U-Boot> "));
   assert.ok(!manual.detect("Loading: ##########"));
+});
+
+console.log("\n[G] 前置冲刷证据回收（flushed 字段）—— reset 后晚到的内核日志不再被丢弃");
+await check("buffer 残留随前置冲刷进入 execResult.flushed（不回传给用户输出）", async () => {
+  const residue =
+    "[    0.000000] Booting Linux on physical CPU 0x0\r\n" +
+    "[    0.000000] Linux version 5.10.100 (builder@host) #1 SMP\r\n";
+  const device = new MockDevice(
+    [
+      { atMs: 10, text: 'U-Boot> printenv; echo "${MARKER}:$?"\r\n' },
+      { atMs: 40, text: "baudrate=115200\r\n${MARKER}:0\r\nU-Boot> " },
+    ],
+    residue
+  );
+  const result = await runExec(execInput(device, createUbootPromptDetector()));
+  assert.ok(
+    result.flushed.includes("Linux version"),
+    "flushed 应包含残留的内核日志"
+  );
+  assert.ok(
+    !result.output.includes("Linux version"),
+    "用户输出不应混入冲刷残留"
+  );
+  assert.strictEqual(result.completedBy, "marker");
+});
+await check("无残留时 flushed 为空串（不影响正常路径）", async () => {
+  const device = new MockDevice([
+    { atMs: 10, text: 'U-Boot> printenv; echo "${MARKER}:$?"\r\n' },
+    { atMs: 40, text: "baudrate=115200\r\n${MARKER}:0\r\nU-Boot> " },
+  ]);
+  const result = await runExec(execInput(device, createUbootPromptDetector()));
+  assert.strictEqual(result.flushed, "");
+});
+await check("flushed+output 合并可判定离开 U-Boot（shell.ts 自校正同款逻辑）", async () => {
+  // 模拟 shell.ts 自校正的合并检查：output 无特征、flushed 有 → 应判定离开
+  const residue = "Starting kernel ...\r\n\r\n";
+  const device = new MockDevice(
+    [
+      { atMs: 10, text: 'U-Boot> printenv; echo "${MARKER}:$?"\r\n' },
+      { atMs: 40, text: "bootdelay=3\r\n${MARKER}:0\r\nU-Boot> " },
+    ],
+    residue
+  );
+  const result = await runExec(execInput(device, createUbootPromptDetector()));
+  const ud = new UbootDetector();
+  assert.ok(!ud.matchKernelBoot(result.output), "output 本身不含特征");
+  assert.ok(
+    ud.matchKernelBoot(result.flushed + result.output),
+    "合并检查应命中 flushed 里的特征"
+  );
+});
+await check("echo 剥离与 flushed 互不污染（残留+回显同时存在）", async () => {
+  const residue = "some leftover noise\r\n";
+  const device = new MockDevice(
+    [
+      { atMs: 10, text: 'U-Boot> printenv; echo "${MARKER}:$?"\r\n' },
+      { atMs: 40, text: "key=value\r\n${MARKER}:0\r\nU-Boot> " },
+    ],
+    residue
+  );
+  const result = await runExec(execInput(device, createUbootPromptDetector()));
+  assert.ok(result.flushed.includes("leftover noise"));
+  assert.ok(result.output.includes("key=value"));
+  assert.ok(!result.output.includes("leftover noise"));
 });
 
 console.log(`\n========================================`);

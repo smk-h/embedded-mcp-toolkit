@@ -342,6 +342,27 @@ export async function serialReadHandler(args: {
 
   return serialStore.withLock(args.session_id, async () => {
     const output = shell.read(args.clear ?? 1);
+    // U-Boot 标记会话：读到的内容含内核启动特征时同步清标记。
+    // 覆盖手动 read 读到 reset/bootm 后内核日志的场景——证据若被
+    // read 取走而未判定，下次 exec 前置冲刷已无可回收材料。
+    if (output && isUbootSession(args.session_id)) {
+      try {
+        const ubootDetector = new UbootDetector(
+          getUbootConfig(resolveDeviceName())
+        );
+        if (ubootDetector.matchKernelBoot(output)) {
+          clearUbootSession(args.session_id);
+          logger.info(
+            `[serial_read] kernel boot detected, cleared U-Boot mark for session ${args.session_id}`
+          );
+        }
+      } catch (err) {
+        // uboot 配置含非法正则时不应阻断 read 主流程，跳过本次检查
+        logger.warn(
+          `[serial_read] uboot detector config error, skip kernel check: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
     return output || "(no output)";
   });
 }
@@ -481,20 +502,27 @@ export async function serialExecHandler(args: {
       markerStyle: wasUboot ? "plain" : "subshell",
     });
 
-    // U-Boot 态执行后自校正标记：输出出现内核启动特征（reset/boot/bootm
+    // U-Boot 态执行后自校正标记：证据出现内核启动特征（reset/boot/bootm
     // 或设备自行重启，任意完成路径均可命中）即判定已离开 U-Boot，清除
     // 会话标记，后续 serial_exec 恢复 subshell 包装。
     //
+    // 证据范围 = 本次输出 + 前置冲刷残留：reset 后内核日志晚于 exec
+    // 返回时会滞留 buffer，被下次 exec 前置冲刷带出——合并检查避免
+    // 证据随冲刷丢弃导致标记永久残留（冲刷发生在本次 wasUboot 采样
+    // 之后，只影响本次自校正，不影响本次包装风格；plain 包装在 Linux
+    // 下同样可用，晚一拍无功能性破坏）。
+    //
     // 刻意不用「提示符排除法」（completedBy=prompt 且尾部非 U-Boot 提示符）
     // 清标记：负向证据不可靠——# 进度帧等垃圾尾部同样能触发（2026-08-27
-    // 事故即由此误清）。标记失同步（两次 exec 之间设备自行进了系统）的
-    // 后果是良性的：plain 包装在 Linux 下同样可用，仅失去子 shell 防护；
-    // 权威同步入口为 serial_uboot_state 的 detect/clear 动作。
+    // 事故即由此误清）。权威同步入口为 serial_uboot_state 的
+    // detect/clear 动作。
     if (wasUboot) {
       let leftUboot = false;
       try {
         const ubootDetector = new UbootDetector(getUbootConfig(deviceName));
-        leftUboot = ubootDetector.matchKernelBoot(execResult.output);
+        leftUboot = ubootDetector.matchKernelBoot(
+          execResult.flushed + execResult.output
+        );
       } catch (err) {
         // uboot 配置含非法正则时不应阻断 exec 主流程，跳过本次自校正
         logger.warn(

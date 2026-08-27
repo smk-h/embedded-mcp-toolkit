@@ -192,6 +192,13 @@ export interface ExecInput {
 export interface ExecResult {
   /** 累积的全部输出文本 */
   readonly output: string;
+  /**
+   * 前置冲刷丢弃的缓冲区残留（发送命令前 drain 的内容）。
+   * 不展示给用户，仅供调用方做环境证据回收：两次 exec 之间设备
+   * 异步输出（如 reset 后晚到的内核启动日志）会滞留于此，串口
+   * U-Boot 自校正据此判定是否已离开 U-Boot（shell.ts）。
+   */
+  readonly flushed: string;
   /** 命令退出码（marker 检测命中且目标 shell 展开了 $? 时可获取，其他场景为 null） */
   readonly exitCode: number | null;
   /** 是否因异常被中断（保留字段，当前实现恒为 false） */
@@ -366,6 +373,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
       );
       return {
         output: cleanOutput,
+        flushed,
         exitCode,
         interrupted: false,
         timeoutKind: "none",
@@ -383,6 +391,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
       );
       return {
         output: accumulated.trim(),
+        flushed,
         exitCode: null,
         interrupted: false,
         timeoutKind: "none",
@@ -404,6 +413,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     accumulated += input.shell.drain();
     return {
       output: accumulated.trim(),
+      flushed,
       exitCode: null,
       interrupted: false,
       timeoutKind: "sampling",
@@ -420,6 +430,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
   accumulated += input.shell.drain();
   return {
     output: accumulated.trim(),
+    flushed,
     exitCode: null,
     interrupted: false,
     timeoutKind: "fallback",
