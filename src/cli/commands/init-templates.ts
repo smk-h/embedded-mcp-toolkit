@@ -3,7 +3,7 @@
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : init-templates.ts
  * Author     : sumu
- * Date       : 2026/08/28
+ * Date       : xxxx/xx/xx
  * Version    : x.x.x
  * Description: init 命令的内嵌模板（单文件 exe 模式的模板来源）
  *
@@ -26,7 +26,7 @@ export interface EmbeddedTemplate {
   content: string;
 }
 
-/** 全部内嵌模板（生成时间戳：2026-08-28T01:20:29.161Z） */
+/** 全部内嵌模板 */
 export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
   {
     dest: ".mcp.json",
