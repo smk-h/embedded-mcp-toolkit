@@ -7,12 +7,12 @@
 - **串口管理**：打开/关闭串口连接、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、进入 U-Boot 命令行、U-Boot 会话标记管理、经 ZMODEM 上传/下载文件
 - **SSH 管理**：打开/关闭 SSH 会话、发送命令、读取输出、一键登录（自动检测 PSH 并解锁）、查看远端设备活跃连接、远程编译（结构化错误/警告反馈）、经 SFTP 上传/下载文件
 - **ADB 管理**：一次性 adb 命令（`adb install` / `adb push` 等）、交互式 ADB shell 会话、设备列表扫描
-- **本地 PowerShell**：打开/关闭本地 PowerShell 会话、发送命令、读取输出，方便在对话中直接操作 Windows 环境
+- **本地 PowerShell**：一次性执行本地 PowerShell 命令（独立进程、UTF-8 编码、超时强杀进程树，命令与结果随业务日志体系落盘到 `.embedded/log/local`）
 - **Windows 系统扫描**：扫描可用 COM/LPT 端口、扫描本机网络适配器与 IP 配置、目标 IP 子网可达性分析
 - **基础信息**：查询 MCP 服务器版本、获取设备配置信息（单台或全部）、跨连接类型查询活跃会话元数据、查询 MCP 宿主端点
-- **多会话管理**：同时保持多个串口、SSH、ADB、PowerShell 会话，支持独立读写
+- **多会话管理**：同时保持多个串口、SSH、ADB 会话，支持独立读写
 - **KeyProvider 密钥管理**：支持文件 IPC 和终端交互两种方式，自动处理 PSH 动态口令生成的密钥
-- **进程退出自动清理**：客户端断开或进程终止时自动释放所有串口、SSH、ADB、PowerShell 连接
+- **进程退出自动清理**：客户端断开或进程终止时自动释放所有串口、SSH、ADB 连接
 
 ### 2. 为什么需要它？
 
@@ -199,13 +199,9 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `port_scan_tool` | 扫描 Windows 设备管理器中的 COM / LPT 端口 | `扫描可用串口` / `查看有哪些 COM 口` |
 | `network_scan_tool` | 扫描 Windows 网络适配器和 IP 配置 | `扫描网络适配器` / `查看本机网卡信息` |
 | `subnet_check_tool` | 分析目标 IP 的子网信息（网络地址/广播地址/可用范围/CIDR），判断是否与本机同子网可达 | `检查 192.168.16.1 是否可达` / `子网分析` |
-| `power_shell_open` | 打开本地 PowerShell 交互式会话 | `打开 PowerShell` / `启动本地 PowerShell` |
-| `power_shell_close` | 关闭 PowerShell 会话并终止进程 | `关闭 PowerShell` / `退出 power_1` |
-| `power_shell_write` | 向 PowerShell 会话发送命令 | `PowerShell 执行命令` / `执行 ps 命令 xxx` |
-| `power_shell_read` | 读取 PowerShell 会话的输出数据 | `读取 PowerShell 输出` / `PowerShell 返回了什么` |
-| `power_shell_exec` | 向 PowerShell 发送命令并等待输出（write + delay + read） | `PowerShell 执行 ipconfig` / `用 ps 运行 xxx` |
+| `power_shell_exec` | 独立进程一次性执行 PowerShell 命令（不依赖会话，UTF-8 编码免疫乱码，超时强杀整棵进程树，命令与结果落盘到 `{LOG_DIR}/local`） | `PowerShell 执行 ipconfig` / `用 ps 运行 xxx` |
 
-> **注册策略**：`power_shell_*` 五个会话工具默认仅在**远程 SSH 场景**（本 MCP 由 Linux 侧 AI 客户端经 ssh 拉起，客户端无法直接访问本机）注册。若客户端（Claude Code / ZCode / OpenCode 等）**原生运行在本机 Windows**，它自带的 shell 工具可以直接执行 PowerShell，这些工具默认**不注册**，避免 AI 经 MCP 会话绕行。在 `.mcp.json` 的 `env` 中设置 `POWERSHELL_TOOLS=1` 可强制开启，`0` 强制关闭；启动日志中会记录实际决策。
+> **注册策略**：`power_shell_exec` 默认仅在**远程 SSH 场景**（本 MCP 由 Linux 侧 AI 客户端经 ssh 拉起，客户端无法直接访问本机）注册。若客户端（Claude Code / ZCode / OpenCode 等）**原生运行在本机 Windows**，它自带的 shell 工具可以直接执行 PowerShell，这些工具默认**不注册**，避免 AI 经 MCP 绕行。在 `.mcp.json` 的 `env` 中设置 `POWERSHELL_TOOLS=1` 可强制开启，`0` 强制关闭；启动日志中会记录实际决策。
 
 #### <a id="section_exec_timeout">5.6 重要机制：exec 的常驻命令识别与双超时策略</a>
 
