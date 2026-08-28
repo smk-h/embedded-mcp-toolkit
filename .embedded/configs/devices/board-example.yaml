@@ -91,6 +91,7 @@ serial:
     autobootPrompts:
       - "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot"
       - "Hit\\s+any\\s+key\\s+to\\s+stop\\s+autoboot"
+      - "Hit\\s+key\\s+to\\s+stop\\s+autoboot.*CTRL\\+C" # 例：LubanCat 风格，匹配后发送 Ctrl+C
     # 命令提示符正则，命中即判成功（主层）；构造时无 flags（=> 和 U-Boot> 固定大小写）。
     # 默认值能认 => 和 U-Boot> 两种结尾。常见厂商提示符（按板子实际选一种）：
     #   prompt: "=>"                          # 标准 U-Boot（最常见）
