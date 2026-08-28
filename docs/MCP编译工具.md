@@ -265,7 +265,7 @@ while (echoRetries > 0) {
 }
 
 // 步骤 5：轮询检测完成标记
-const deadline = Date.now() + maxWait;
+const deadline = Date.now() + timeoutMs;
 let exitCode = null;
 const markerRegex = new RegExp("___MCP_BUILD_DONE___:(\\d+)");
 
@@ -326,7 +326,7 @@ Summary: 0 error(s), 2 warning(s), 145 info line(s)
 | `session_id` | string | 是 | — | 由 `ssh_shell_open` 或 `ssh_shell_login` 返回的会话 ID |
 | `command` | string | 是 | — | 远端编译命令，如 `make -j8`、`./build.sh` |
 | `cwd` | string | 否 | 无 | 远端工作目录，切换到该目录后执行命令 |
-| `maxWait` | number | 否 | 600000（10 分钟） | 最大等待时间（毫秒） |
+| `timeoutMs` | number | 否 | 600000（10 分钟） | 最大等待时间（毫秒） |
 | `pollInterval` | number | 否 | 2000（2 秒） | 轮询间隔（毫秒） |
 | `classify` | boolean | 否 | true | 是否对输出进行 error/warning/info 分类 |
 
@@ -353,7 +353,7 @@ Summary: 0 error(s), 2 warning(s), 145 info line(s)
     "session_id": "ssh_1",
     "command": "./build.sh",
     "cwd": "/home/root/project",
-    "maxWait": 1200000
+    "timeoutMs": 1200000
   }
 }
 ```
@@ -375,12 +375,12 @@ Summary: 0 error(s), 2 warning(s), 145 info line(s)
 
 `ssh_build` 面临**两层超时**：
 
-1. **Server 端 `maxWait`**：默认 10 分钟，控制轮询等待上限。编译耗时超过此值则返回超时错误及已收集的部分输出。
+1. **Server 端 `timeoutMs`**：默认 10 分钟，控制轮询等待上限。编译耗时超过此值则返回超时错误及已收集的部分输出。
 2. **Client 端 MCP 超时**：取决于使用的 MCP Client。
    - opencode：默认 60 秒，需在 `opencode.json` 中配置 `mcp.<server>.timeout` 增大。
    - Claude Code：默认约 28 小时（`MCP_TOOL_TIMEOUT`），几乎不会触发。
 
-两层超时独立：即使 Server 端 `maxWait` 设为 60 分钟，若 Client 端 MCP 超时为 60 秒，编译也将在 60 秒后被 Client 掐断。详细原理见 `docs/MCP工具超时机制.md`。
+两层超时独立：即使 Server 端 `timeoutMs` 设为 60 分钟，若 Client 端 MCP 超时为 60 秒，编译也将在 60 秒后被 Client 掐断。详细原理见 `docs/MCP工具超时机制.md`。
 
 ## 九、注意事项
 

@@ -152,7 +152,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `serial_close` | 关闭串口会话，释放端口资源 | `关闭串口` / `退出串口 serial_1` |
 | `serial_write` | 向串口会话发送命令 | `向串口发送命令` / `在串口执行 whoami` |
 | `serial_read` | 读取串口会话的输出数据 | `读取串口输出` / `看看串口返回了什么` |
-| `serial_exec` | 向串口发送命令并等待输出（write + delay + read，含常驻命令识别与双超时机制） | `在串口执行 uname -a` / `让串口运行命令 xxx` |
+| `serial_exec` | 向串口发送命令并等待输出（write + read，自动完成检测，含常驻命令识别与双超时机制） | `在串口执行 uname -a` / `让串口运行命令 xxx` |
 | `serial_shell_login` | 一键串口登录，自动检测 PSH 状态并解锁 | `串口一键登录` / `串口登录 board-test` |
 | `serial_enter_uboot` | 重启设备并进入 U-Boot 命令行 | `重启进入 uboot` / `进入 U-Boot 命令行` |
 | `serial_uboot_state` | 查询/检测/强制设置串口会话的 U-Boot 标记（detect/set/clear/status），标记决定 exec 的 marker 包装风格 | `检测当前是否在 U-Boot` / `标记为 U-Boot 会话` |
@@ -173,7 +173,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `adb_shell_close` | 关闭 ADB shell 会话并终止 adb 进程 | `关闭 adb` / `退出 adb_1` |
 | `adb_shell_write` | 向 ADB shell 会话发送命令 | `adb 发送命令` / `在 adb 里执行 ls` |
 | `adb_shell_read` | 读取 ADB shell 会话的输出数据 | `读取 adb 输出` / `adb 返回了什么` |
-| `adb_shell_exec` | 向 ADB shell 发送命令并等待输出（write + delay + read） | `adb 执行 logcat` / `在 adb 运行命令 xxx` |
+| `adb_shell_exec` | 向 ADB shell 发送命令并等待输出（write + read，自动完成检测） | `adb 执行 logcat` / `在 adb 运行命令 xxx` |
 | `adb_shell_send_ctrl` | 向 ADB shell 会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `adb 发 Ctrl+C` / `中断 adb 命令` |
 
 #### 5.4 SSH 工具
@@ -184,7 +184,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `ssh_shell_close` | 关闭 SSH shell 会话，释放连接 | `关闭 SSH` / `退出 ssh_1` |
 | `ssh_shell_write` | 向 SSH 会话发送命令 | `SSH 发送命令` / `在 ssh 里执行 ls` |
 | `ssh_shell_read` | 读取 SSH 会话的输出数据 | `读取 SSH 输出` / `SSH 返回了什么` |
-| `ssh_shell_exec` | 向 SSH 发送命令并等待输出（write + delay + read，含常驻命令识别与双超时机制） | `SSH 执行 ifconfig` / `在 SSH 运行命令 xxx` |
+| `ssh_shell_exec` | 向 SSH 发送命令并等待输出（write + read，自动完成检测，含常驻命令识别与双超时机制） | `SSH 执行 ifconfig` / `在 SSH 运行命令 xxx` |
 | `ssh_shell_connection` | 检查远端板卡上活跃的 SSH 连接 | `查看设备上的 SSH 连接` / `谁连到了这台设备` |
 | `ssh_shell_login` | 一键 SSH 登录，自动检测 PSH 状态并解锁 | `SSH 一键登录` / `SSH 登录 board-test` |
 | `ssh_shell_send_ctrl` | 向 SSH 会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `SSH 发 Ctrl+C` / `中断 SSH 命令` |
@@ -234,16 +234,16 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 - **常驻命令**：发 Ctrl+C 终止（避免 ping/logcat 后台持续运行污染后续会话），返回 `timeoutKind=sampling`，末尾追加 `[采样超时: 已收集 Xms 输出，已发送 Ctrl+C 终止常驻命令]`
 - **普通命令**：不发 Ctrl+C（避免误杀可能已完成只是提示符没匹配的命令），返回 `timeoutKind=fallback`，末尾追加 `[兜底超时: 已收集 Xms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`
 
-【**`maxDuration` 的作用范围**】
+【**`timeoutMs` 的作用范围**】
 
-`maxDuration` 参数只覆盖「执行时长」，**不改变超时后的动作**（是否发 Ctrl+C 始终由命令常驻性决定）：
+`timeoutMs` 参数只覆盖「执行时长」，**不改变超时后的动作**（是否发 Ctrl+C 始终由命令常驻性决定）：
 
 | 调用方式 | 命令类型 | 效果 |
 |---------|---------|------|
-| 不传 `maxDuration` | 常驻命令（ping） | 默认 10s 采样超时，发 Ctrl+C |
-| 不传 `maxDuration` | 普通命令（make） | 默认 5min 兜底超时，不发 Ctrl+C |
-| `maxDuration: 30000` | 常驻命令（ping） | 30s 采样超时，发 Ctrl+C（时长覆盖，动作不变） |
-| `maxDuration: 5000` | 普通命令（sleep） | 5s 兜底超时，不发 Ctrl+C（时长覆盖，动作不变） |
+| 不传 `timeoutMs` | 常驻命令（ping） | 默认 10s 采样超时，发 Ctrl+C |
+| 不传 `timeoutMs` | 普通命令（make） | 默认 5min 兜底超时，不发 Ctrl+C |
+| `timeoutMs: 30000` | 常驻命令（ping） | 30s 采样超时，发 Ctrl+C（时长覆盖，动作不变） |
+| `timeoutMs: 5000` | 普通命令（sleep） | 5s 兜底超时，不发 Ctrl+C（时长覆盖，动作不变） |
 
 【**全局默认值（config.yaml 根层 `execTimeout`）**】
 
@@ -361,7 +361,7 @@ execTimeout:
 [2026-05-27 18:56:38] [INFO] Device resolved: board-b
 [2026-05-27 18:57:13] [INFO] [serial_open] device=(default) port=(auto) baudRate=115200
 [2026-05-27 18:57:13] [INFO] [serial_open] session opened: serial_1 port=COM3
-[2026-05-27 18:58:13] [INFO] [serial_exec] session_id=serial_2 command=exit delay=1000 clear=1
+[2026-05-27 18:58:13] [INFO] [serial_exec] session_id=serial_2 command=exit clear=1 timeoutMs=(default)
 [2026-05-27 18:58:54] [INFO] [serial_enter_uboot] session_id=serial_2 timeout=60s
 ```
 
@@ -672,9 +672,9 @@ Get-WMIObject Win32_SerialPort | Select-Object Name, Description, DeviceID
 
 **现象**：用 `*_shell_exec` 执行 `reboot` 重启设备时，设备没有正常重启到新系统，而是停在某个中间状态（比如 bootloader 菜单、烧写流程、或者卡在启动脚本里）。
 
-**背景**：很多嵌入式系统启动后会执行一批自动初始化脚本，脚本里为了方便调试，常在某些位置加 `sleep N` 并提示「Press Ctrl+C to stop …」之类的等待。这类等待点在调试时是好事，但放在「重启」场景下就成了陷阱——重启命令本身耗时远超 exec 的默认 `maxDuration`（10 秒）。
+**背景**：很多嵌入式系统启动后会执行一批自动初始化脚本，脚本里为了方便调试，常在某些位置加 `sleep N` 并提示「Press Ctrl+C to stop …」之类的等待。这类等待点在调试时是好事，但放在「重启」场景下就成了陷阱——重启命令本身耗时远超 exec 的默认 `timeoutMs`（10 秒）。
 
-**根因**：exec 工具采用 [提示符检测 + 超时熔断机制](#section_exec_timeout)，到 `maxDuration` 仍未检测到 shell 提示符时，会**无条件自动发一次 Ctrl+C**。重启过程中本来就无 shell 提示符（设备在 kernel 关闭 → bootloader → kernel 启动之间），所以一旦超时，就会发 Ctrl+C——而这个 Ctrl+C 恰好可能落在初始化脚本的「等待用户中断」点上，导致启动流程被中止，设备停在中途。
+**根因**：exec 工具采用 [提示符检测 + 超时熔断机制](#section_exec_timeout)，到 `timeoutMs` 仍未检测到 shell 提示符时，会**无条件自动发一次 Ctrl+C**。重启过程中本来就无 shell 提示符（设备在 kernel 关闭 → bootloader → kernel 启动之间），所以一旦超时，就会发 Ctrl+C——而这个 Ctrl+C 恰好可能落在初始化脚本的「等待用户中断」点上，导致启动流程被中止，设备停在中途。
 
 **判断方法**：查看日志中是否有如下记录：
 
@@ -701,10 +701,10 @@ serial_read(session_id, clear=1)
 ...
 ```
 
-- **方式 B**：仍用 exec，但显式传足够大的 `maxDuration`，确保命令完成前不触发熔断：
+- **方式 B**：仍用 exec，但显式传足够大的 `timeoutMs`，确保命令完成前不触发熔断：
 
 ```
-serial_exec(session_id, command="reboot", maxDuration=120000)   ← 120 秒，远大于重启耗时
+serial_exec(session_id, command="reboot", timeoutMs=120000)   ← 120 秒，远大于重启耗时
 ```
 
 **如何提醒 AI**：在对话里直接说清楚，例如「执行 reboot 重启设备，**用 write 发送、用 read 轮询读取，不要用 exec**」，或「执行 reboot，**等待时间至少 120 秒**」。否则 AI 容易直接用 exec 的默认 10 秒超时，结果启动到一半被 Ctrl+C 中断。

@@ -8,7 +8,7 @@
 MCP error -32001: Request timed out
 ```
 
-尽管 `ssh_build` 内部 `maxWait` 已设为 `600000` ms（10 分钟），仍然超时。
+尽管 `ssh_build` 内部 `timeoutMs` 已设为 `600000` ms（10 分钟），仍然超时。
 
 ## 二、MCP 协议超时机制
 
@@ -19,8 +19,8 @@ MCP error -32001: Request timed out
 │  opencode (MCP Client)        │      │  embedded-mcp-toolkit (Server)   │
 │                               │      │                                  │
 │  @modelcontextprotocol/sdk    │ stdio│  McpServer                       │
-│    └─ Client                  │◄────►│    ├─ ssh_build   (maxWait=600s) │
-│       └─ Protocol             │      │    ├─ ssh_exec    (delay=1s)     │
+│    └─ Client                  │◄────►│    ├─ ssh_build (timeoutMs=600s) │
+│       └─ Protocol             │      │    ├─ ssh_exec    (timeoutMs)    │
 │          └─ _requestWithSchema│      │    └─ serial_open (...)          │
 │             timeout = 60s     │      │                                  │
 └───────────────────────────────┘      └──────────────────────────────────┘
@@ -135,9 +135,9 @@ type RequestOptions = {
 | 层级 | 来源 | 默认值 | 作用对象 |
 |------|------|--------|---------|
 | MCP 协议 | `@modelcontextprotocol/sdk` | **60s** | 单次 `tools/call` 往返 |
-| Server 实现 | `ssh_build.maxWait` | 600s | build 完成等待上限 |
+| Server 实现 | `ssh_build.timeoutMs` | 600s | build 完成等待上限 |
 
-MCP 协议超时在 Client 端，Server 端 `maxWait` 只有在 Client 不主动掐断的情况下才有意义。`ssh_build` 的问题就是 60s 协议超时先于 600s Server 超时触发。
+MCP 协议超时在 Client 端，Server 端 `timeoutMs` 只有在 Client 不主动掐断的情况下才有意义。`ssh_build` 的问题就是 60s 协议超时先于 600s Server 超时触发。
 
 ## 三、解决方案
 
@@ -217,9 +217,9 @@ Server:
 
 ```typescript
 // 在 ssh_build 等长时工具的 handler 中
-async function executeBuild(sessionId, command, maxWait) {
+async function executeBuild(sessionId, command, timeoutMs) {
     const taskId = generateProgressToken(sessionId);
-    const deadline = Date.now() + maxWait;
+    const deadline = Date.now() + timeoutMs;
 
     // 每 30 秒发送进度通知
     const progressTimer = setInterval(async () => {
