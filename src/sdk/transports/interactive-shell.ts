@@ -11,7 +11,7 @@
  *   作为 BaseShell（传输层基类）的编译期契约，
  *   并供 exec/exec-runner、exec/send-ctrl 等执行器按接口编程。
  *
- *   四个传输类（SSHShell / SerialShell / AdbShell / PowerShellShell）
+ *   三个传输类（SSHShell / SerialShell / AdbShell）
  *   通过继承 BaseShell 间接实现本接口，形成编译期契约约束。
  * ======================================================
  */

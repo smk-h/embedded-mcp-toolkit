@@ -10,7 +10,7 @@
  *   通过 child_process.spawn 启动持久化的 adb shell 进程，
  *   提供 open / write / read / close 四个核心方法。
  *
- *   与 PowerShellShell / SerialShell / SSHShell 保持相同的接口模式。
+ *   与 SerialShell / SSHShell 保持相同的接口模式。
  *
  * ADB 原理简述：
  *   adb 由三部分协作完成通信，对上层调用者透明：

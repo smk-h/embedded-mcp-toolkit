@@ -14,7 +14,7 @@ import { MAX_BUFFER_SIZE } from "../shared/constants.js";
 /**
  * @brief 输出缓冲区管理器
  *
- * 封装四个传输类（SSHShell / SerialShell / AdbShell / PowerShellShell）共用的
+ * 封装三个传输类（SSHShell / SerialShell / AdbShell）共用的
  * 缓冲区逻辑：数据追加、溢出策略、收集开关、读取与排空。
  */
 export class OutputBuffer {

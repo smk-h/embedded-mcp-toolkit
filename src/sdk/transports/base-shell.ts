@@ -7,7 +7,7 @@
  * Version    : x.x.x
  * Description: 传输层抽象基类（模板方法模式）
  *
- *   统一四个传输类（SSHShell / SerialShell / AdbShell / PowerShellShell）的
+ *   统一三个传输类（SSHShell / SerialShell / AdbShell）的
  *   公共逻辑：缓冲区管理、文件日志挂载、banner 采集、方法实现。
  *
  *   子类只需实现三个差异化的受保护方法：
@@ -28,7 +28,7 @@ import type { InteractiveShell } from "./interactive-shell.js";
 /**
  * @brief 传输层抽象基类
  *
- * 通过模板方法模式统一四个传输类的公共逻辑。
+ * 通过模板方法模式统一三个传输类的公共逻辑。
  * 持有 OutputBuffer（缓冲区）和 FileLogger（文件日志），
  * 子类继承后只需实现三个差异化的抽象方法。
  */

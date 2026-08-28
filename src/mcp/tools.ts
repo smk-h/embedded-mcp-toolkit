@@ -41,7 +41,7 @@ export const mcpSerialTools: ToolEntry[] = sdkSerialTools.map(adaptSdkTool);
 export const mcpWinTools: ToolEntry[] = sdkWinTools.map(adaptSdkTool);
 
 /**
- * PowerShell 会话工具组（5 个）。
+ * PowerShell 工具组（1 个：一次性执行 power_shell_exec）。
  * 是否注册到 MCP 由 server.ts 按启动场景决定，策略见 pshell-policy.ts。
  */
 export const mcpPshellTools: ToolEntry[] = sdkPshellTools.map(adaptSdkTool);

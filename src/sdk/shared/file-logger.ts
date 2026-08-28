@@ -32,7 +32,7 @@ import { logger } from "./logger.js";
  * 行缓冲区确保跨 chunk 到达的数据合并为完整行后再输出，
  * 同一行只有一个时间戳（该行实际到达完成的时刻）。
  *
- * 供 SerialShell、SSHShell、AdbShell、PowerShellShell 等复用。
+ * 供 SerialShell、SSHShell、AdbShell 等复用。
  */
 export class FileLogger {
   /** 日志文件写入流，enable 时创建，disable 时关闭 */

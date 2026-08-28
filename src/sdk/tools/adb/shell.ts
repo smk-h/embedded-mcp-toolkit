@@ -11,7 +11,7 @@
  *   支持 open / close / write / read / list / exec 六个操作
  *   （协议无关，MCP 注册见 src/mcp/tools.ts）。
  *
- *   与 PowerShellShell / SerialShell / SSHShell 保持相同的接口模式，
+ *   与 SerialShell / SSHShell 保持相同的接口模式，
  *   区别在于 ADB Shell 连接的是持久化 adb shell 子进程。
  * ======================================================
  */

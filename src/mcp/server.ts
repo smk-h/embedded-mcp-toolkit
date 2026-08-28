@@ -77,9 +77,9 @@ for (const { name, config, handler } of mcpWinTools) {
   server.registerTool(name, config, handler);
 }
 
-// ── PowerShell 会话工具的条件注册 ───────────────────────────
+// ── PowerShell 工具的条件注册 ───────────────────────────────
 // 本地启动时 AI 客户端（Claude Code/ZCode/OpenCode）原生运行在本机，
-// 自带 shell 工具可直接执行 PowerShell，经 MCP 会话绕行是冗余，不注册；
+// 自带 shell 工具可直接执行 PowerShell，经 MCP 绕行是冗余，不注册；
 // 远程 SSH 启动时客户端在 Linux、无法直接访问本机，必须提供。
 // POWERSHELL_TOOLS=1/0 可强制开/关，策略矩阵见 pshell-policy.ts。
 if (shouldRegisterPshellTools(hostEndpoint.scenario, process.env)) {
@@ -102,7 +102,7 @@ for (const { name, config, handler } of mcpAdbTools) {
  * @brief 进程退出时关闭所有活跃的 shell 会话
  *
  * 在 SIGINT (Ctrl+C)、SIGTERM、beforeExit 时触发，
- * 确保串口、SSH、PowerShell 连接被正确释放，
+ * 确保串口、SSH 连接被正确释放，
  * 避免端口占用和僵尸进程。
  */
 async function cleanupAllSessions() {
@@ -110,18 +110,15 @@ async function cleanupAllSessions() {
   const [
     { disposeAllSerialSessions },
     { disposeAllSshSessions },
-    { disposeAllPowerShellSessions },
     { disposeAllAdbShellSessions },
   ] = await Promise.all([
     import("../sdk/tools/serial/sessions.js"),
     import("../sdk/tools/ssh/sessions.js"),
-    import("../sdk/tools/win/sessions.js"),
     import("../sdk/tools/adb/sessions.js"),
   ]);
   await Promise.allSettled([
     disposeAllSerialSessions(),
     disposeAllSshSessions(),
-    disposeAllPowerShellSessions(),
     disposeAllAdbShellSessions(),
   ]);
   logger.info("[mcp] all sessions disposed");
