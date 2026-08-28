@@ -27,8 +27,9 @@ import {
 } from "../../auth/psh.js";
 import { UserLoginHandler, UserLoginStatus } from "../../auth/user-login.js";
 import { KeyProvider } from "../../auth/key-provider.js";
-import { serialStore, portToSession } from "./sessions.js";
-import { CONTROL_CHAR_MAP } from "../../exec/prompt-detector.js";
+import { serialStore, portToSession, clearUbootSession } from "./sessions.js";
+import { CONTROL_CHAR_MAP, UbootDetector } from "../../exec/prompt-detector.js";
+import { getUbootConfig } from "../../shared/config.js";
 
 // ── serial_shell_login ──────────────────────────────────────────
 
@@ -176,6 +177,15 @@ async function serialShellLoginInner(
     newSessionId = newId;
     portToSession.set(baseConfig.port, newId);
   }
+
+  // ── U-Boot 标记前置同步（登录交互发生之前，2026-08-28 issue #36）──
+  // 与 serialExecHandler 自校正同思路：banner（复用会话为 read(0) 非破坏
+  // 读取，包含之前缓冲区未消费的全部内容；新建会话经 open() 采集后缓冲
+  // 区为空）里含内核启动特征（Starting kernel / Linux version）即证明设
+  // 备已离开 U-Boot，直接清除标记。登录后续各阶段（唤醒/探测/状态机
+  // feed/登录序列）都是消费性读取，证据一旦被吞事后校正失据，故判定必
+  // 须在消费前完成。
+  syncUbootMarkFromBanner(shell, banner, existingId);
 
   // ===== 用户登录判定（先于 PSH 探测，二者互斥）=====
   // 正常系统登录（getty/login）停在 "login:" 提示符；PSH 设备提示符为 locked> / #，
@@ -351,6 +361,52 @@ async function serialShellLoginInner(
     deviceName,
     detail
   );
+}
+
+/**
+ * @brief 登录前置：banner 含内核启动特征即清除 U-Boot 标记（零副作用）
+ *
+ * 与 serialExecHandler 的自校正（shell.ts: matchKernelBoot(execResult.
+ * flushed + execResult.output)）同一判据：缓冲区里存在 Starting kernel /
+ * Linux version 即证明设备已越过 U-Boot，清除会话标记，后续 serial_exec
+ * 恢复 subshell 包装。
+ *
+ * banner 来源与证据范围：
+ *   - 复用会话：read(0) 非破坏读取，天然包含之前缓冲区未消费的全部内容
+ *     （issue #36：U-Boot 下 reset 重启后约 1.7 万字节内核日志滞留 buffer，
+ *     命中即清标记）
+ *   - 新建会话：open() 采集 banner 后缓冲区为空，通常不命中；且新会话
+ *     ID 无残留标记，本函数此时为空操作
+ *
+ * 只做正向清标记，不做反向补设：U-Boot 下回显可伪造各类输出，而 kernel
+ * 启动特征无法在 U-Boot 会话中自然出现，采信无误伤风险。
+ *
+ * @param shell       会话 shell（此时尚未发生任何登录交互）
+ * @param banner      连接/复用时采集到的缓冲区内容
+ * @param existingId  复用会话 ID（新建会话时为 undefined，直接跳过）
+ */
+function syncUbootMarkFromBanner(
+  shell: SerialShell,
+  banner: string,
+  existingId: string | undefined
+): void {
+  if (!existingId || !banner) {
+    return;
+  }
+  try {
+    const detector = new UbootDetector(getUbootConfig(shell.getDeviceName()));
+    if (detector.matchKernelBoot(banner)) {
+      clearUbootSession(existingId);
+      logger.info(
+        `[serial_shell_login] kernel boot evidence in banner, cleared U-Boot mark for session ${existingId}`
+      );
+    }
+  } catch (err) {
+    // uboot 配置含非法正则时不应阻断登录主流程，跳过本次同步
+    logger.warn(
+      `[serial_shell_login] uboot config error, skip mark sync: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 /**
