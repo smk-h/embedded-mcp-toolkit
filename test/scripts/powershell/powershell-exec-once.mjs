@@ -14,7 +14,7 @@
  *   5. 落盘日志：LOG_SAVE=1 时命令与结果写入
  *      {LOG_DIR}/local/<timestamp>.log（与业务日志同目录体系、同生命周期）
  *
- * 运行：node test/scripts/powershell-exec-once.mjs（先 npm run build；
+ * 运行：node test/scripts/powershell/powershell-exec-once.mjs（先 npm run build；
  * 在 Windows 机器上执行，Linux 上自动 SKIP）
  * ======================================================
  */
@@ -22,7 +22,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { powerShellExecHandler } from "../../out/sdk/tools/win/powershell.js";
+import { powerShellExecHandler } from "../../../out/sdk/tools/win/powershell.js";
 
 if (process.platform !== "win32") {
   console.log("SKIP  power_shell_exec tests (requires win32)");
