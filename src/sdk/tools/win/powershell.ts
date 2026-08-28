@@ -357,7 +357,9 @@ export async function powerShellExecHandler(args: {
       } else {
         parts.push(`[进程异常退出: 无退出码]`);
       }
-      resolve(parts.length > 0 ? parts.join("\n") : "(no output)");
+      const resultText = parts.length > 0 ? parts.join("\n") : "(no output)";
+      appendExecLog(args.command, resultText, elapsedMs);
+      resolve(resultText);
     });
   });
 }
