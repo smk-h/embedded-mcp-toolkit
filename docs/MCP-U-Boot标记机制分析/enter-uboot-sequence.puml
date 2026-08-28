@@ -25,7 +25,7 @@ participant "设备串口\n(U-Boot/内核)" as S
 
 == 准备：构造检测器 ==
 
-C -> H : serial_enter_uboot\n(session_id, timeout=60s)
+C -> H : serial_enter_uboot\n(session_id, timeoutMs=60000)
 H -> D : new UbootDetector(\ngetUbootConfig(device))
 alt 配置含非法正则
   D --> H : throw Error
@@ -71,7 +71,7 @@ loop 验证层窗口（4s）
 end
 
 note over C, S
-  全程兜底：总超时 timeout 秒；
+  全程兜底：总超时 timeoutMs 毫秒（默认 60000 = 60 秒）；
   任一层命中内核启动特征立即判失败（设备越过 U-Boot）
 end note
 

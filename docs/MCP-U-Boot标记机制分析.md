@@ -135,7 +135,7 @@ export interface UbootYaml {
 
 ### 3. 设计要点
 
-- **双窗口计时**：主层与验证层各自以 `interruptedAt` / `verifyStartedAt` 为起点的 4s 窗口，与总超时 `timeout`（默认 60s）相互独立
+- **双窗口计时**：主层与验证层各自以 `interruptedAt` / `verifyStartedAt` 为起点的 4s 窗口，与总超时 `timeoutMs`（毫秒，默认 60000 即 60s，秒数 × 1000 换算）相互独立
 - **输出分段**：命中 autoboot 与发出 `printenv` 两处都会清空累积输出，保证各阶段判定材料干净，不被上一阶段的引导日志污染
 - **失败快速化**：内核启动特征是「越过 U-Boot」的确定性证据，任一层命中立即返回，不傻等超时
 

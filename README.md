@@ -362,7 +362,7 @@ execTimeout:
 [2026-05-27 18:57:13] [INFO] [serial_open] device=(default) port=(auto) baudRate=115200
 [2026-05-27 18:57:13] [INFO] [serial_open] session opened: serial_1 port=COM3
 [2026-05-27 18:58:13] [INFO] [serial_exec] session_id=serial_2 command=exit clear=1 timeoutMs=(default)
-[2026-05-27 18:58:54] [INFO] [serial_enter_uboot] session_id=serial_2 timeout=60s
+[2026-05-27 18:58:54] [INFO] [serial_enter_uboot] session_id=serial_2 timeoutMs=60000
 ```
 
 每行记录工具名称、调用参数、会话生命周期等。首行的 `cwd` 可用于排查[相对路径问题](#2-环境变量未生效)；`SAVE2FILE_PATH` 写的是另一份原始字节流日志（transport 接收到的设备原始返回），与这份业务日志相互独立。
