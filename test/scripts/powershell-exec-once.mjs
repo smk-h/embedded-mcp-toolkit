@@ -8,7 +8,9 @@
  *   2. 失败命令：exit code 1（throw 路径）
  *   3. 超时终止：Start-Sleep 60s + timeoutMs=3000 → 进程树被杀，
  *      带 [超时终止] 标注且耗时 ~3s（命令真的停了，不再等满 60s）
- *   4. 中文往返：中文输出无 U+FFFD 乱码（UTF-8 强制编码路径）
+ *   4. 中文往返：内置 cmdlet 中文输出无 U+FFFD 乱码（按控制台代码页解码）
+ *   4b. 外部原生 exe 中文：ipconfig 按 CRT 代码页（GBK）写管道，
+ *       强制 OutputEncoding=UTF8 会误读成乱码，须按代码页解码
  *   5. 落盘日志：LOG_SAVE=1 时命令与结果写入
  *      {LOG_DIR}/local/<timestamp>.log（与业务日志同目录体系、同生命周期）
  *
@@ -63,11 +65,17 @@ function check(name, cond, detail = "") {
   check("timeout path: termination annotated", r.includes("超时终止"), `got "${r}"`);
 }
 
-// ── 4. 中文往返（UTF-8 编码） ──
+// ── 4. 中文往返（按控制台代码页解码，GBK 系统下无乱码） ──
 {
   const r = await powerShellExecHandler({ command: "Write-Output '中文输出测试'" });
-  check("utf8 path: no U+FFFD replacement", !r.includes("\uFFFD"), `got "${r}"`);
-  check("utf8 path: Chinese intact", r.includes("中文输出测试"), `got "${r}"`);
+  check("chinese path: no U+FFFD replacement", !r.includes("\uFFFD"), `got "${r}"`);
+  check("chinese path: Chinese intact", r.includes("中文输出测试"), `got "${r}"`);
+}
+
+// ── 4b. 外部原生 exe 中文（ipconfig 按 CRT 代码页写 GBK，强制 UTF-8 会乱码） ──
+{
+  const r = await powerShellExecHandler({ command: "ipconfig" });
+  check("native exe path: no U+FFFD replacement", !r.includes("\uFFFD"), `got "${r.slice(0, 200)}"`);
 }
 
 // ── 5. 落盘日志（LOG_SAVE 启用时命令与结果写入 {LOG_DIR}/local/<timestamp>.log） ──

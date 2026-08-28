@@ -14,6 +14,9 @@
  *   在此路径上根本不存在。命令与完整结果按调用块落盘（LOG_SAVE 启用，
  *   目录 {LOG_DIR}/local、生命周期与业务日志一致），每行带与业务日志
  *   同款 `[YYYY-MM-DD HH:mm:ss]` 时间戳前缀，供客户端事后翻查。
+ *   编码：chcp 检测控制台代码页，命令前缀强制 OutputEncoding 为代码页
+ *   对应编码（GBK 系统下 936→GBK），Node 端按同代码页解码，内置 cmdlet
+ *   与外部原生 exe（ipconfig 等）输出统一，中文无乱码（延续 commit b66466d）。
  * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
@@ -25,13 +28,83 @@ import {
   statSync,
 } from "fs";
 import { join } from "path";
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, execSync, type ChildProcess } from "child_process";
 import {
   beijingFields,
   fileTimestamp,
   logTimestamp,
 } from "../../utils/timestamp.js";
 import { sanitizeLine } from "../../utils/terminal-sanitizer.js";
+
+// ── 控制台代码页检测与编码转换 ──────────────────────────────
+
+/**
+ * 缓存的活动代码页（chcp 结果），进程生命周期内视为不变。
+ *
+ * 延续退役会话工具（commit b66466d）的代码页方案：管道重定向下
+ * powershell.exe 内置 cmdlet 默认输出 UTF-8，外部原生 exe（ipconfig
+ * 等）按 CRT 代码页（简体中文 Windows 为 936/GBK）直接写管道，两种
+ * 编码混在同一输出流。修复手段是检测一次代码页：命令前缀强制
+ * [Console]::OutputEncoding 为代码页对应编码，Node 端按同代码页解码，
+ * 内置与外部输出编码统一，中文全部正确。
+ */
+let cachedCodePage: number | null = null;
+
+/** 常见控制台代码页 → WHATWG 编码标签映射（TextDecoder 通用） */
+const CODEPAGE_LABELS: Record<number, string> = {
+  936: "gbk",
+  950: "big5",
+  949: "euc-kr",
+  932: "shift-jis",
+  866: "ibm866",
+  20866: "koi8-r",
+  21866: "koi8-r",
+  65001: "utf-8",
+};
+
+/**
+ * @brief 检测当前控制台活动代码页（等价 chcp）
+ *
+ * 结果缓存于模块级变量，避免每次执行重复起进程。
+ * chcp.com 输出的标签文字随系统语言本地化，但代码页数字
+ * 始终是输出中最后一段连续数字，与语言无关。
+ *
+ * @returns 代码页编号；检测失败时回退 65001（UTF-8）并记录告警
+ */
+function detectConsoleCodePage(): number {
+  if (cachedCodePage === null) {
+    cachedCodePage = 65001;
+    try {
+      const out = execSync("chcp.com", {
+        timeout: 5000,
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+      }).toString("latin1");
+      const runs = out.match(/\d+/g);
+      if (runs?.length) {
+        cachedCodePage = Number(runs[runs.length - 1]);
+      }
+    } catch (err) {
+      logger.warn(
+        `[power_shell_exec] chcp detect failed, fallback 65001: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+  return cachedCodePage;
+}
+
+/**
+ * @brief 代码页编号转编码标签
+ *
+ * @param cp 代码页编号（如 936）
+ * @returns 编码标签（如 "gbk"）；未知代码页回退 "utf-8" 并记录告警
+ */
+function codepageToLabel(cp: number): string {
+  if (CODEPAGE_LABELS[cp]) return CODEPAGE_LABELS[cp];
+  if (cp >= 1250 && cp <= 1258) return `windows-${cp}`;
+  logger.warn(`[power_shell_exec] unknown codepage ${cp}, fallback utf-8`);
+  return "utf-8";
+}
 
 // ── power_shell_exec ────────────────────────────────────────
 
@@ -194,8 +267,9 @@ export const powerShellExecConfig: SdkToolConfig = {
   description:
     "Run a PowerShell command ONCE on the local Windows machine — each call spawns a fresh process, " +
     "no session required. " +
-    "Output is decoded as UTF-8 ([Console]::OutputEncoding forced inside the command, immune to the " +
-    "GBK console codepage). Exit code is appended on completion. On timeout the whole process tree " +
+    "Output is decoded with the console codepage detected via chcp (GBK on zh-CN Windows) — " +
+    "both built-in cmdlets and native exes (ipconfig etc.) come out with correct Chinese, " +
+    "no mojibake. Exit code is appended on completion. On timeout the whole process tree " +
     "is force-terminated — a stuck or resident command (ping -t) REALLY stops. " +
     "State (cd / variables / imported modules) does NOT persist between calls — " +
     "compose it into the command itself (e.g. 'cd C:\\work; npm test'). " +
@@ -232,12 +306,15 @@ export const powerShellExecConfig: SdkToolConfig = {
 /**
  * @brief power_shell_exec 处理函数
  *
- * 一次性执行流程（对齐 CLI 层 runPowerShell 已验证的模式）：
+ * 一次性执行流程（编码策略延续退役会话工具 commit b66466d）：
  *   1. spawn powershell -NoProfile -NonInteractive -Command
- *      命令文本前置 [Console]::OutputEncoding=[Text.Encoding]::UTF8;
- *      —— 输出编码强制 UTF-8，Node 端按 UTF-8 解码，绕开 GBK 代码页
- *      （不使用 chcp 65001：会修改共享控制台代码页导致 conhost 清屏）
- *   2. stdout/stderr 流式解码累积（stream 模式防多字节字符跨 chunk 切断）
+ *      命令前缀强制 [Console]::OutputEncoding=GetEncoding(检测到的代码页)
+ *      —— 管道下内置 cmdlet 默认输出 UTF-8、外部原生 exe（ipconfig 等
+ *      按 CRT 代码页写 GBK）输出 GBK，混流无法单一解码；统一为代码页
+ *      编码后内置与外部输出一致。不可强制 UTF-8（外部 GBK 字节被误读
+ *      成 U+FFFD），也不可不强制（内置 cmdlet 变 UTF-8 乱码）
+ *   2. stdout/stderr 按同一代码页流式解码累积（stream 模式防多字节
+ *      字符跨 chunk 切断）
  *   3. 进程退出收尾：返回输出 + exit code
  *   4. 超时 / 输出超限：killProcessTree 强制终止，返回已收集输出 + 标注
  *
@@ -263,13 +340,23 @@ export async function powerShellExecHandler(args: {
 
   return new Promise<string>((resolve) => {
     const startedAt = Date.now();
+    // 编码策略（延续退役会话工具 commit b66466d 的代码页方案）：
+    // powershell.exe 在管道重定向下内置 cmdlet 默认按 UTF-8 输出，
+    // 而外部原生 exe（ipconfig 等）按 CRT 代码页（中文系统 936/GBK）
+    // 直接写管道——两种编码混在同一输出流，单一解码器无法兼顾。
+    // 修复：命令前缀强制 [Console]::OutputEncoding 为检测到的代码页
+    // 对应编码（936→GBK），使内置 cmdlet 与外部 exe 输出统一为代码页
+    // 编码，Node 端按同代码页解码，全部正确。注意不可强制 UTF-8——
+    // 那会让外部 exe 的 GBK 字节被 PowerShell 误读成 U+FFFD 乱码。
+    // 输入侧：Windows spawn 走宽字符 API 传参，命令中的中文不经过代码页。
+    const cp = detectConsoleCodePage();
     const proc = spawn(
       "powershell",
       [
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${args.command}`,
+        `[Console]::OutputEncoding=[Text.Encoding]::GetEncoding(${cp}); ${args.command}`,
       ],
       {
         cwd: args.workingDir,
@@ -277,8 +364,9 @@ export async function powerShellExecHandler(args: {
       }
     );
 
-    const stdoutDecoder = new TextDecoder("utf-8");
-    const stderrDecoder = new TextDecoder("utf-8");
+    const label = codepageToLabel(cp);
+    const stdoutDecoder = new TextDecoder(label);
+    const stderrDecoder = new TextDecoder(label);
     let stdout = "";
     let stderr = "";
     let timedOut = false;
