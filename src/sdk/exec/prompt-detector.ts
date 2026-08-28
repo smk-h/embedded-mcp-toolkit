@@ -280,17 +280,45 @@ export class UbootDetector {
   }
 
   /**
+   * @brief 匹配 autoboot 提示，返回命中的正则源码与对应中断键
+   *
+   * 业务日志/响应需要标注"最终是哪一条 autoboot prompt 命中"，故连同
+   * 正则源码一起返回；matchAutoboot 是只取中断键的快捷方式。
+   *
+   * @param output 累积的串口输出
+   * @returns 命中条目（正则源码 + 中断键），未命中返回 null
+   */
+  public matchedAutoboot(
+    output: string
+  ): { source: string; interruptKey: "\n" | "\x15" | "\x03" } | null {
+    for (const entry of this.autobootEntries) {
+      if (entry.re.test(output)) {
+        return { source: entry.re.source, interruptKey: entry.interruptKey };
+      }
+    }
+    return null;
+  }
+
+  /**
    * @brief 匹配 autoboot 提示
    * @param output 累积的串口输出
    * @returns 命中的中断键（"\n" / "\x15" / "\x03"），未命中返回 null
    */
   public matchAutoboot(output: string): "\n" | "\x15" | "\x03" | null {
-    for (const entry of this.autobootEntries) {
-      if (entry.re.test(output)) {
-        return entry.interruptKey;
-      }
-    }
-    return null;
+    return this.matchedAutoboot(output)?.interruptKey ?? null;
+  }
+
+  /**
+   * @brief 匹配命令提示符（输出末尾），命中时返回实际生效的正则源码
+   *
+   * 单一事实源：promptRe 是"默认 ∪ 用户配置"合并后的联合正则，业务
+   * 侧可借此看到"命中的到底是哪个（合并后的）模式"。
+   *
+   * @param output 累积的串口输出
+   * @returns 命中返回正则源码，未命中返回 null
+   */
+  public matchedPrompt(output: string): string | null {
+    return this.promptRe.test(output) ? this.promptRe.source : null;
   }
 
   /**
@@ -299,21 +327,58 @@ export class UbootDetector {
    * @returns 命中返回 true
    */
   public matchPrompt(output: string): boolean {
-    return this.promptRe.test(output);
+    return this.matchedPrompt(output) !== null;
   }
 
   /**
-   * @brief 匹配事后验证的环境变量键
+   * @brief 匹配事后验证的环境变量键，返回命中的键名列表
    *
    * printenv 输出形如 "baudrate=115200\nbootdelay=3"，用字面量 key= 匹配，
    * 不走正则——键名是固定标识符，正则转换无收益反增错。
    *
    * @param output printenv 命令的输出
+   * @returns 命中的键名数组（保持 verifyKeys 的配置顺序）
+   */
+  public matchedVerifyKeys(output: string): string[] {
+    const lower = output.toLowerCase();
+    return this.verifyKeys.filter((k) => lower.includes(`${k}=`));
+  }
+
+  /**
+   * @brief 匹配事后验证的环境变量键
+   * @param output printenv 命令的输出
    * @returns 任一验证键命中返回 true
    */
   public matchVerifyKey(output: string): boolean {
-    const lower = output.toLowerCase();
-    return this.verifyKeys.some((k) => lower.includes(`${k}=`));
+    return this.matchedVerifyKeys(output).length > 0;
+  }
+
+  /**
+   * @brief 统计 printenv 输出命中的验证键个数
+   *
+   * 供 serial_uboot_state detect 的主动探测层使用：单键命中可能是 Linux
+   * 侧环境变量的巧合（如调试脚本 export 过 baudrate），≥2 键才足以支撑
+   * "停在 U-Boot"的结论。serial_enter_uboot 验证层仍用 matchVerifyKey
+   * 单键判定——刚重启后的输出不存在 Linux 环境变量，误撞面不同。
+   *
+   * @param output printenv 命令的输出
+   * @returns 命中的验证键个数
+   */
+  public countVerifyKeys(output: string): number {
+    return this.matchedVerifyKeys(output).length;
+  }
+
+  /**
+   * @brief 匹配内核启动特征（用于即判失败），命中时返回实际生效的正则源码
+   *
+   * 主层与验证层都应检查：设备可能在中断失败后越过 uboot 进入 kernel，
+   * 命中即立即返回失败，不等超时。
+   *
+   * @param output 累积的串口输出
+   * @returns 命中返回正则源码，未命中返回 null
+   */
+  public matchedKernelBoot(output: string): string | null {
+    return this.kernelBootRe.test(output) ? this.kernelBootRe.source : null;
   }
 
   /**
@@ -326,7 +391,7 @@ export class UbootDetector {
    * @returns 命中内核启动特征返回 true
    */
   public matchKernelBoot(output: string): boolean {
-    return this.kernelBootRe.test(output);
+    return this.matchedKernelBoot(output) !== null;
   }
 
   /**

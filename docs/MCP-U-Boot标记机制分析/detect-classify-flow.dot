@@ -1,7 +1,7 @@
 digraph detect_flow {
   fontname="Noto Sans CJK SC";
   graph [fontname="Noto Sans CJK SC", bgcolor="#FFFFFF", pad=0.3,
-         nodesep=0.55, ranksep=0.6];
+         nodesep=0.35, ranksep=0.55];
   node  [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
          fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933",
          fontsize=12, penwidth=1.2, margin="0.16,0.09"];
@@ -10,29 +10,48 @@ digraph detect_flow {
 
   start  [label="uboot_state detect\n读缓冲区 read(0)", fillcolor="#DCE9FB"];
 
-  d1 [label="U-Boot 提示符?",     shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
-  d2 [label="login:/password:?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
-  d3 [label="系统 shell 提示符?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
-  d4 [label="内核启动特征?",      shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
-  d5 [label="autoboot 倒计时?",  shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  // ── 被动判定带：高置信锚点，左→右水平链，命中即向下出结论 ──
+  d1 [label="U-Boot 提示符?",      shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d2 [label="login: / Password:?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d4 [label="内核启动特征?",       shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  d5 [label="autoboot 倒计时?",    shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontsize=11];
+  { rank=same;
+    d1 -> d2 [label="否"];
+    d2 -> d4 [label="否"];
+    d4 -> d5 [label="否"];
+  }
 
-  kuboot [label="uboot → set 标记",        fillcolor="#DDF3E4"];
+  kuboot [label="uboot → set 标记", fillcolor="#DDF3E4"];
   kclear [label="system / login → clear 标记", fillcolor="#DDF3E4"];
-  ktrans [label="booting / autoboot → 保持标记", fillcolor="#FFF3D6"];
-  kunk   [label="unknown → 保持标记",       fillcolor="#FFF3D6"];
-  probe  [label="缓冲无结论：发空回车探测\n500ms × 3 轮再判", fillcolor="#FFE8E8"];
+  ktrans [label="booting / autoboot → 保持标记\n（探测护栏：不发探测命令）", fillcolor="#FFF3D6"];
 
   start -> d1;
   d1 -> kuboot [label="matchPrompt 命中"];
-  d1 -> d2     [label="否"];
-  d2 -> kclear [label="尾部锚定 login 正则"];
-  d2 -> d3     [label="否"];
-  d3 -> kclear [label="PromptDetector 命中", tailport=sw];
-  d3 -> d4     [label="否", tailport=e];
+  d2 -> kclear [label="尾部锚定命中"];
   d4 -> ktrans [label="matchKernelBoot"];
-  d4 -> d5     [label="否"];
   d5 -> ktrans [label="matchAutoboot"];
-  d5 -> probe  [label="均未命中"];
-  probe -> d1  [label="重判", style=dashed];
-  probe -> kunk [label="轮次耗尽仍无结论"];
+
+  // ── 主动探测带：蛇形第二排（右→左），dir=back 反写边保持视觉流向 ──
+  p0  [label="drain 排空历史缓冲\n（防残留键假命中）", fillcolor="#FFE8E8", color="#D98A8A"];
+  p1  [label="探测 1：发 printenv\n（verifyTimeoutMs 窗口轮询）", fillcolor="#FFE8E8", color="#D98A8A"];
+  p1d [label="countVerifyKeys\n≥ 2 ?", shape=diamond, fillcolor="#FFE8E8", color="#D98A8A", fontsize=11];
+  p2  [label="探测 2：发 echo $$\n（2s 窗口，整行锚定判据）", fillcolor="#FFE8E8", color="#D98A8A"];
+  p2d [label="整行数字 / 字面 $·$$\n/ Unknown command ?", shape=diamond, fillcolor="#FFE8E8", color="#D98A8A", fontsize=11];
+  { rank=same;
+    p1  -> p0  [dir=back];
+    p1d -> p1  [dir=back];
+    p2  -> p1d [dir=back];
+    p2d -> p2  [dir=back];
+  }
+
+  d5 -> p0 [label="均未命中", minlen=2];
+
+  kprobeU [label="uboot → set 标记\n（printenv ≥2 键 / echo 字面 $）", fillcolor="#DDF3E4"];
+  kprobeS [label="system → clear 标记\n（echo 整行数字 = PID）", fillcolor="#DDF3E4"];
+  kunk    [label="unknown → 保持标记\n（命令在跑 / 非停靠态）", fillcolor="#FFF3D6"];
+
+  p1d -> kprobeU [label="是"];
+  p2d -> kprobeS [label="整行数字"];
+  p2d -> kprobeU [label="字面 $ / Unknown"];
+  p2d -> kunk    [label="无响应"];
 }

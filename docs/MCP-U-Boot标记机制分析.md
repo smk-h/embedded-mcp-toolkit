@@ -147,20 +147,28 @@ export interface UbootYaml {
 
 - `status`：只读标记，无设备 I/O
 - `set` / `clear`：强制覆盖标记，是自动检测失同步时的权威手动入口
-- `detect`（默认）：分类当前真实环境并同步标记，两级策略——被动优先（缓冲区未消费内容的尾部即设备最近输出，命中即零副作用判定），主动兜底（发空回车让设备重绘提示符，500ms × 3 轮轮询）
+- `detect`（默认）：分类当前真实环境并同步标记，两级策略——被动优先（缓冲区尾部的高置信锚点直接结论：U-Boot 提示符 / 登录提示；内核启动 / autoboot 特征报过渡态并兼作探测护栏，全部零副作用），主动兜底（两段式行为探测：先 `printenv`，无键命中再 `echo $$`）
 
-【**注意**】不要在命令可能仍在运行、或等待交互输入（如 Y/N）时 detect——探测回车可能替用户回答了挂起的提示。
+【**注意**】不要在命令可能仍在运行、或等待交互输入（如 Y/N）时 detect——每个探测命令消耗一行输入，可能替用户回答挂起的提示。
 
-### 2. classifyUbootEnv() 分类逻辑
+### 2. classifyUbootEnv() 分类逻辑与主动探测
 
-`classifyUbootEnv()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts#L275) 中定义，判定顺序即优先级：先看输出末尾的「当前停靠点」，末尾无提示符再看「过程特征」，均未命中返回 `null`：
+`classifyUbootEnv()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 中定义，只保留**高置信锚点与探测护栏**，判定顺序即优先级：
 
-1. `matchPrompt()` 命中 → `uboot`
+1. `matchPrompt()` 命中（尾部锚定 `=>`/`U-Boot>`/设备配置）→ `uboot`
 2. 尾部锚定正则 `/(?:login|password):\s*$/i` 命中 → `login`（系统侧未登录）
-3. 通用 `PromptDetector` 命中 → `system`（Linux/Android shell）
-4. `matchKernelBoot()` 命中 → `booting`（过渡态）
-5. `matchAutoboot()` 命中 → `autoboot`（过渡态）
-6. 均未命中 → `null`（unknown，命令可能仍在跑）
+3. `matchKernelBoot()` 命中 → `booting`（过渡态）
+4. `matchAutoboot()` 命中 → `autoboot`（过渡态）
+5. 均未命中 → `null`（进入主动探测）
+
+**为何没有 "system" 形态判据**：通用提示符在 U-Boot 与 Linux 间无形态区分度——定制 U-Boot（`CONFIG_SYS_PROMPT`）大量使用 `#`，Linux root shell 也是 `#`，sh 续行提示符（PS2）又是 `>`。形态判定会系统性误判（`#` 尾部被通用正则判成 system 并错误清标记），故 `system` 结论只能由主动行为探测得出。
+
+**主动探测（行为判据兜底）**：被动判据全未命中时执行，探测前先 `drain()` 排空历史缓冲（`printenv` 键是子串匹配，历史残留的 `baudrate=` 会造成假命中）：
+
+1. **探测 1：`printenv`** —— `countVerifyKeys()`（`verifyEnvKeys` 默认 `baudrate`/`bootdelay`）命中 **≥2 键** → `uboot`。单键可能是 Linux 侧环境变量的巧合，≥2 键才足以定论；窗口复用 `verifyTimeoutMs`（env 输出可能很长）。
+2. **探测 2：`echo $$`** —— printenv 无键时区分 Linux 与 U-Boot：**整行纯数字**（POSIX shell 把 `$$` 展开为 PID）→ `system`；**整行 `$` 或 `$$`**（U-Boot 无 PID 概念，不展开或 `$$` 转义为单个 `$`）或 **Unknown command**（老 U-Boot 无 echo；`echo` 是 POSIX 强制内建，Linux 侧不会 not found）→ `uboot`。判据必须整行锚定（`m` 标志）：串口回显的输入行 `echo $$` 本身含字面 `$$`，子串匹配会把 Linux 误判成 U-Boot。
+
+3/4 级过渡态判据同时是**探测护栏**：autoboot 倒计时期间探测命令的回车会打断引导进入 U-Boot（状态改变事故），booting 期间探测无消费者纯浪费，故必须先于探测判定。
 
 ![detect 分类判定流程](./MCP-U-Boot标记机制分析/img/detect-classify-flow.svg)
 
@@ -227,4 +235,4 @@ U-Boot 态会话执行命令后，对「本次输出 + 前置冲刷残留（`flu
 - **正向证据驱动**：设置靠提示符/环境变量键（阳性），清理解靠内核启动特征（阳性）；负向证据（提示符不在）一律不作为清理依据
 - **失败快速化**：任一层命中内核特征立即失败；配置非法构造期抛错，不进轮询
 - **合并而非覆盖**：用户配置只增不减，保证默认行为始终兜底；字面相等判断避免语义等价的复杂分析
-- **零副作用优先**：detect 先读缓冲区尾部，能不动串口就不动串口；探测回车是兜底手段且有明确警告
+- **零副作用优先**：detect 先读缓冲区尾部锚点，能不动串口就不动串口；形态无区分度的场景（`#` 等）由两段式行为探测兜底（printenv ≥2 键 → echo $$），探测命令消耗一行输入且有明确警告

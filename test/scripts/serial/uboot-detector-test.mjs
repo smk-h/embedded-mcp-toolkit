@@ -83,6 +83,49 @@ check("默认 verifyEnvKeys：匹配 bootdelay=", () => {
 check("默认 verifyEnvKeys：不含等号不命中", () => {
   assert.ok(!d.matchVerifyKey("baudrate"));
 });
+check("countVerifyKeys：计数 ≥2 支撑 uboot 结论（detect 探测层判据）", () => {
+  assert.strictEqual(
+    d.countVerifyKeys("baudrate=115200\nbootdelay=3"),
+    2,
+    "两个默认键都命中"
+  );
+  assert.strictEqual(
+    d.countVerifyKeys("arch=arm\nbaudrate=115200\nbootdelay=2\nbootcmd=bootm"),
+    2,
+    "四行输出只命中两个默认键"
+  );
+  assert.strictEqual(d.countVerifyKeys("bootdelay=3"), 1, "单键不足以定论");
+  assert.strictEqual(
+    d.countVerifyKeys("PATH=/bin\nHOME=/root"),
+    0,
+    "Linux 环境变量无键命中"
+  );
+  assert.strictEqual(d.countVerifyKeys("BAUDRATE=115200"), 1, "大小写不敏感");
+});
+check("matched* 系列：返回命中的具体判据（业务日志标注结论出处）", () => {
+  assert.deepStrictEqual(
+    d.matchedVerifyKeys("baudrate=115200\nbootdelay=3"),
+    ["baudrate", "bootdelay"],
+    "返回命中键名列表"
+  );
+  assert.deepStrictEqual(d.matchedVerifyKeys("PATH=/bin"), [], "无命中返回空数组");
+  assert.strictEqual(
+    d.matchedPrompt("U-Boot 2016.03\n=>"),
+    "(?:=>|U-Boot>)\\s*$",
+    "命中返回实际生效的提示符正则源码"
+  );
+  assert.strictEqual(d.matchedPrompt("=> something after"), null);
+  const ab = d.matchedAutoboot("Hit Ctrl+u to stop autoboot");
+  assert.ok(ab !== null, "命中 autoboot 返回条目");
+  assert.strictEqual(ab.interruptKey, "\x15", "条目携带中断键");
+  assert.ok(/Ctrl\\\+u/.test(ab.source), "条目携带命中的正则源码");
+  assert.strictEqual(d.matchedAutoboot("Press SPACE to abort"), null);
+  assert.ok(
+    /Starting\\s\+kernel/.test(d.matchedKernelBoot("Starting kernel ...")),
+    "命中返回内核启动正则源码"
+  );
+  assert.strictEqual(d.matchedKernelBoot("U-Boot 2016.03"), null);
+});
 check("matchKernelBoot：Starting kernel（AC8）", () => {
   assert.ok(d.matchKernelBoot("Starting kernel ..."));
 });
