@@ -41,16 +41,13 @@ const DEFAULT_SAMPLING_TIMEOUT_MS = 10000;
 /** @brief 普通命令兜底超时时长（毫秒），到点不发 Ctrl+C（异常语义，仅安全阀） */
 const DEFAULT_FALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** @brief 默认轮询间隔（毫秒） */
-const DEFAULT_POLL_INTERVAL_MS = 200;
+/** @brief 轮询间隔（毫秒），内容分析循环的固定节奏 */
+const POLL_INTERVAL_MS = 200;
 
 /** @brief 熔断后等待 SIGINT 生效的时长（毫秒） */
 const INTERRUPT_SETTLE_MS = 300;
 
-/** @brief 默认最小轮询持续时长（毫秒），兼容旧 delay 语义 */
-const DEFAULT_MIN_DELAY_MS = 1000;
-
-/** @brief PTY 回显剥离最大重试次数（每次等待 pollInterval） */
+/** @brief PTY 回显剥离最大重试次数（每次等待一个轮询间隔） */
 const ECHO_STRIP_MAX_RETRIES = 10;
 
 /**
@@ -140,17 +137,13 @@ export interface ExecInput {
   readonly shell: InteractiveShell;
   /** 要执行的命令字符串 */
   readonly command: string;
-  /** 旧 delay 参数（保留向后兼容，作为最小轮询持续时长下限） */
-  readonly delay?: number;
-  /** 旧 clear 参数（保留向后兼容，透传给 shell.write） */
+  /** 缓冲区清空标志（透传给 shell.write） */
   readonly clear?: number;
   /**
    * 最大执行时长（毫秒），覆盖默认超时（spec F6）。
    * 优先级最高，但只覆盖「时长」，超时动作仍按命令常驻性判定（常驻发 Ctrl+C、普通不发）。
    */
-  readonly maxDuration?: number;
-  /** 轮询间隔，默认 200ms */
-  readonly pollInterval?: number;
+  readonly timeoutMs?: number;
   /** 提示符检测器（已根据设备配置初始化） */
   readonly promptDetector: PromptDetector;
   /** 控制字符发送函数（由各通道注入，封装传输层差异） */
@@ -242,11 +235,9 @@ function sleep(ms: number): Promise<void> {
  *      - 超过 effectiveTimeout 仍未现提示符 → 按常驻性分支熔断：
  *        · 常驻命令（采样超时）：发 Ctrl+C 终止，返回 timeoutKind="sampling"（中性）
  *        · 普通命令（兜底超时）：不发 Ctrl+C，返回 timeoutKind="fallback"（异常）
- *   5. 最小轮询持续时长：取 max(effectiveTimeout, minDelay) 作为实际 deadline，
- *      保证短命令也有时间产出输出（兼容旧 delay 语义）
  *
  * 超时时长选择（spec F6）：
- *   - 调用方传 maxDuration 时优先级最高（只覆盖时长，动作仍按常驻性）
+ *   - 调用方传 timeoutMs 时优先级最高（只覆盖时长，动作仍按常驻性）
  *   - 否则：常驻命令用采样时长（默认 10s），普通命令用兜底时长（默认 5min）
  *   - 两者均可被设备配置（execTimeoutConfig）覆盖
  *
@@ -254,9 +245,7 @@ function sleep(ms: number): Promise<void> {
  * @returns 结构化结果，由各通道 handler 格式化为 MCP 响应
  */
 export async function runExec(input: ExecInput): Promise<ExecResult> {
-  const pollInterval: number = input.pollInterval ?? DEFAULT_POLL_INTERVAL_MS;
   const clear: number = input.clear ?? 1;
-  const minDelay: number = input.delay ?? DEFAULT_MIN_DELAY_MS;
   const stripEcho: boolean = input.stripEcho ?? true;
   const markerStyle: MarkerStyle = input.markerStyle ?? "subshell";
 
@@ -272,14 +261,12 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
       DEFAULT_SAMPLING_TIMEOUT_MS)
     : (input.execTimeoutConfig?.fallbackTimeoutMs ??
       DEFAULT_FALLBACK_TIMEOUT_MS);
-  // maxDuration 优先级最高（spec F6），只覆盖时长，超时动作仍按常驻性
-  const effectiveTimeout: number = input.maxDuration ?? defaultTimeout;
+  // timeoutMs 优先级最高（spec F6），只覆盖时长，超时动作仍按常驻性
+  const effectiveTimeout: number = input.timeoutMs ?? defaultTimeout;
+  const deadline: number = effectiveTimeout;
   logger.info(
     `${input.logPrefix} classified: ${verdict.kind} (${verdict.reason}), effectiveTimeout=${effectiveTimeout}ms`
   );
-
-  // 最小持续时长：effectiveTimeout 不能小于 minDelay，否则短命令可能拿不到输出
-  const deadline: number = Math.max(effectiveTimeout, minDelay);
 
   const startTime: number = Date.now();
 
@@ -320,7 +307,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     let retries: number = ECHO_STRIP_MAX_RETRIES;
     while (retries > 0) {
       retries--;
-      await sleep(pollInterval);
+      await sleep(POLL_INTERVAL_MS);
       echoBuffer += input.shell.drain();
       const nlIdx: number = echoBuffer.indexOf("\n");
       if (nlIdx !== -1) {
@@ -351,7 +338,7 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
   // 已完全覆盖其职责；对常驻命令（marker 永不出现）行级扫描反而可能提前截断
   // 采样输出，成为误判源。故只保留 marker + 末尾锚定两级，配合超时熔断兜底。
   while (Date.now() - startTime < deadline) {
-    await sleep(pollInterval);
+    await sleep(POLL_INTERVAL_MS);
     accumulated += input.shell.drain();
 
     // ── 1级：marker 检测（确定性，首选） ──

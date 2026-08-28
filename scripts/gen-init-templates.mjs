@@ -156,9 +156,20 @@ function render(templates) {
     lines.push(`  },`);
   }
 
+  // 文件头与仓库其它源码保持一致的版权横幅格式；Date 取生成日期（自动生成
+  // 文件无固定创建日，随再生成自更新，与下方生成时间戳同一策略）
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const dateStr = `${now.getFullYear()}/${pad(now.getMonth() + 1)}/${pad(now.getDate())}`;
+
   return `/**
- * @file init-templates.ts
- * @brief init 命令的内嵌模板（单文件 exe 模式的模板来源）
+ * =====================================================
+ * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
+ * File name  : init-templates.ts
+ * Author     : sumu
+ * Date       : ${dateStr}
+ * Version    : x.x.x
+ * Description: init 命令的内嵌模板（单文件 exe 模式的模板来源）
  *
  * ⚠️ 本文件由 scripts/gen-init-templates.mjs 自动生成，请勿手改。
  *    修改仓库模板后执行 npm run gen:init-templates 重新生成。
@@ -170,6 +181,7 @@ function render(templates) {
  * instructions 字段（exe 模式不生成其指向的 .claude/CLAUDE.md）。
  * .mcp.json / opencode.json / remote-start-mcp.bat 在写出时会适配 exe
  * 入口（命令替换为 embedded-mcp-toolkit.exe）。
+ * ======================================================
  */
 
 /** 内嵌模板条目：dest 为相对目标目录的写出路径，content 为文件内容 */

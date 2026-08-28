@@ -339,18 +339,18 @@ export async function adbShellReadHandler(args: {
 /**
  * @brief adb_shell_exec 工具配置
  *
- * 向 ADB Shell 会话发送命令并等待输出，合并 write + delay + read 为一次调用。
- * 检测到 shell 提示符立即返回；超过 maxDuration 未返回则自动发 Ctrl+C 熔断。
+ * 向 ADB Shell 会话发送命令并等待输出，合并 write + read 为一次调用，完成检测自动进行。
+ * 检测到 shell 提示符立即返回；超过 timeoutMs 未返回则自动发 Ctrl+C 熔断。
  *
  * @param session_id   由 adb_shell_open 返回的会话 ID
  * @param command      要执行的命令字符串
- * @param delay        最小轮询持续时长（毫秒，默认 1000），兼容旧语义
  * @param clear        缓冲区清空标志（1=清空后收集，0=追加写入，默认 1）
- * @param maxDuration  执行时长覆盖（毫秒）。默认按命令类型分流：常驻命令(ping/logcat/top)10000ms 采样超时(发Ctrl+C)，普通命令 300000ms 兜底超时(不发Ctrl+C)。超时动作仍按常驻性判定
+ * @param timeoutMs  执行时长覆盖（毫秒）。默认按命令类型分流：常驻命令(ping/logcat/top)10000ms 采样超时(发Ctrl+C)，普通命令 300000ms 兜底超时(不发Ctrl+C)。超时动作仍按常驻性判定
  */
 export const adbShellExecConfig: SdkToolConfig = {
   description:
-    "Send a command to an ADB shell session and wait for the output. Combines write + delay + read in one call. " +
+    "Send a command to an ADB shell session and wait for the output. Combines write + read in one call, " +
+    "with automatic completion detection (marker/prompt). " +
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the ADB shell is a single " +
     "channel; concurrent calls will interleave output and corrupt results. " +
     "Always wait for the previous command to finish before sending the next one. " +
@@ -366,17 +366,12 @@ export const adbShellExecConfig: SdkToolConfig = {
         type: "string",
         description: "The command to send to the shell",
       },
-      delay: {
-        type: "number",
-        description:
-          "Minimum polling duration in milliseconds (default: 1000), kept for backward compat",
-      },
       clear: {
         type: "number",
         description:
           "Buffer clear flag: 1 (default) = clear buffer before collecting, 0 = append to buffer",
       },
-      maxDuration: {
+      timeoutMs: {
         type: "number",
         description:
           "Execution cap in ms — ALWAYS estimate and pass a timeout matching the command's expected runtime; " +
@@ -401,21 +396,19 @@ export const adbShellExecConfig: SdkToolConfig = {
  * 常驻命令（logcat/top/ping）超时自动采样（发 Ctrl+C，返回采样超时标注）；
  * 普通命令靠提示符检测返回，仅提示符未匹配时走兜底超时（不发 Ctrl+C，返回兜底超时标注）。
  *
- * @param args  工具参数，包含 session_id、command 和可选的 delay、clear、maxDuration
+ * @param args  工具参数，包含 session_id、command 和可选的 clear、timeoutMs
  * @returns 命令执行后的输出内容（超时时按类型追加采样/兜底超时标注）
  */
 export async function adbShellExecHandler(args: {
   session_id: string;
   command: string;
-  delay?: number;
   clear?: number;
-  maxDuration?: number;
+  timeoutMs?: number;
 }) {
-  const delayVal = args.delay ?? 1000;
   const clearVal = args.clear ?? 1;
-  const maxDurationVal = args.maxDuration;
+  const timeoutMsVal = args.timeoutMs;
   logger.info(
-    `[adb_shell_exec] session_id=${args.session_id} command=${args.command} delay=${delayVal} clear=${clearVal} maxDuration=${maxDurationVal ?? "(default)"}`
+    `[adb_shell_exec] session_id=${args.session_id} command=${args.command} clear=${clearVal} timeoutMs=${timeoutMsVal ?? "(default)"}`
   );
   const shell = adbStore.get(args.session_id);
   if (!shell) {
@@ -439,9 +432,8 @@ export async function adbShellExecHandler(args: {
     const execResult = await runExec({
       shell,
       command: args.command,
-      delay: delayVal,
       clear: clearVal,
-      maxDuration: maxDurationVal,
+      timeoutMs: timeoutMsVal,
       promptDetector,
       sendCtrl,
       logPrefix: "[adb_shell_exec]",

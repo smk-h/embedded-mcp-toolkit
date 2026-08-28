@@ -89,7 +89,7 @@ export class PromptDetector {
    * # 刷进度条，不排除会把进度帧误判为 root 提示符导致 exec 提前返回
    * （2026-08-27 实测：alg 升级真实执行 42s，406ms 即被截胡）。
    *
-   * 不追求覆盖所有自定义 PS1，未命中时由 exec 的 maxDuration 熔断兜底
+   * 不追求覆盖所有自定义 PS1，未命中时由 exec 的 timeoutMs 熔断兜底
    * （见 spec.md「不做的事」第 5 条）。
    */
   static readonly DEFAULT_PATTERN =

@@ -245,7 +245,7 @@ function buildRemoteCommand(
  * @param session_id    由 ssh_shell_open 或 ssh_shell_login 返回的会话 ID
  * @param command       要执行的编译命令（如 "make -j8"、"./build.sh"）
  * @param cwd           远端工作目录（可选，切换到该目录后再执行命令）
- * @param maxWait       最大等待时间（毫秒，默认 600000 即 10 分钟）
+ * @param timeoutMs       最大等待时间（毫秒，默认 600000 即 10 分钟）
  * @param pollInterval  轮询间隔（毫秒，默认 2000）
  * @param classify      是否对输出进行分类采集（默认 true）
  */
@@ -275,7 +275,7 @@ export const sshBuildConfig: SdkToolConfig = {
         description:
           "Working directory on the remote server for the build command",
       },
-      maxWait: {
+      timeoutMs: {
         type: "number",
         description:
           "Maximum wait time in milliseconds (default: 600000 = 10 minutes)",
@@ -314,12 +314,12 @@ export async function sshBuildHandler(args: {
   session_id: string;
   command: string;
   cwd?: string;
-  maxWait?: number;
+  timeoutMs?: number;
   pollInterval?: number;
   classify?: boolean;
 }) {
   // ── 参数默认值 ──
-  const maxWait: number = args.maxWait ?? 600000; // 最大等待 10 分钟
+  const timeoutMs: number = args.timeoutMs ?? 600000; // 最大等待 10 分钟
   const pollInterval: number = args.pollInterval ?? 2000; // 每 2 秒轮询一次
   const doClassify: boolean = args.classify ?? true; // 默认开启输出分类
 
@@ -332,7 +332,7 @@ export async function sshBuildHandler(args: {
       : "";
 
   logger.info(
-    `[ssh_build] session_id=${args.session_id} cwd=${args.cwd ?? "(none)"} command=${args.command} maxWait=${maxWait} pollInterval=${pollInterval} classify=${doClassify}`
+    `[ssh_build] session_id=${args.session_id} cwd=${args.cwd ?? "(none)"} command=${args.command} timeoutMs=${timeoutMs} pollInterval=${pollInterval} classify=${doClassify}`
   );
 
   // ── 步骤 1：查找 SSH 会话 ──
@@ -383,7 +383,7 @@ export async function sshBuildHandler(args: {
     }
 
     // ── 步骤 5：轮询缓冲区检测完成标记 ──
-    const deadline: number = Date.now() + maxWait;
+    const deadline: number = Date.now() + timeoutMs;
     let exitCode: number | null = null;
     const markerRegex = new RegExp(`${BUILD_MARKER}:(\\d+)`);
 
@@ -406,12 +406,12 @@ export async function sshBuildHandler(args: {
     allOutput = sanitize(allOutput);
     const resolvedExitCode = timedOut ? -1 : exitCode!;
     const header = timedOut
-      ? `Build timed out after ${maxWait}ms.`
+      ? `Build timed out after ${timeoutMs}ms.`
       : `${resolvedExitCode === 0 ? "BUILD SUCCESS" : "BUILD FAILED"} (exit code: ${resolvedExitCode})`;
 
     if (timedOut) {
       logger.warn(
-        `[ssh_build:${args.session_id}] timed out after ${maxWait}ms, outputLength=${allOutput.length}`
+        `[ssh_build:${args.session_id}] timed out after ${timeoutMs}ms, outputLength=${allOutput.length}`
       );
     } else {
       logger.info(

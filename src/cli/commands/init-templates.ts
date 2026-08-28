@@ -3,7 +3,7 @@
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : init-templates.ts
  * Author     : sumu
- * Date       : 2026/08/18
+ * Date       : 2026/08/28
  * Version    : x.x.x
  * Description: init 命令的内嵌模板（单文件 exe 模式的模板来源）
  *
@@ -26,7 +26,7 @@ export interface EmbeddedTemplate {
   content: string;
 }
 
-/** 全部内嵌模板（生成时间戳：2026-08-18T13:38:02.810Z） */
+/** 全部内嵌模板（生成时间戳：2026-08-28T01:20:29.161Z） */
 export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
   {
     dest: ".mcp.json",
@@ -264,7 +264,7 @@ export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
       "      # 字段值直接写 JavaScript 正则源码字符串（双引号中反斜杠双写，详见 docs/regex-guide.md）。\n",
       "      # 详细示例见 devices/board-example.yaml。\n",
       "      uboot:\n",
-      "        autobootPrompts: # 含 \"Ctrl+c\" 字样 → 发 \\x03；含 \"Ctrl+u\" → 发 \\x15；其余 → 发换行\n",
+      "        autobootPrompts: # 含 \"Ctrl+u\" 字样的条目 → 发 \\x15；其余 → 发换行\n",
       "          - \"Hit\\\\s+Ctrl\\\\+u\\\\s+to\\\\s+stop\\\\s+autoboot\"\n",
       "          - \"Hit\\\\s+any\\\\s+key\\\\s+to\\\\s+stop\\\\s+autoboot\"\n",
       "        # 命令提示符，命中即判成功（主层）。常见厂商：=> / Marvell>> / hisilicon# / STM32MP> / ZynqMP>\n",
@@ -323,7 +323,7 @@ export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
       "#\n",
       "# exec 提示符检测约定：\n",
       "#   *_shell_exec（adb/ssh/serial）在执行命令后会轮询输出缓冲区，检测 shell 提示符\n",
-      "#   以判断命令是否结束（结束则提前返回，不必等满 maxDuration）。三通道共享同一正则。\n",
+      "#   以判断命令是否结束（结束则提前返回，不必等满 timeoutMs）。三通道共享同一正则。\n",
       "#\n",
       "#   promptPattern —— 设备级提示符正则，与下方 adb/ssh/serial 段平级（同属设备根层）。\n",
       "#   留空（或删除该行）则使用内置默认正则。\n",
@@ -399,7 +399,7 @@ export const EMBEDDED_TEMPLATES: EmbeddedTemplate[] = [
       "  # 不配置整个 uboot 子段时，三组规则回退到内置默认值（行为等价改动前实现）。\n",
       "  uboot:\n",
       "    # autoboot 提示正则数组，按数组顺序匹配；构造时自动带 i 标志（大小写不敏感）。\n",
-      "    # 含 \"Ctrl+c\" 字样的条目 → 发送 \\x03；含 \"Ctrl+u\" → 发送 \\x15；其余 → 发送换行。\n",
+      "    # 含 \"Ctrl+c\" 字样 → 发送 \\x03；含 \"Ctrl+u\" → 发送 \\x15；其余 → 发送换行。\n",
       "    autobootPrompts:\n",
       "      - \"Hit\\\\s+Ctrl\\\\+u\\\\s+to\\\\s+stop\\\\s+autoboot\"\n",
       "      - \"Hit\\\\s+any\\\\s+key\\\\s+to\\\\s+stop\\\\s+autoboot\"\n",
