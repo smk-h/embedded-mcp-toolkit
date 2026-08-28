@@ -12,7 +12,8 @@
  *   无会话状态、可并发、超时强杀整棵进程树——交互式会话模式下
  *   「管道 stdin 发不了 Ctrl+C、命令停不下来只能杀会话」的死结
  *   在此路径上根本不存在。命令与完整结果按调用块落盘（LOG_SAVE 启用，
- *   目录 {LOG_DIR}/local、生命周期与业务日志一致），供客户端事后翻查。
+ *   目录 {LOG_DIR}/local、生命周期与业务日志一致），每行带与业务日志
+ *   同款 `[YYYY-MM-DD HH:mm:ss]` 时间戳前缀，供客户端事后翻查。
  * ======================================================
  */
 import type { SdkToolConfig } from "../../types.js";
@@ -28,6 +29,7 @@ import { spawn, type ChildProcess } from "child_process";
 import {
   beijingFields,
   fileTimestamp,
+  logTimestamp,
 } from "../../utils/timestamp.js";
 import { sanitizeLine } from "../../utils/terminal-sanitizer.js";
 
@@ -113,9 +115,10 @@ function ensureExecLogFile(): void {
  *
  * 会话工具退役后 FileLogger（挂 shell 实例、open 时启用）失去挂靠点，
  * exec 改为自带落盘：每次调用写一个完整事务块，结构对齐业务日志的
- * ┌─/└─ 调用边界风格。appendFileSync 即时落盘（远程管理场景调用频率
- * 低，无性能顾虑），无需管理流生命周期；输出逐行 sanitize 清洗 ANSI
- * 转义，防污染日志文件。
+ * ┌─/└─ 调用边界风格；每一行统一带 `[YYYY-MM-DD HH:mm:ss]` 时间戳前缀
+ * （与业务日志同款 logTimestamp），便于跨文件按时间对齐翻查。
+ * appendFileSync 即时落盘（远程管理场景调用频率低，无性能顾虑），
+ * 无需管理流生命周期；输出逐行 sanitize 清洗 ANSI 转义，防污染日志文件。
  *
  * 落盘失败不阻断工具返回（日志是辅助能力），仅记录业务日志告警。
  *
@@ -133,15 +136,18 @@ function appendExecLog(
 
   const seq = ++psExecSeq;
   try {
-    const f = beijingFields();
+    const ts = logTimestamp();
     const head =
-      `┌─ power_shell_exec #${seq} ${f.y}-${f.m}-${f.d} ${f.hh}:${f.mm}:${f.ss} ────────────────\n` +
-      `$ ${command}\n`;
+      `${ts} ┌─ power_shell_exec #${seq} ────────────────\n` +
+      `${ts} $ ${command}\n`;
     const body = resultText
       .split("\n")
       .map((line) => sanitizeLine(line))
+      .map((line) => (line ? `${ts} ${line}` : ""))
       .join("\n");
-    const tail = `\n(${elapsedMs}ms)\n└─ end #${seq} ────────────────────────────────\n`;
+    const tail =
+      `\n${ts} (${elapsedMs}ms)\n` +
+      `${ts} └─ end #${seq} ────────────────────────────────\n`;
     appendFileSync(execLogFile, head + body + tail, "utf8");
   } catch (err) {
     logger.warn(
@@ -195,7 +201,8 @@ export const powerShellExecConfig: SdkToolConfig = {
     "compose it into the command itself (e.g. 'cd C:\\work; npm test'). " +
     "When LOG_SAVE is enabled, every call (command + full result) is appended to " +
     "{LOG_DIR}/local/<timestamp>.log — same lifecycle as the business log " +
-    "(one file per MCP process, created on first call) — for offline review.",
+    "(one file per MCP process, created on first call), every line prefixed with " +
+    "the same [YYYY-MM-DD HH:mm:ss] timestamp as the business log — for offline review.",
   inputSchema: {
     type: "object",
     properties: {

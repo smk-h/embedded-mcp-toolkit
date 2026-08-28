@@ -90,6 +90,15 @@ function check(name, cond, detail = "") {
     check("log content: command recorded", log.includes("$ Write-Output 'logged line'"), log.slice(0, 200));
     check("log content: result recorded", log.includes("logged line"), log.slice(0, 200));
     check("log content: call block closed", log.includes("└─ end #"), log.slice(0, 200));
+    // 除文件头外，每一行都应带与业务日志同款 [YYYY-MM-DD HH:mm:ss] 时间戳前缀
+    const bodyLines = log.split("\n").filter((l) => !l.startsWith("=~=~=~"));
+    const tsRe = /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] /;
+    const noTs = bodyLines.filter((l) => l.trim() !== "" && !tsRe.test(l));
+    check(
+      "log content: every line has business-log timestamp prefix",
+      noTs.length === 0,
+      `lines without ts: ${noTs.slice(0, 3).join(" | ")}`
+    );
   } finally {
     delete process.env.LOG_SAVE;
     delete process.env.LOG_DIR;
