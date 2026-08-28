@@ -49,7 +49,7 @@ const SERIAL_TOOLS = {
  *   "Entered U-Boot successfully (via verify, interrupt: Ctrl+u).\n\n<output>"
  * 失败形如：
  *   "Failed to enter U-Boot: ..."
- *   "Timeout after 60s waiting for U-Boot."
+ *   "Timeout after 60000ms waiting for U-Boot."
  *
  * @param {string} text enter_uboot 返回的完整文本
  * @returns {{ok: boolean, via?: string, interrupt?: string, output: string}}
@@ -143,7 +143,7 @@ async function main() {
     try {
       enterResult = await client.callTool({
         name: "serial_enter_uboot",
-        arguments: { session_id: sessionId, timeout: 90 },
+        arguments: { session_id: sessionId, timeoutMs: 90000 },
       });
     } catch (err) {
       fail("serial_enter_uboot 调用异常", err.message);

@@ -32,7 +32,8 @@ import { PromptDetector, UbootDetector } from "../../exec/prompt-detector.js";
  * 进入 U-Boot 命令行。支持检测多种 autoboot 提示和 U-Boot 命令提示符。
  *
  * @param session_id  由 serial_open 返回的会话 ID
- * @param timeout     等待 autoboot 提示的总超时时间（秒，默认 60）
+ * @param timeoutMs   等待 autoboot 提示的总超时时间（毫秒，默认 60000 即 60 秒，
+ *                    秒数 × 1000 = 毫秒）
  */
 export const serialEnterUbootConfig: SdkToolConfig = {
   description:
@@ -48,10 +49,12 @@ export const serialEnterUbootConfig: SdkToolConfig = {
         type: "string",
         description: "The session ID returned by serial_open",
       },
-      timeout: {
+      timeoutMs: {
         type: "number",
         description:
-          "Total timeout in seconds to wait for autoboot prompt (default: 60)",
+          "Total timeout in ms to wait for the autoboot prompt after reboot (default: 60000 = 60s). " +
+          "Entering U-Boot requires a full device reboot, so the wait is genuinely long — " +
+          "scale generously and convert seconds to ms by multiplying by 1000 (e.g. 90s = 90000).",
       },
     },
     required: ["session_id"],
@@ -72,16 +75,16 @@ export const serialEnterUbootConfig: SdkToolConfig = {
  *      （via verify）；窗口耗尽或内核启动特征则快速失败
  *   6. 总超时兜底
  *
- * @param args  工具参数，包含 session_id 和可选的 timeout（默认 60 秒）
+ * @param args  工具参数，包含 session_id 和可选的 timeoutMs（默认 60000 毫秒）
  * @return MCP 响应，包含进入 U-Boot 的结果和输出
  */
 export async function serialEnterUbootHandler(args: {
   session_id: string;
-  timeout?: number;
+  timeoutMs?: number;
 }) {
-  const timeoutSec = args.timeout ?? 60;
+  const timeoutMs = args.timeoutMs ?? 60000;
   logger.info(
-    `[serial_enter_uboot] session_id=${args.session_id} timeout=${timeoutSec}s`
+    `[serial_enter_uboot] session_id=${args.session_id} timeoutMs=${timeoutMs}`
   );
 
   const shell = serialStore.get(args.session_id);
@@ -107,7 +110,7 @@ export async function serialEnterUbootHandler(args: {
       `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
     );
 
-    const deadline = Date.now() + timeoutSec * 1000;
+    const deadline = Date.now() + timeoutMs;
     const verifyTimeoutMs = detector.verifyTimeoutMs;
     let allOutput = "";
     let interruptKey = "";
@@ -200,9 +203,9 @@ export async function serialEnterUbootHandler(args: {
     if (remaining) allOutput += remaining;
 
     logger.warn(
-      `[serial_enter_uboot] overall timeout after ${timeoutSec}s, interruptKey=${interruptKey || "(none)"}`
+      `[serial_enter_uboot] overall timeout after ${timeoutMs}ms, interruptKey=${interruptKey || "(none)"}`
     );
-    return `Timeout after ${timeoutSec}s waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`;
+    return `Timeout after ${timeoutMs}ms waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`;
   });
 }
 
