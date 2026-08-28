@@ -6,8 +6,8 @@
  *     1. 普通瞬时命令正常返回，无超时标注
  *     2. 普通长命令（sleep 12）不被 10s 误杀
  *     3. 常驻命令（ping/top）采样超时，默认 10s 发 Ctrl+C
- *     4. maxDuration 覆盖采样时长（动作不变）
- *     5. 兜底超时（普通命令 sleep + 短 maxDuration），不发 Ctrl+C
+ *     4. timeoutMs 覆盖采样时长（动作不变）
+ *     5. 兜底超时（普通命令 sleep + 短 timeoutMs），不发 Ctrl+C
  *     6. tail -f（B 类参数模式）采样超时
  *
  *   解锁：调用 ssh_shell_login 后，设备会发出挑战码写入

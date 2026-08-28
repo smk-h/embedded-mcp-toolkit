@@ -70,20 +70,20 @@ export function splitOutputAndAnnotation(text) {
  * @param {string} sessionId
  * @param {string} command
  * @param {object} [opts] - 可选参数
- * @param {number} [opts.maxDuration] - 可选 maxDuration 覆盖
+ * @param {number} [opts.timeoutMs] - 可选 timeoutMs 覆盖
  * @param {boolean} [opts.silent] - true 时不打印命令与返回（用于探测等内部调用）
  * @returns {Promise<{text: string, elapsed: number, result: object}>} 返回文本、耗时(ms)、原始 result
  */
 export async function callExec(client, tools, sessionId, command, opts) {
-  const maxDuration = opts?.maxDuration;
+  const timeoutMs = opts?.timeoutMs;
   const silent = opts?.silent ?? false;
   const start = Date.now();
   const args = { session_id: sessionId, command };
-  if (maxDuration !== undefined) {
-    args.maxDuration = maxDuration;
+  if (timeoutMs !== undefined) {
+    args.timeoutMs = timeoutMs;
   }
   if (!silent) {
-    console.log(`  ▶ exec: ${command}${maxDuration ? ` (maxDuration=${maxDuration})` : ""}`);
+    console.log(`  ▶ exec: ${command}${timeoutMs ? ` (timeoutMs=${timeoutMs})` : ""}`);
   }
   const result = await client.callTool({ name: tools.exec, arguments: args });
   const elapsed = Date.now() - start;
@@ -370,15 +370,15 @@ async function caseResidentTopAndRecovery(client, tools, sessionId) {
 }
 
 /**
- * 用例 5：maxDuration 覆盖采样时长（ping + 5s）
+ * 用例 5：timeoutMs 覆盖采样时长（ping + 5s）
  *
- * maxDuration 只覆盖时长，动作仍是「采样超时/发 Ctrl+C」。
+ * timeoutMs 只覆盖时长，动作仍是「采样超时/发 Ctrl+C」。
  */
 async function caseMaxDurationOverrideSampling(client, tools, sessionId) {
-  console.log("\n── 用例 5：maxDuration 覆盖采样时长（ping + 5s）──");
+  console.log("\n── 用例 5：timeoutMs 覆盖采样时长（ping + 5s）──");
   if (!requireCmds("用例 5 ping", ["ping"])) return;
   const { text, elapsed } = await callExec(client, tools, sessionId, "ping 127.0.0.1", {
-    maxDuration: 5000,
+    timeoutMs: 5000,
   });
   const { annotation } = splitOutputAndAnnotation(text);
 
@@ -387,26 +387,26 @@ async function caseMaxDurationOverrideSampling(client, tools, sessionId) {
   const inTimeWindow = elapsed >= 3500 && elapsed <= 9000;
 
   if (isSampling && inTimeWindow) {
-    pass(`maxDuration=5s 生效（${elapsed}ms 采样超时，动作仍发 Ctrl+C）`);
+    pass(`timeoutMs=5s 生效（${elapsed}ms 采样超时，动作仍发 Ctrl+C）`);
   } else {
     fail(
-      "maxDuration 应缩短采样时长且动作不变",
+      "timeoutMs 应缩短采样时长且动作不变",
       `elapsed=${elapsed}ms, sampling=${isSampling}, annotation="${annotation}"`
     );
   }
 }
 
 /**
- * 用例 6：兜底超时（普通命令 sleep + 3s maxDuration），不发 Ctrl+C
+ * 用例 6：兜底超时（普通命令 sleep + 3s timeoutMs），不发 Ctrl+C
  *
  * sleep 是普通命令 → 走兜底分支不发 Ctrl+C。标注含「兜底超时」与「未发送中断」。
  * sleep 被截断后仍在后台睡眠，用例末尾发 Ctrl+C 清理。
  */
 async function caseFallbackTimeoutNoInterrupt(client, tools, sessionId) {
-  console.log("\n── 用例 6：兜底超时（普通命令 sleep + 3s maxDuration），不发 Ctrl+C ──");
+  console.log("\n── 用例 6：兜底超时（普通命令 sleep + 3s timeoutMs），不发 Ctrl+C ──");
   if (!requireCmds("用例 6 sleep", ["sleep"])) return;
   const { text, elapsed } = await callExec(client, tools, sessionId, "sleep 30", {
-    maxDuration: 3000,
+    timeoutMs: 3000,
   });
   const { annotation } = splitOutputAndAnnotation(text);
 
@@ -540,16 +540,16 @@ async function caseLogcatSampling(client, tools, sessionId) {
 }
 
 /**
- * 用例 10：maxDuration 拉长采样窗口（ping + 15s，对照 AC8）
+ * 用例 10：timeoutMs 拉长采样窗口（ping + 15s，对照 AC8）
  *
- * AC8 要求：ping + maxDuration=30s 约 30s 返回。这里用 15s 平衡测试时长，
- * 验证 maxDuration 可拉长采样窗口且动作仍是采样超时/发 Ctrl+C。
+ * AC8 要求：ping + timeoutMs=30s 约 30s 返回。这里用 15s 平衡测试时长，
+ * 验证 timeoutMs 可拉长采样窗口且动作仍是采样超时/发 Ctrl+C。
  */
 async function caseMaxDurationExtendSampling(client, tools, sessionId) {
-  console.log("\n── 用例 10：maxDuration 拉长采样窗口（ping + 15s）──");
+  console.log("\n── 用例 10：timeoutMs 拉长采样窗口（ping + 15s）──");
   if (!requireCmds("用例 10 ping", ["ping"])) return;
   const { text, elapsed } = await callExec(client, tools, sessionId, "ping 127.0.0.1", {
-    maxDuration: 15000,
+    timeoutMs: 15000,
   });
   const { annotation } = splitOutputAndAnnotation(text);
 
@@ -559,10 +559,10 @@ async function caseMaxDurationExtendSampling(client, tools, sessionId) {
   const inTimeWindow = elapsed >= 12000 && elapsed <= 20000;
 
   if (isSampling && inTimeWindow) {
-    pass(`maxDuration=15s 生效（${elapsed}ms 采样超时，窗口已拉长）`);
+    pass(`timeoutMs=15s 生效（${elapsed}ms 采样超时，窗口已拉长）`);
   } else {
     fail(
-      "maxDuration=15s 应拉长采样窗口",
+      "timeoutMs=15s 应拉长采样窗口",
       `elapsed=${elapsed}ms, sampling=${isSampling}, annotation="${annotation}"`
     );
   }

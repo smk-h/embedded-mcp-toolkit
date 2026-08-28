@@ -21,7 +21,7 @@
  *     BUILD_CWD   = /home/sumu/workspace/c-learning/sys-cmd-demo/shm
  *     BUILD_CLEAN_CMD = make clean
  *     BUILD_CMD   = make
- *     BUILD_MAXWAIT = 300000（5 分钟）
+ *     BUILD_TIMEOUT_MS = 300000（5 分钟）
  *
  *   运行前置：已 build（out/ 存在）；board-ubuntu SSH 可达
  *   运行：node test/client/ssh/test-ssh-build.mjs
@@ -38,7 +38,7 @@ const cfg = {
   BUILD_CWD: "/home/sumu/workspace/c-learning/sys-cmd-demo/shm",
   BUILD_CLEAN_CMD: "make clean",
   BUILD_CMD: "make",
-  BUILD_MAXWAIT: 300000,
+  BUILD_TIMEOUT_MS: 300000,
 };
 
 /**
@@ -90,15 +90,15 @@ function parseBuildResult(text) {
  * @param {string} sessionId
  * @param {string} command 编译命令
  * @param {object} [opts]
- * @param {number} [opts.maxWait] 覆盖 maxWait
+ * @param {number} [opts.timeoutMs] 覆盖 timeoutMs
  * @param {boolean} [opts.classify] 覆盖 classify
  * @returns {Promise<{parsed: object, text: string, elapsed: number}>}
  */
 async function callBuild(client, sessionId, command, opts = {}) {
-  const maxWait = opts.maxWait ?? cfg.BUILD_MAXWAIT;
+  const timeoutMs = opts.timeoutMs ?? cfg.BUILD_TIMEOUT_MS;
   const classify = opts.classify ?? true;
   console.log(
-    `  ▶ call: ssh_build (cwd=${cfg.BUILD_CWD}, cmd=${command}, maxWait=${maxWait}, classify=${classify})`
+    `  ▶ call: ssh_build (cwd=${cfg.BUILD_CWD}, cmd=${command}, timeoutMs=${timeoutMs}, classify=${classify})`
   );
   const start = Date.now();
   const result = await client.callTool({
@@ -107,7 +107,7 @@ async function callBuild(client, sessionId, command, opts = {}) {
       session_id: sessionId,
       command,
       cwd: cfg.BUILD_CWD,
-      maxWait,
+      timeoutMs,
       classify,
     },
   });
@@ -127,7 +127,7 @@ async function callBuild(client, sessionId, command, opts = {}) {
  */
 function assertBuildStatus(parsed, label) {
   if (parsed.status === "timeout") {
-    fail(label, `maxWait=${cfg.BUILD_MAXWAIT}ms 内未完成编译`);
+    fail(label, `timeoutMs=${cfg.BUILD_TIMEOUT_MS}ms 内未完成编译`);
     return false;
   }
   if (parsed.status === "unknown") {
@@ -157,7 +157,7 @@ async function main() {
   console.log(`  源码目录: ${cfg.BUILD_CWD}`);
   console.log(`  clean   : ${cfg.BUILD_CLEAN_CMD}`);
   console.log(`  编译命令: ${cfg.BUILD_CMD}`);
-  console.log(`  maxWait : ${cfg.BUILD_MAXWAIT}ms`);
+  console.log(`  timeoutMs : ${cfg.BUILD_TIMEOUT_MS}ms`);
 
   // 1. 连接 MCP 服务器
   let client;

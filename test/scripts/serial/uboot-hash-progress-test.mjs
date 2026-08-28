@@ -175,7 +175,7 @@ function execInput(device, promptDetector) {
     command: "alg",
     delay: 50,
     clear: 1,
-    maxDuration: 2000,
+    timeoutMs: 2000,
     pollInterval: 10,
     promptDetector,
     sendCtrl: () => {},
