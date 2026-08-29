@@ -16,6 +16,7 @@
     "clean:log": "rimraf --glob ./.embedded/log/**/*.log",
     "dev": "tsc --watch",
     "start": "node out/cli/index.js",
+    "qemu": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-qemu-virt.ps1",
     "inspector": "npm run inspector:win",
     "inspector:win": "powershell -ExecutionPolicy Bypass -File scripts/run-inspector.ps1",
     "git-sync-force": "node scripts/sync-force.mjs",
