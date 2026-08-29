@@ -141,9 +141,12 @@ PTY 模式下设备会原样回显输入的命令行（如 `rk3568:/ $ echo hi`�
 
 ### 1. 串口会话建立
 
-串口通道由 `SerialShell` 管理，通过 `serialport` 库打开设备文件（如 `COM3`、`/dev/ttyUSB0`）并配置波特率、数据位、停止位、校验位。
+串口通道由 `SerialShell` 管理，支持两种通道形态（由 `port` 字段前缀区分）：
 
-`acquire()` 中打开串口并注册 `data` 事件监听，采用「双写」策略：原始 `Buffer` 喂给二进制旁路回调（供 ZMODEM 等协议消费），同时按原样进入文本态 `OutputBuffer`。串口的 `lineEnding` 默认 `\n`，可由配置覆盖（`\r\n` 等）。
+- **物理串口**：`COM3`、`/dev/ttyUSB0` 等，通过 `serialport` 库打开设备文件并配置波特率、数据位、停止位、校验位；
+- **TCP 串口服务**：`tcp://host:port` 端点（如 QEMU `-serial tcp:127.0.0.1:4444,server,nowait`、串口服务器），经 Node `net.Socket` 字节透明双向转发，物理层参数（波特率等）被忽略，其余会话逻辑与物理串口完全一致。
+
+`acquire()` 中按前缀选择通道（物理串口/TCP），建立连接后统一注册 `data` 事件监听，采用「双写」策略：原始 `Buffer` 喂给二进制旁路回调（供 ZMODEM 等协议消费），同时按原样进入文本态 `OutputBuffer`。串口的 `lineEnding` 默认 `\n`，可由配置覆盖（`\r\n` 等）。
 
 ### 2. 串口 exec 编排
 

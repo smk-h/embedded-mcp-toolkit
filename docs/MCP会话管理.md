@@ -149,7 +149,7 @@ class SessionRegistry {
 2. 在 `withLock` 保护内调用 `shell.close()` 关闭连接（见"并发控制"）
 3. 关闭完成后 `store.remove(session_id)`：删实例表、删互斥锁、从 `registry` 注销
 
-Serial 通道还会在 `remove()` 后清理 `portToSession` 的 COM 口映射，避免端口残留占用。
+Serial 通道还会在 `remove()` 后清理 `portToSession` 的端口映射（COM 口或 TCP 端点），避免端口残留占用。
 
 ### 3. 登录失败清理
 
@@ -325,13 +325,13 @@ Active PowerShell sessions: 1
 | 类型 | 生成方式 | 示例 |
 |------|---------|------|
 | ssh | `` `${host}:${port ?? 22}` `` | `192.168.16.103:22` |
-| serial | `` `${port} @ ${baudRate ?? 115200}` `` | `COM3 @ 115200` |
-| adb | 真实 `serialNo` | `43b1e5fe7b186666` |
+| serial | `` `${port} @ ${baudRate ?? 115200}` ``（TCP 端点仅返回端点本身） | `COM3 @ 115200`、`tcp://127.0.0.1:4444` |
+| adb | 真实 `serialNo` | `43b1e5e666` |
 | powershell | 工作目录 | `E:\project` |
 
 ### 2. 通道特有逻辑
 
-- **Serial 的 COM 口防重**：`portToSession` 映射 `COM 口 → session_id`，`serial_open` 先查该口是否已有活跃会话，避免同一串口被重复打开；`serial_close` 时同步清理该映射。该逻辑作为通道特有逻辑保留在 `serial/shell.ts`，不进入基类。
+- **Serial 的端口防重**：`portToSession` 映射 `端口标识 → session_id`（键为 `serial_open` 的 `port` 参数原值：物理串口是 `COM3` 这类设备路径，TCP 串口服务是 `tcp://127.0.0.1:4444` 这类端点字符串），`serial_open` 先查该端口是否已有活跃会话，避免同一串口/TCP 端点被重复打开；`serial_close` 时同步清理该映射。该逻辑作为通道特有逻辑保留在 `serial/shell.ts`，不进入基类。
 - **ADB 设备名解析**：`adb_shell_open` 连接成功后用真实 `serialNo` 按降级策略解析 `finalDeviceName`，让日志目录与会话表的 `deviceName` 反映真实连接的设备。
 - **deviceName 固定值**：PowerShell 无远程设备概念，`deviceName` 固定为 `"local"`。
 
