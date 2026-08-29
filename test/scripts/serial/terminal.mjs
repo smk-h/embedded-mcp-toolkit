@@ -9,6 +9,13 @@
  *     node test/scripts/serial/terminal.mjs                      # 默认 COM3 @ 115200
  *     node test/scripts/serial/terminal.mjs COM5 921600          # 指定串口 + 波特率
  *     node test/scripts/serial/terminal.mjs COM5 921600 --line   # 指定串口 + 波特率 + 行模式
+ *     node test/scripts/serial/terminal.mjs tcp://127.0.0.1:4444 # QEMU 虚拟板卡（npm run qemu）
+ *
+ *   TCP 虚拟板卡（tcp://host:port）：
+ *     - 连接 QEMU `-serial tcp:...` 的监听端口（或其他串口服务器），
+ *       交互体验与物理串口一致
+ *     - 波特率参数被忽略（TCP 无物理层）
+ *     - 同一端点同一时刻仅允许一个客户端（与真实串口独占一致）
  *
  *   裸转发模式（默认，TTY 下自动启用，行为对齐 MobaXterm）：
  *     - 键盘输入逐字节原样转发：Backspace / Ctrl+C / 回车都交给设备端行编辑处理，
@@ -24,10 +31,14 @@
  * ======================================================
  */
 
+import { Socket } from "net";
+
 import { SerialPort } from "serialport";
 import { createInterface } from "readline";
 import { isatty } from "tty";
 import { fileURLToPath } from "url";
+
+import { parseTcpEndpoint } from "../../../out/sdk/transports/serial.js";
 
 /** @brief 回车/换行/退格等控制字节 */
 const CR = 0x0d;
@@ -37,14 +48,20 @@ const DEL = 0x7f;
 const ETX = 0x03; // Ctrl+C
 const VKILL = 0x15; // Ctrl+U 清行
 
+/** @brief TCP 连接建立超时（毫秒），防止黑洞地址挂死 */
+const TCP_CONNECT_TIMEOUT_MS = 5000;
+
 /** @brief 命令行参数（剔除 --line 选项后） */
 const args = process.argv.slice(2).filter((a) => a !== "--line");
 
-/** @brief 默认串口路径 */
+/** @brief 默认串口路径（支持 tcp://host:port 形式的虚拟板卡端点） */
 const PORT = args[0] ?? "COM3";
 
-/** @brief 默认波特率 */
+/** @brief 默认波特率（TCP 端点忽略） */
 const BAUD_RATE = Number(args[1] ?? 115200);
+
+/** @brief 是否为 TCP 虚拟板卡端点 */
+const IS_TCP = PORT.startsWith("tcp://");
 
 /** @brief 退出命令 */
 const EXIT_CMD = "exit";
@@ -120,6 +137,50 @@ export function startRawForward(port, input, onExitRequest) {
   return listener;
 }
 
+/**
+ * @brief 打开 TCP 串口通道（QEMU `-serial tcp:...` 等虚拟板卡）
+ *
+ * 返回与 SerialPort 同构的读写面（write / on / close / drain），
+ * 让主流程不感知通道差异。close 采用 end + destroy：串口服务端（QEMU）
+ * 收到 FIN 不会回 FIN（串口无挂断语义），仅 end 会停在本端 FIN_WAIT_2。
+ *
+ * @param endpoint tcp://host:port 端点字符串
+ */
+function openTcp(endpoint) {
+  return new Promise((resolve, reject) => {
+    const { host, tcpPort } = parseTcpEndpoint(endpoint);
+    const socket = new Socket();
+    const timer = setTimeout(() => {
+      cleanup();
+      socket.destroy();
+      reject(new Error(`TCP 连接超时: ${host}:${tcpPort}（${TCP_CONNECT_TIMEOUT_MS}ms）`));
+    }, TCP_CONNECT_TIMEOUT_MS);
+    const onError = (err) => {
+      cleanup();
+      socket.destroy();
+      reject(err);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("error", onError);
+    };
+    socket.once("error", onError);
+    socket.connect({ host, port: tcpPort }, () => {
+      cleanup();
+      resolve({
+        write: (data, cb) => socket.write(data, cb),
+        drain: (cb) => cb?.(),
+        on: (event, cb) => socket.on(event, cb),
+        close: (cb) =>
+          socket.end(() => {
+            socket.destroy();
+            cb?.();
+          }),
+      });
+    });
+  });
+}
+
 /** @brief 恢复终端状态（退出后不能把用户的 shell 留在 raw 模式） */
 function restoreTty() {
   if (process.stdin.isTTY && process.stdin.isRaw) process.stdin.setRawMode(false);
@@ -178,22 +239,31 @@ function runLineMode(port) {
 }
 
 async function main() {
-  console.log(`[serial] opening ${PORT} @ ${BAUD_RATE} ...`);
+  if (IS_TCP) {
+    console.log(`[serial] opening TCP endpoint ${PORT} ...`);
+  } else {
+    console.log(`[serial] opening ${PORT} @ ${BAUD_RATE} ...`);
+  }
 
-  // 1. 打开串口
-  const port = new SerialPort({
-    path: PORT,
-    baudRate: BAUD_RATE,
-    autoOpen: false,
-  });
-
-  await new Promise((resolve, reject) => {
-    port.open((err) => {
-      if (err) return reject(err);
-      resolve();
+  // 1. 打开串口（tcp:// 前缀走 TCP 虚拟板卡，否则走物理串口）
+  let port;
+  if (IS_TCP) {
+    port = await openTcp(PORT);
+  } else {
+    port = new SerialPort({
+      path: PORT,
+      baudRate: BAUD_RATE,
+      autoOpen: false,
     });
-  });
-  console.log(`[serial] opened: ${PORT} @ ${BAUD_RATE}`);
+
+    await new Promise((resolve, reject) => {
+      port.open((err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+  console.log(IS_TCP ? `[serial] opened: ${PORT}（TCP 虚拟板卡）` : `[serial] opened: ${PORT} @ ${BAUD_RATE}`);
 
   // 2. 接收串口数据，实时打印（裸转发原样输出，其余模式去 \r 防止 Windows 换行干扰显示）
   port.on("data", (data) => {
