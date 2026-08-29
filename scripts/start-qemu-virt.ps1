@@ -8,6 +8,10 @@
 #                     无启动介质时属预期行为）
 #     - 停止        : 本终端 Ctrl+C，或 telnet monitor 里执行 quit
 #
+#   ⚠ 应急 shell 内不要执行 exit：它的语义是"继续引导"，而本形态没有
+#     根文件系统，会一路走到 switch_root 失败 → kernel panic。内核命令行
+#     已带 panic=10，panic 后 10 秒自动复位重启自愈，但会话内状态会丢失。
+#
 #   用法：
 #     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-qemu-virt.ps1
 #     npm run qemu                                              # package.json 同款
@@ -60,6 +64,6 @@ Write-Host ""
 # AArch32，arm64 内核无法引导（实测 11.1.0 安装包如此）
 & $qemuExe -M virt -cpu cortex-a57 -m $Memory -display none `
     -kernel $Kernel -initrd $Initrd `
-    -append "console=ttyAMA0" `
+    -append "console=ttyAMA0 panic=10" `
     -serial "tcp:127.0.0.1:$SerialPort,server,nowait" `
     -monitor "telnet:127.0.0.1:$MonitorPort,server,nowait"
