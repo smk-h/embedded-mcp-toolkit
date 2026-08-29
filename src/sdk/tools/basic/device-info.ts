@@ -117,7 +117,7 @@ export async function deviceInfoHandler(args: { device?: string }) {
         ? ` Available: ${devices.join(", ")}.`
         : " No devices configured.";
     const errMsg = `Device '${args.device}' not found.${available}`;
-    logger.error(errMsg);
+    logger.error(`[device_info_tool] ${errMsg}`);
     throw new Error(errMsg);
   }
 

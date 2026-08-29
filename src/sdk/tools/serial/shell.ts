@@ -132,7 +132,7 @@ export async function serialOpenHandler(args: {
 
   if (config.port === "none") {
     const msg = `Device '${deviceName}' does not support serial (port is none).`;
-    logger.warn(msg);
+    logger.warn(`[serial_open] ${msg}`);
     return msg;
   }
 

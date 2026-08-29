@@ -200,8 +200,8 @@ export async function startMcpServer() {
     LOG_DIR: process.env.LOG_DIR,
     SAVE2FILE_PATH: process.env.SAVE2FILE_PATH,
   };
-  logger.info(`MCP server starting... cwd: ${process.cwd()}`);
-  logger.info(`MCP server env: ${JSON.stringify(envVars)}`);
+  logger.info(`[mcp] MCP server starting... cwd: ${process.cwd()}`);
+  logger.info(`[mcp] MCP server env: ${JSON.stringify(envVars)}`);
 
   // SSH 会话环境变量（仅当本进程经由 ssh 远程启动时由 sshd 注入）。
   // 字段语义（OpenSSH 约定，空格分隔）：
@@ -221,8 +221,8 @@ export async function startMcpServer() {
     SSH_CLIENT: process.env.SSH_CLIENT ?? "(unset)",
     SSH_TTY: process.env.SSH_TTY ?? "(unset)",
   };
-  logger.info(`MCP server ssh: ${JSON.stringify(sshEnv)}`);
-  logger.info(`MCP server endpoint: ${JSON.stringify(hostEndpoint)}`);
+  logger.info(`[mcp] MCP server ssh: ${JSON.stringify(sshEnv)}`);
+  logger.info(`[mcp] MCP server endpoint: ${JSON.stringify(hostEndpoint)}`);
   registerCleanupHooks();
   const transport = new StdioServerTransport();
   await server.connect(transport);

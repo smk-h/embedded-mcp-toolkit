@@ -101,7 +101,7 @@ export async function serialShellLoginHandler(args: {
 
   if (baseConfig.port === "none") {
     const msg = `Device '${deviceName}' does not support serial (port is none).`;
-    logger.warn(msg);
+    logger.warn(`[serial_shell_login] ${msg}`);
     return msg;
   }
 

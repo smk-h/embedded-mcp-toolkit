@@ -83,7 +83,7 @@ export async function sshShellOpenHandler(args: {
 
   if (config.host === "none") {
     const msg = `Device '${deviceName}' does not support SSH (host is none).`;
-    logger.warn(msg);
+    logger.warn(`[ssh_shell_open] ${msg}`);
     return msg;
   }
 
@@ -603,7 +603,7 @@ export async function sshShellLoginHandler(args: {
 
   if (config.host === "none") {
     const msg = `Device '${deviceName}' does not support SSH (host is none).`;
-    logger.warn(msg);
+    logger.warn(`[ssh_shell_login] ${msg}`);
     return msg;
   }
 

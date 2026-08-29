@@ -365,20 +365,17 @@ export async function sshBuildHandler(args: {
       const nlIdx = echoBuffer.indexOf("\n");
       if (nlIdx !== -1) {
         allOutput = echoBuffer.substring(nlIdx + 1);
-        logger.info(
-          {
-            retries: 10 - echoRetries,
-            echoLine: echoBuffer.substring(0, nlIdx),
-          },
-          "PTY echo stripped successfully"
-        );
+        logger.info("[ssh_build] PTY echo stripped successfully", {
+          retries: 10 - echoRetries,
+          echoLine: echoBuffer.substring(0, nlIdx),
+        });
         break;
       }
     }
     if (echoRetries === 0) {
       logger.warn(
-        { echoBuffer },
-        "Failed to strip PTY echo: no newline found within retry limit"
+        "[ssh_build] Failed to strip PTY echo: no newline found within retry limit",
+        { echoBuffer }
       );
     }
 

@@ -26,6 +26,14 @@ import {
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
 
 /**
+ * @brief 日志来源标识约定（手写于消息开头）
+ *
+ * - 工具名/模块名，小写蛇形：[serial_exec] [config] [zmodem]
+ * - 动态实例用冒号连接：[PshSM:${transport}] [ssh_build:${session_id}]
+ * - 会话日志(FileLogger)记录设备原始字节，不加来源前缀
+ */
+
+/**
  * @brief 日志记录器
  *
  * 提供 info / error / warn 三个方法，

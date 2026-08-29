@@ -86,7 +86,7 @@ export class KeyProvider {
     // 写入挑战信息
     writeFileSync(challengeFilePath, output, "utf-8");
     logger.info(
-      `Challenge written to ${challengeFilePath}, waiting for key in ${keyFilePath} ...`
+      `[key_provider] Challenge written to ${challengeFilePath}, waiting for key in ${keyFilePath} ...`
     );
 
     // 清空可能残留的旧密钥
