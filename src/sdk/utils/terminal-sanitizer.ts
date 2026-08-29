@@ -5,9 +5,23 @@
  * Author     : sumu
  * Date       : 2026/05/26
  * Version    : x.x.x
- * Description: 终端输出清洗 — 控制字符转可读标记
+ * Description: 终端输出清洗 — 控制字符转可读标记或直接删除（KEEP_CONTROL_MARKERS 切换）
  * ======================================================
  */
+
+/**
+ * @brief 控制字符处理策略开关（改行为直接改这里的值后重新编译）
+ *
+ * true  — 保留转移（默认）：ANSI 序列转 [CSI]/[OSC]/[ANSI] 标记，控制字符
+ *         转 [ESC]/[NUL] 等可读标记，随行写入日志文件，保留原始信息且
+ *         文件保持纯文本
+ * false — 直接删除：ANSI 序列整体剥离、控制字符直接移除，日志只留纯文本，
+ *         不带任何标记
+ *
+ * 仅影响日志行清洗 sanitizeLine()；exec 输出清洗 sanitize() 始终走删除
+ * 策略，不受此开关影响。
+ */
+const KEEP_CONTROL_MARKERS = false; // true: 保留转移，false: 直接删除
 
 /**
  * @brief 控制字符 → 可见文本标记映射表
@@ -54,6 +68,19 @@ const CONTROL_CHARS: Record<number, string> = {
 const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g; // eslint-disable-line no-control-regex
 
 /**
+ * @brief ANSI 序列匹配（sanitize/sanitizeLine 共用）
+ *
+ * CSI(Control Sequence Introducer): ESC[ + 参数字节(0x30-0x3F) +
+ * 中间字节(0x20-0x2F) + 终止字节(0x40-0x7E)，参数类须含 ?/>/= 等私有
+ * 标记（如 \x1b[?2004h 括号粘贴模式），否则私有模式序列无法整体匹配，
+ * 只会残留裸 ESC 和文本尾巴
+ * OSC(Operating System Command): ESC]内容BEL，如窗口标题
+ */
+const CSI_RE = /\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g; // eslint-disable-line no-control-regex
+const OSC_RE = /\x1b\][^\x07]*\x07/g; // eslint-disable-line no-control-regex
+const ANSI_RE = /\x1b[^[][0-9;]*[A-Za-z]/g; // eslint-disable-line no-control-regex
+
+/**
  * @brief 清洗串口/SSH 输出中的控制字符，防止终端显示错乱
  *
  * 嵌入式串口终端通常使用 CR+LF（\r\n）换行，且可能包含 ANSI 转义序列。
@@ -77,43 +104,55 @@ export function sanitize(raw: string): string {
       .replace(/\r\n/g, "\n")
       // 孤立的 CR 替换为 LF
       .replace(/\r/g, "\n")
-      // 移除 ANSI CSI 序列：ESC[ + 参数字节(0x30-0x3F) + 中间字节(0x20-0x2F) + 终止字节(0x40-0x7E)
-      // 参数类须含 ?/>/= 等私有标记（如 \x1b[?2004h 括号粘贴模式），
-      // 否则私有模式序列无法整体匹配，只会残留裸 ESC 和文本尾巴
-      .replace(/\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, "") // eslint-disable-line no-control-regex
+      // 移除 ANSI 序列（CSI 含 \x1b[?2004h 等私有模式）
+      .replace(CSI_RE, "")
       // 移除其他 ANSI 序列（如 ESC]...BEL 等）
-      .replace(/\x1b\][^\x07]*\x07/g, "") // eslint-disable-line no-control-regex
-      .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "") // eslint-disable-line no-control-regex
+      .replace(OSC_RE, "")
+      .replace(ANSI_RE, "")
       // 移除除 \n \t 之外的控制字符（ASCII 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F）
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "") // eslint-disable-line no-control-regex
   );
 }
 
 /**
- * @brief 清理日志行中的控制字符
+ * @brief 清理日志行中的控制字符（行为受 KEEP_CONTROL_MARKERS 开关控制）
  *
- * 1. 先剥离 ANSI 转义序列（CSI、OSC 等）
- * 2. 移除回车符 \r
- * 3. 将非打印控制字符替换为可见标记（如 [ESC]、[BEL]）
+ * true（保留转移）:
+ *   1. ANSI 转义序列（CSI、OSC 等）→ [CSI]/[OSC]/[ANSI] 标记
+ *   2. 移除回车符 \r
+ *   3. 非打印控制字符 → 可见标记（如 [ESC]、[BEL]）
+ * false（直接删除）:
+ *   ANSI 转义序列整体剥离，非打印控制字符直接移除，只留纯文本
  *
  * 保留制表符 \t 和换行符 \n。
  * 供 FileLogger 和 Logger 共用。
  *
- * CSI(Control Sequence Introducer): ESC[参数+字母, 如颜色/光标控制
+ * CSI(Control Sequence Introducer): ESC[参数+终止字节, 如颜色/光标控制
  * OSC(Operating System Command): ESC]内容BEL, 如窗口标题
  *
  * @param line 原始日志行（可能含控制字符和 ANSI 序列）
- * @returns    纯文本的日志行，ANSI 序列已剥离，控制字符已转为可见标记
+ * @returns    纯文本的日志行，ANSI 序列与控制字符已按策略处理
  */
 export function sanitizeLine(line: string): string {
+  // 直接删除模式：剥离 ANSI 序列并移除控制字符，日志只留纯文本
+  if (!KEEP_CONTROL_MARKERS) {
+    return line
+      .replace(CSI_RE, "")
+      .replace(OSC_RE, "")
+      .replace(ANSI_RE, "")
+      .replace(/\r/g, "")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ""); // eslint-disable-line no-control-regex
+  }
+
+  // 保留转移模式
   // 例：输入 "\x1b[0;32m[SUCCESS]\x1b[0m 编译完成！\x1b]0;title\x07\r\n"
   const stripped = line
     // "\x1b[?2004h"→"[CSI]"：参数类含 ?/>/= 等私有标记，私有模式序列整体吞掉，不残留裸 ESC
-    .replace(/\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, "[CSI]") // eslint-disable-line no-control-regex
+    .replace(CSI_RE, "[CSI]")
     // "\x1b]0;title\x07"→"[OSC]"
-    .replace(/\x1b\][^\x07]*\x07/g, "[OSC]") // eslint-disable-line no-control-regex
+    .replace(OSC_RE, "[OSC]")
     // 其他 ESC 开头序列 → "[ANSI]"
-    .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "[ANSI]"); // eslint-disable-line no-control-regex
+    .replace(ANSI_RE, "[ANSI]");
 
   // 此时："[CSI][SUCCESS][CSI] 编译完成！[OSC]\r\n"
   const noCr = stripped.replace(/\r/g, "");
