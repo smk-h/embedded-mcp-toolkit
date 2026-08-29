@@ -9,8 +9,10 @@
 #     - 停止        : 本终端 Ctrl+C，或 telnet monitor 里执行 quit
 #
 #   ⚠ 应急 shell 内不要执行 exit：它的语义是"继续引导"，而本形态没有
-#     根文件系统，会一路走到 switch_root 失败 → kernel panic。内核命令行
-#     已带 panic=10，panic 后 10 秒自动复位重启自愈，但会话内状态会丢失。
+#     根文件系统，会一路走到 switch_root 失败 → kernel panic（串口上没有
+#     客户端时 shell 读到 EOF 退出，同样会走到 panic）。panic=10 令 panic
+#     10 秒后发起复位，-no-reboot 把这次复位变成 QEMU 进程退出：不会陷入
+#     无限重启循环，npm 任务结束、串口/monitor 端口随之释放（会话内状态丢失）。
 #
 #   用法：
 #     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start-qemu-virt.ps1
@@ -62,7 +64,11 @@ Write-Host ""
 
 # -cpu cortex-a57 必须显式指定：Windows 官方安装包的 virt 机型默认 CPU 是
 # AArch32，arm64 内核无法引导（实测 11.1.0 安装包如此）
-& $qemuExe -M virt -cpu cortex-a57 -m $Memory -display none `
+#
+# -no-reboot：panic=10 到点发起复位时，QEMU 进程直接退出而不是重启 guest，
+# 避免"无根文件系统 + 串口无客户端 → panic → 复位"陷入无限重启循环；
+# 进程退出即释放 TCP 串口/monitor 端口
+& $qemuExe -M virt -cpu cortex-a57 -m $Memory -display none -no-reboot `
     -kernel $Kernel -initrd $Initrd `
     -append "console=ttyAMA0 panic=10" `
     -serial "tcp:127.0.0.1:$SerialPort,server,nowait" `
