@@ -141,7 +141,7 @@ function loadSplitDevices(
       ) as DeviceConfig;
     } catch (err) {
       logger.warn(
-        `Device config skipped (invalid): ${filePath} — ${
+        `[config] Device config skipped (invalid): ${filePath} — ${
           err instanceof Error ? err.message : err
         }`
       );
@@ -158,11 +158,11 @@ function loadConfig(): RootConfig {
   let layout: LoadedLayout;
   try {
     root = load(readFileSync(absPath, "utf8")) as RootConfig;
-    logger.info(`Config loaded: ${absPath}`);
+    logger.info(`[config] Config loaded: ${absPath}`);
   } catch {
     // 主配置文件不存在或解析失败：沿用原有兜底，返回空配置
     _cached = {};
-    logger.warn(`Config not found or invalid: ${absPath}`);
+    logger.warn(`[config] Config not found or invalid: ${absPath}`);
     return _cached;
   }
 
@@ -174,7 +174,7 @@ function loadConfig(): RootConfig {
   } else {
     layout = "single";
   }
-  logger.info(`Config layout: ${layout}`);
+  logger.info(`[config] Config layout: ${layout}`);
   _cached = root;
   return _cached;
 }
@@ -190,8 +190,13 @@ function loadConfig(): RootConfig {
 export function resolveDeviceName(): string {
   const deviceName = process.env.DEVICE ?? loadConfig().default ?? "board-a";
   logger.info(
-    `Device resolved: ${deviceName} `,
-    `(from ${process.env.DEVICE ? "env" : loadConfig().default ? "config.yaml" : "default value"})`
+    `[config] Device resolved: ${deviceName} (from ${
+      process.env.DEVICE
+        ? "env"
+        : loadConfig().default
+          ? "config.yaml"
+          : "default value"
+    })`
   );
   return deviceName;
 }
