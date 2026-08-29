@@ -69,7 +69,8 @@ export const serialOpenConfig: SdkToolConfig = {
       port: {
         type: "string",
         description:
-          "Serial port path (e.g. COM3, /dev/ttyUSB0). Overrides device config if provided.",
+          "Serial port path (e.g. COM3, /dev/ttyUSB0) or TCP serial endpoint " +
+          "(tcp://host:port, e.g. QEMU with '-serial tcp:...'). Overrides device config if provided.",
       },
       baudRate: {
         type: "number",
@@ -135,7 +136,7 @@ export async function serialOpenHandler(args: {
     return msg;
   }
 
-  // 检查该 COM 口是否已有活跃会话
+  // 检查该端口（COM 口或 TCP 端点）是否已有活跃会话
   const existingId = portToSession.get(config.port);
   if (existingId && serialStore.get(existingId)) {
     return `Serial port ${config.port} is already open as session ${existingId}.`;
@@ -156,13 +157,13 @@ export async function serialOpenHandler(args: {
   serialStore.create(shell, {
     type: "serial",
     deviceName,
-    connectionInfo: `${config.port} @ ${config.baudRate ?? 115200}`,
+    connectionInfo: shell.getConnectionInfo(),
     logPath,
   });
   portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
 
-  return `Session ${sessionId} opened on ${config.port} @ ${config.baudRate ?? 115200}.\n${banner || "(no banner)"}`;
+  return `Session ${sessionId} opened on ${shell.getConnectionInfo()}.\n${banner || "(no banner)"}`;
 }
 
 // ── serial_close ─────────────────────────────────────────────

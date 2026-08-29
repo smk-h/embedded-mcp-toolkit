@@ -58,8 +58,8 @@ interface DeviceConfig {
     keyProvider?: KeyProviderYaml; // SSH 侧密钥提供配置
   };
   serial?: {
-    port?: string; // 串口设备路径（如 COM3、/dev/ttyUSB0）
-    baudRate?: number; // 波特率，默认 115200
+    port?: string; // 串口设备路径（如 COM3、/dev/ttyUSB0）或 TCP 端点（tcp://host:port，如 QEMU -serial tcp:...）
+    baudRate?: number; // 波特率，默认 115200（TCP 端点忽略）
     dataBits?: number; // 数据位（5/6/7/8），默认 8
     stopBits?: number; // 停止位（1/1.5/2），默认 1
     parity?: "none" | "even" | "odd"; // 校验位，默认 none
@@ -314,10 +314,8 @@ export function getExecTimeoutConfig(name?: string): ExecTimeoutConfig {
   return {
     residentCommands: mergedResident.length > 0 ? mergedResident : undefined,
     // 时长：设备级优先于全局
-    samplingTimeoutMs:
-      device.samplingTimeoutMs ?? globalCfg.samplingTimeoutMs,
-    fallbackTimeoutMs:
-      device.fallbackTimeoutMs ?? globalCfg.fallbackTimeoutMs,
+    samplingTimeoutMs: device.samplingTimeoutMs ?? globalCfg.samplingTimeoutMs,
+    fallbackTimeoutMs: device.fallbackTimeoutMs ?? globalCfg.fallbackTimeoutMs,
   };
 }
 

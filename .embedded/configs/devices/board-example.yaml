@@ -70,8 +70,14 @@ ssh:
     timeout: 120000 # 超时（毫秒），默认 2 分钟
 
 serial:
-  port: "COM3" # 串口设备路径（如 COM3、/dev/ttyUSB0）；设为 "none" 表示该设备不启用串口
-  baudRate: 115200 # 波特率，默认 115200
+  port: "COM3" # 串口设备路径（如 COM3、/dev/ttyUSB0）或 TCP 端点（tcp://host:port，如 QEMU -serial tcp:...）；设为 "none" 表示该设备不启用串口
+  baudRate: 115200 # 波特率，默认 115200（TCP 端点忽略此项）
+  # ── TCP 串口服务示例（QEMU 虚拟板卡、串口服务器等）──
+  # port 也可写 tcp://host:port，toolkit 以 TCP 客户端接入串口服务：
+  #   port: "tcp://127.0.0.1:4444"  # 对应 QEMU -serial tcp:127.0.0.1:4444,server,nowait
+  # 此时 baudRate/dataBits/stopBits/parity 均被忽略，会话判定与真实串口完全一致；
+  # 防重键为完整端点字符串。完整可运行的 QEMU virt 示例见本目录 qemu-virt-example.yaml
+  # （本目录 *.yaml 默认被 .gitignore 忽略，属用户本地配置，按需自行复制）。
   loginUsername: "root" # 串口登录用户名
   loginPassword: "root" # 串口登录密码
   keyProvider:

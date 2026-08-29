@@ -9,7 +9,7 @@
  *
  * disposeAllSerialSessions 保持原名，server.ts cleanup 钩子按名引用。
  *
- * 注意：Serial 的 portToSession（COM 口防重）作为通道特有逻辑，
+ * 注意：Serial 的 portToSession（端口防重，键为 COM 口或 TCP 端点）作为通道特有逻辑，
  * 保留在 shell.ts 内，不在此处也不进基类。
  * ======================================================
  */
@@ -22,9 +22,10 @@ import { logger } from "../../shared/logger.js";
 export const serialStore = new ShellSessionStore<SerialShell>("serial");
 
 /**
- * @brief COM 口到 session_id 的映射，用于防止同一串口被重复打开
+ * @brief 端口标识到 session_id 的映射，用于防止同一串口/TCP 端点被重复打开
  *
- * 通道特有逻辑，保留在 serial 目录（不进基类）。
+ * 键为 serial_open 的 port 参数原值：物理串口（COM3 等）或 TCP 端点
+ * （tcp://host:port）。通道特有逻辑，保留在 serial 目录（不进基类）。
  * 由 shell.ts 的 open/close/login 配合 serialStore 使用。
  */
 export const portToSession = new Map<string, string>();

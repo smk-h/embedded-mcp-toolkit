@@ -171,7 +171,7 @@ async function serialShellLoginInner(
     serialStore.create(shell, {
       type: "serial",
       deviceName,
-      connectionInfo: `${baseConfig.port} @ ${baseConfig.baudRate ?? 115200}`,
+      connectionInfo: shell.getConnectionInfo(),
       logPath,
     });
     newSessionId = newId;
@@ -557,7 +557,7 @@ function registerSession(
   serialStore.create(shell, {
     type: "serial",
     deviceName,
-    connectionInfo: `${port} @ ${shell.getPort()}`,
+    connectionInfo: shell.getConnectionInfo(),
     logPath,
   });
   portToSession.set(port, sessionId);
