@@ -101,7 +101,10 @@ export class FileLogger {
   disable(): void {
     if (this.#logStream) {
       if (this.#logLineBuf) {
-        this.#logStream.write(`${logTimestamp()} ${this.#logLineBuf}\n`);
+        // 尾行同样要清洗：缓冲区可能残留带裸 ESC 的不完整行（如 \x1b[?2004h…）
+        this.#logStream.write(
+          `${logTimestamp()} ${sanitizeLine(this.#logLineBuf)}\n`
+        );
         this.#logLineBuf = "";
       }
       this.#logStream.end();

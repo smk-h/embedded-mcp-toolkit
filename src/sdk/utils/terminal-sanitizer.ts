@@ -51,7 +51,7 @@ const CONTROL_CHARS: Record<number, string> = {
 };
 
 /** @brief 匹配所有非打印控制字符（保留 \t 0x09、\n 0x0A） */
-const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g; // eslint-disable-line no-control-regex
 
 /**
  * @brief 清洗串口/SSH 输出中的控制字符，防止终端显示错乱
@@ -77,9 +77,10 @@ export function sanitize(raw: string): string {
       .replace(/\r\n/g, "\n")
       // 孤立的 CR 替换为 LF
       .replace(/\r/g, "\n")
-      // 移除 ANSI CSI 序列：ESC[ + 参数 + 字母
-      // 匹配 \x1b[...m (SGR), \x1b[...A/B/C/D/H/J/K 等光标控制
-      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "") // eslint-disable-line no-control-regex
+      // 移除 ANSI CSI 序列：ESC[ + 参数字节(0x30-0x3F) + 中间字节(0x20-0x2F) + 终止字节(0x40-0x7E)
+      // 参数类须含 ?/>/= 等私有标记（如 \x1b[?2004h 括号粘贴模式），
+      // 否则私有模式序列无法整体匹配，只会残留裸 ESC 和文本尾巴
+      .replace(/\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, "") // eslint-disable-line no-control-regex
       // 移除其他 ANSI 序列（如 ESC]...BEL 等）
       .replace(/\x1b\][^\x07]*\x07/g, "") // eslint-disable-line no-control-regex
       .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "") // eslint-disable-line no-control-regex
@@ -107,9 +108,12 @@ export function sanitize(raw: string): string {
 export function sanitizeLine(line: string): string {
   // 例：输入 "\x1b[0;32m[SUCCESS]\x1b[0m 编译完成！\x1b]0;title\x07\r\n"
   const stripped = line
-    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "[CSI]") // "\x1b[0;32m"→"[CSI]"
-    .replace(/\x1b\][^\x07]*\x07/g, "[OSC]") // "\x1b]0;title\x07"→"[OSC]"
-    .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "[ANSI]"); // 其他 ESC 开头序列 → "[ANSI]"
+    // "\x1b[?2004h"→"[CSI]"：参数类含 ?/>/= 等私有标记，私有模式序列整体吞掉，不残留裸 ESC
+    .replace(/\x1b\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, "[CSI]") // eslint-disable-line no-control-regex
+    // "\x1b]0;title\x07"→"[OSC]"
+    .replace(/\x1b\][^\x07]*\x07/g, "[OSC]") // eslint-disable-line no-control-regex
+    // 其他 ESC 开头序列 → "[ANSI]"
+    .replace(/\x1b[^[][0-9;]*[A-Za-z]/g, "[ANSI]"); // eslint-disable-line no-control-regex
 
   // 此时："[CSI][SUCCESS][CSI] 编译完成！[OSC]\r\n"
   const noCr = stripped.replace(/\r/g, "");
