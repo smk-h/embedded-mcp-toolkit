@@ -36,6 +36,7 @@ exe-out
 # config.yaml
 .embedded/configs/devices/*.yaml
 !.embedded/configs/devices/board-example.yaml
+!.embedded/configs/devices/board-virt.yaml
 
 # ---- SSH 依赖与本地密钥 ----
 .embedded/ssh

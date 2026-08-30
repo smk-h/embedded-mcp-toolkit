@@ -1,0 +1,116 @@
+# ============================================
+# 设备配置示例（模板）
+# 文件名（board-example）即设备名，内容为该设备的完整、自包含配置
+# ============================================
+#
+# 通道启用/禁用约定：
+#   ssh 段    host 设为 "none" → 该设备不启用 SSH（调用 ssh 工具会返回 "does not support SSH"）
+#   serial 段 port 设为 "none" → 该设备不启用串口（调用 serial 工具会返回 "does not support serial"）
+#   adb 段    serialNo 设为 "sn_none" 或留空 → 不绑定具体 ADB 设备，由 adb 自动发现
+# 不需要的通道可直接整段删除，或保留段并把关键字段置 "none"/"sn_none"。
+#
+# exec 提示符检测约定：
+#   *_shell_exec（adb/ssh/serial）在执行命令后会轮询输出缓冲区，检测 shell 提示符
+#   以判断命令是否结束（结束则提前返回，不必等满 timeoutMs）。三通道共享同一正则。
+#
+#   promptPattern —— 设备级提示符正则，与下方 adb/ssh/serial 段平级（同属设备根层）。
+#   留空（或删除该行）则使用内置默认正则。
+#   默认正则已覆盖常见提示符，绝大多数设备无需配置：
+#     - Android :  :/ $ 、 :/ #
+#     - Linux   :  $ 、 # 、 >
+#     - U-Boot  :  => 、 U-Boot>
+#   仅当设备使用自定义 PS1 且默认正则不命中时才需要配置，例如：
+#     - 带 exit code 前缀的 PS1：[130]root@host:~# → 匹配数字+]
+#     - 自定义颜色/日期的 PS1：正则需兼顾 ANSI 转义码或固定前缀
+#   正则按 JavaScript RegExp 语法书写，内部会 new RegExp(promptPattern) 构造。
+#   未命中时由 exec 的超时机制兜底，不会挂死。
+#
+# exec 超时与常驻命令识别约定（三通道共享）：
+#   *_shell_exec 区分「常驻命令」与「普通命令」，采用不同的超时策略：
+#     - 常驻命令（ping/ping6/logcat/top/htop/strace/tcpdump/watch，以及 dmesg -w /
+#       journalctl -f / tail -f 等带 follow 参数的命令）：默认采样超时 10 秒，到点
+#       自动发 Ctrl+C 终止（中性采样语义），返回已收集的输出。
+#     - 普通命令：靠提示符检测在命令结束时返回；仅当提示符正则未匹配上时，走兜底超时
+#       （默认 5 分钟，不发 Ctrl+C），作为安全阀防止命令永久挂起。
+#   识别按命令行「首 token」判断（第一个空白/管道/重定向之前的命令名）。
+#
+#   配置归属：常驻命令扩展名单(residentCommands)、采样超时(samplingTimeoutMs)、
+#   兜底超时(fallbackTimeoutMs)均为「全局配置」，写在 config.yaml 根层的 execTimeout
+#   子段（所有设备共享，无需每台设备重复配置）。
+#   设备级覆盖（可选，与 promptPattern 平级写在本文件根层）：
+#     - samplingTimeoutMs / fallbackTimeoutMs：设备级优先（覆盖全局）
+#     - residentCommands：全局 ∪ 设备级（并集累加）
+#   详见 config.example.yaml 的 execTimeout 段说明。
+#
+# ↓↓↓ 设备级字段，与 adb/ssh/serial 平级（分文件布局写在设备文件根层）↓↓↓
+# promptPattern: "(?:\\[[0-9]+\\][^\r\n]*[#$]\s*)$" # 例：匹配 [130]root@host:~# 这类带退出码前缀的 PS1
+# 设备级 exec 超时覆盖（可选，覆盖/追加全局 execTimeout；一般无需配置，留空用全局值）：
+# samplingTimeoutMs: 5000    # 仅本设备采样超时改为 5 秒
+# fallbackTimeoutMs: 60000   # 仅本设备兜底超时改为 1 分钟
+# residentCommands:           # 追加本设备特有的常驻命令（与全局并集）
+#   - my_board_specific_daemon
+
+adb:
+  serialNo: "sn_none" # ADB 设备序列号，sn_<序列号> 或 sn_none 表示未配置
+
+ssh:
+  host: "127.0.0.1" # SSH 主机地址；设为 "none" 表示该设备不启用 SSH
+  port: 2222 # SSH 端口，默认 22
+  username: "root" # SSH 登录用户名
+  password: "root" # 密码认证（与 privateKey 二选一）
+  keyProvider:
+    mode: "file" # file: 通过文件 IPC 获取密钥; terminal: 终端交互输入
+    # ↓↓↓ 路径基准说明 ↓↓↓
+    # challengeFilePath / keyFilePath 是「相对于运行 MCP server 时的工作目录（cwd）」的路径，
+    # 而非相对于本设备文件或 config.yaml 的位置。
+    # 通常 MCP server 在项目根目录启动，故写 ./ 开头的项目相对路径即可。
+    challengeFilePath: "./.embedded/configs/challenge.txt" # 挑战信息写入文件路径（相对 cwd）
+    keyFilePath: "./.embedded/configs/password_input.txt" # 轮询密钥的文件路径（相对 cwd）
+    pollInterval: 500 # 轮询间隔（毫秒）
+    timeout: 120000 # 超时（毫秒），默认 2 分钟
+
+serial:
+  port: "tcp://127.0.0.1:4444" # 串口设备路径（如 COM3、/dev/ttyUSB0）或 TCP 端点（tcp://host:port，如 QEMU -serial tcp:...）；设为 "none" 表示该设备不启用串口
+  baudRate: 115200 # 波特率，默认 115200（TCP 端点忽略此项）
+  # ── TCP 串口服务示例（QEMU 虚拟板卡、串口服务器等）──
+  # port 也可写 tcp://host:port，toolkit 以 TCP 客户端接入串口服务：
+  #   port: "tcp://127.0.0.1:4444"  # 对应 QEMU -serial tcp:127.0.0.1:4444,server,nowait
+  # 此时 baudRate/dataBits/stopBits/parity 均被忽略，会话判定与真实串口完全一致；
+  # 防重键为完整端点字符串。完整可运行的 QEMU virt 示例见本目录 qemu-virt-example.yaml
+  # （本目录 *.yaml 默认被 .gitignore 忽略，属用户本地配置，按需自行复制）。
+  loginUsername: "root" # 串口登录用户名
+  loginPassword: "root" # 串口登录密码
+  keyProvider:
+    mode: "file"
+    challengeFilePath: "./.embedded/configs/challenge.txt" # 相对 cwd
+    keyFilePath: "./.embedded/configs/password_input.txt" # 相对 cwd
+    pollInterval: 500
+    timeout: 120000
+  # ── uboot 子段（serial_enter_uboot 检测配置，全部可选，留空用默认值）──
+  # 字段值直接写 JavaScript 正则源码字符串，由 new RegExp(source, flags) 构造。
+  # YAML 双引号字符串中反斜杠必须双写：写 "\\s+" 而非 "\s+"（详见 docs/regex-guide.md）。
+  # 也可用单引号字符串避免双写：'\s+' 即字面量 \s+。
+  # 不配置整个 uboot 子段时，三组规则回退到内置默认值（行为等价改动前实现）。
+  uboot:
+    # autoboot 提示正则数组，按数组顺序匹配；构造时自动带 i 标志（大小写不敏感）。
+    # 含 "Ctrl+c" 字样 → 发送 \x03；含 "Ctrl+u" → 发送 \x15；其余 → 发送换行。
+    autobootPrompts:
+      - "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot"
+      - "Hit\\s+any\\s+key\\s+to\\s+stop\\s+autoboot"
+      - "Hit\\s+key\\s+to\\s+stop\\s+autoboot.*CTRL\\+C" # 例：LubanCat 风格，匹配后发送 Ctrl+C
+    # 命令提示符正则，命中即判成功（主层）；构造时无 flags（=> 和 U-Boot> 固定大小写）。
+    # 默认值能认 => 和 U-Boot> 两种结尾。常见厂商提示符（按板子实际选一种）：
+    #   prompt: "=>"                          # 标准 U-Boot（最常见）
+    #   prompt: "Marvell>>"                   # Marvell 平台
+    #   prompt: "hisilicon#"                  # 海思平台
+    #   prompt: "sunxi#"                      # 全志平台
+    #   prompt: "STM32MP>"                    # STM32MP1/MP15
+    #   prompt: "ZynqMP>"                     # Xilinx ZynqMP
+    #   prompt: "rk35xx#"                     # Rockchip U-Boot
+    # 多板子共用配置时，用 (?:A|B) 联合，并用 $ 锚定末尾：
+    #   prompt: "(?:=>|Marvell>>|hisilicon#)\\s*$"
+    prompt: "(?:=>|U-Boot>)\\s*$"
+    # 提示符未命中时，发 printenv 验证的环境变量键（纯字面量，不走正则）。
+    verifyEnvKeys:
+      - "baudrate"
+      - "bootdelay"
