@@ -406,12 +406,16 @@ export const serialExecConfig: SdkToolConfig = {
       timeoutMs: {
         type: "number",
         description:
-          "Execution cap in ms — ALWAYS estimate and pass a timeout matching the command's expected runtime; " +
-          "do not omit it. Suggested ranges: instant info commands (ls/ip addr/cat/echo) 3000-5000; " +
+          "Execution cap in ms — MANDATORY on every call: estimate the command's expected runtime and pass it; " +
+          "omit it ONLY when the user explicitly says not to pass a timeout. Suggested estimates: " +
+          "basic instant commands (ls/pwd/echo/cat small files/ip addr/uname) 3000-5000, never above 10000; " +
+          "output-heavy commands (cat large files, dmesg/journalctl with long output, log dumps) 20000-30000; " +
           "medium tasks (apt install, dd, service restart) 30000-120000; " +
-          "long builds/flashes (make, flash_image) up to 600000; " +
+          "reboot/reset/power-cycle up to 120000; " +
           "streaming/resident commands (ping/logcat/top, or sampling a fixed window of live output) " +
-          "10000 (Ctrl+C auto-sent to stop). If omitted, safety-valve defaults apply: " +
+          "10000 (Ctrl+C auto-sent to stop). Do NOT pass 300000 — the 5-minute value is the internal " +
+          "safety-valve fallback only, not a suggested estimate; if a command genuinely needs longer than " +
+          "~2min, pass an explicit larger value. If omitted, safety-valve defaults apply: " +
           "resident commands 10000ms (sampling, Ctrl+C sent on timeout), " +
           "other commands 300000ms (5min fallback, NO interrupt sent — the command may still be running, " +
           "terminate via send_ctrl if needed). Timeout type is annotated in the returned output.",
@@ -540,6 +544,16 @@ export async function serialExecHandler(args: {
       output =
         (output ? output + "\n" : "") +
         `[兜底超时: 已收集 ${execResult.elapsedMs}ms 输出，未发送中断（命令可能仍在运行），请用 send_ctrl 手动确认/终止]`;
+    }
+
+    // 漏传 timeoutMs 的反向引导：工具描述已强制要求预估传参，仍未传时在结果
+    // 末尾追加提示，促使调用方下次按命令预期耗时显式传参
+    if (timeoutMsVal === undefined) {
+      output =
+        (output ? output + "\n" : "") +
+        "[提示: 本次未传 timeoutMs，按内部兜底默认执行。请预估命令预期耗时并显式传参：" +
+        "瞬时命令 3000-5000ms，大输出（cat 大文件/dmesg）20000-30000ms，" +
+        "reboot/reset ≤120000ms，常驻采样 10000ms]";
     }
 
     return output || "(no output)";

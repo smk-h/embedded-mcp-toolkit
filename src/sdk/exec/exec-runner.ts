@@ -255,13 +255,23 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
     input.execTimeoutConfig?.residentCommands
   );
   const isResident: boolean = verdict.kind === "resident";
-  // 常驻命令用采样时长（默认 10s），普通命令用兜底时长（默认 5min）
+  // 未传 timeoutMs 时的分类默认时长：
+  //   - 常驻命令（top/ping/logcat...）永远等不到结束标记，默认时长就是
+  //     实际采样窗口，跑满到点发 Ctrl+C，短熔断才有意义（默认 10s）
+  //   - 普通命令（ls/printenv...）正常远早于上限就经 marker/提示符返回，
+  //     默认时长只是挂死安全阀，宁长勿短兜住 apt/dd 等合法慢命令（5min）
   const defaultTimeout: number = isResident
     ? (input.execTimeoutConfig?.samplingTimeoutMs ??
       DEFAULT_SAMPLING_TIMEOUT_MS)
     : (input.execTimeoutConfig?.fallbackTimeoutMs ??
       DEFAULT_FALLBACK_TIMEOUT_MS);
-  // timeoutMs 优先级最高（spec F6），只覆盖时长，超时动作仍按常驻性
+  // effectiveTimeout 的四种组合（时长与动作是正交维度，spec F6）：
+  //   常驻 + 未传 → 10s；常驻 + 传入 → 传入值（"超时"即真实采样时长，
+  //     传 30s 就真采 30s 再发 Ctrl+C）
+  //   普通 + 未传 → 5min；普通 + 传入 → 传入值（只决定挂死时多快交还
+  //     控制权，不影响命令正常跑完的速度）
+  // 动作只看常驻性、不随 timeoutMs 变：常驻到点发 Ctrl+C，普通到点不发
+  // （防误杀在跑的命令，reboot 传大时长拉长等待正是依赖这一点）
   const effectiveTimeout: number = input.timeoutMs ?? defaultTimeout;
   const deadline: number = effectiveTimeout;
   logger.info(
