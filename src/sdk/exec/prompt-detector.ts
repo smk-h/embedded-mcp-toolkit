@@ -128,14 +128,29 @@ export class PromptDetector {
 }
 
 /**
+ * @brief autoboot 中断键类型
+ *
+ * matchAutoboot 命中后应发送的按键，由命中条目的正则源码字样决定：
+ *   - "\n"  ：any key / a key / key 等通用措辞（换行是最通用的打断键）
+ *   - "\x15"：Ctrl+u 字样
+ *   - "\x03"：Ctrl+c 字样
+ *   - " "   ：SPACE 字样（空格是这类提示的指定打断键）
+ */
+export type UbootInterruptKey = "\n" | "\x15" | "\x03" | " ";
+
+/**
  * @brief U-Boot 检测默认值
  *
- * 未配置 serial.uboot 时，UbootDetector 回退到这些默认值。
- * 保持与改动前硬编码实现完全等价的行为（spec F4 / AC1）：
+ * 未配置 serial.uboot 时，UbootDetector 回退到这些默认值（spec F4 / AC1）：
  *   - 所有字段值都是 JavaScript 正则源码字符串，由 new RegExp(source, flags) 构造
- *   - prompt 等价原 /(?:=>|U-Boot>)\s*$/（无 i 标志，=> 和 U-Boot> 是固定大小写）
- *   - autobootPrompts 等价原 AUTOBOOT_*_RE（构造时带 i 标志）
- *   - 数组顺序遵循"先 Ctrl+u 再 any key"——数组顺序即优先级
+ *   - prompt 等价 /(?:=>|U-Boot>)\s*$/（无 i 标志，=> 和 U-Boot> 是固定大小写）
+ *   - autobootPrompts 构造时带 i 标志，数组顺序即优先级
+ *
+ * autobootPrompts 覆盖主流 U-Boot 的四类措辞（2026-08-31 扩充：此前只认
+ * "Hit ... to stop autoboot" 两种，Press/interrupt/abort/SPACE/Ctrl+c 等
+ * 厂商变体全部落空，enter_uboot 只能烧满总超时才失败）：
+ *   - 动词兼容 stop/interrupt/abort，句首兼容 Hit/Press
+ *   - Ctrl+u 优先（发 \x15），其余按 Ctrl+c（\x03）/ SPACE（空格）/ 换行
  *
  * 正则字符串里反斜杠双写（\\s、\\+）是 TypeScript 源码字面量的转义要求，
  * 与用户在 YAML 配置里的写法一致（详见 docs/regex-guide.md）。
@@ -143,7 +158,9 @@ export class PromptDetector {
 const UbootDefaults = {
   autobootPrompts: [
     "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot", // Ctrl+u 优先（发 \x15）
-    "Hit\\s+any\\s+key\\s+to\\s+stop\\s+autoboot", // 次之（发换行）
+    "(?:Hit|Press)\\s+Ctrl\\+c\\s+to\\s+(?:stop|interrupt|abort)\\s+autoboot", // 发 \x03
+    "(?:Hit|Press)\\s+(?:any\\s+key|a\\s+key|key)\\s+to\\s+(?:stop|interrupt|abort)\\s+autoboot", // 发换行
+    "(?:Hit|Press)\\s+SPACE\\s+to\\s+(?:stop|interrupt|abort)\\s+autoboot", // 发空格
   ],
   prompt: "(?:=>|U-Boot>)\\s*$", // 等价原硬编码 UBOOT_PROMPT_RE
   verifyEnvKeys: ["baudrate", "bootdelay"],
@@ -155,7 +172,7 @@ const UbootDefaults = {
  * @brief U-Boot 状态检测器
  *
  * 持有从配置解析来的四类正则与验证键，提供四个 match 方法：
- *   - matchAutoboot   识别 autoboot 提示，返回对应中断键（"\n" / "\x15" / "\x03"）
+ *   - matchAutoboot   识别 autoboot 提示，返回对应中断键（"\n" / "\x15" / "\x03" / " "）
  *   - matchPrompt     识别命令提示符（默认锚输出末尾）
  *   - matchVerifyKey  识别 printenv 输出里的环境变量键（字面量匹配 key=）
  *   - matchKernelBoot 识别内核启动特征（用于即判失败）
@@ -171,13 +188,13 @@ const UbootDefaults = {
  *
  * 中断键选择规则：遍历 autobootPrompts 数组，命中含 "Ctrl+c" 字样
  * （大小写不敏感）的条目返回 \x03，含 "Ctrl+u" 字样的条目返回 \x15，
- * 其余返回换行。数组顺序即优先级。
+ * 含 "SPACE" 字样的条目返回空格，其余返回换行。数组顺序即优先级。
  */
 export class UbootDetector {
   /** @brief autoboot 正则与对应中断键的映射，按配置数组顺序 */
   private readonly autobootEntries: ReadonlyArray<{
     re: RegExp;
-    interruptKey: "\n" | "\x15" | "\x03";
+    interruptKey: UbootInterruptKey;
   }>;
 
   /** @brief 命令提示符正则 */
@@ -216,13 +233,15 @@ export class UbootDetector {
       // autoboot 文案可能大小写不一，带 i 标志（与原 AUTOBOOT_*_RE 一致）
       re: new RegExp(s, "i"),
       // 含 "Ctrl+c" 字样的条目对应发 \x03，含 "Ctrl+u" 的对应发 \x15，
-      // 其余发换行（注意 s 是正则源码字符串，"+" 会被用户转义成 "\+"，
-      // 故匹配时兼容两种写法）
+      // 含 "SPACE" 的对应发空格，其余发换行（注意 s 是正则源码字符串，
+      // "+" 会被用户转义成 "\+"，故匹配时兼容两种写法）
       interruptKey: /ctrl\\?\+c/i.test(s)
         ? "\x03"
         : /ctrl\\?\+u/i.test(s)
           ? "\x15"
-          : "\n",
+          : /\bspace\b/i.test(s)
+            ? " "
+            : "\n",
     }));
 
     // prompt：用户值与默认字面相等则跳过合并（避免 (?:A|A) 冗余）；否则联合
@@ -290,7 +309,7 @@ export class UbootDetector {
    */
   public matchedAutoboot(
     output: string
-  ): { source: string; interruptKey: "\n" | "\x15" | "\x03" } | null {
+  ): { source: string; interruptKey: UbootInterruptKey } | null {
     for (const entry of this.autobootEntries) {
       if (entry.re.test(output)) {
         return { source: entry.re.source, interruptKey: entry.interruptKey };
@@ -302,9 +321,9 @@ export class UbootDetector {
   /**
    * @brief 匹配 autoboot 提示
    * @param output 累积的串口输出
-   * @returns 命中的中断键（"\n" / "\x15" / "\x03"），未命中返回 null
+   * @returns 命中的中断键（"\n" / "\x15" / "\x03" / " "），未命中返回 null
    */
-  public matchAutoboot(output: string): "\n" | "\x15" | "\x03" | null {
+  public matchAutoboot(output: string): UbootInterruptKey | null {
     return this.matchedAutoboot(output)?.interruptKey ?? null;
   }
 
@@ -423,7 +442,7 @@ export class UbootDetector {
     autobootPatterns: ReadonlyArray<{
       source: string;
       flags: string;
-      interruptKey: "\n" | "\x15" | "\x03";
+      interruptKey: UbootInterruptKey;
     }>;
     prompt: { source: string; flags: string };
     verifyKeys: readonly string[];

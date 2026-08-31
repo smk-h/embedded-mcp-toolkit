@@ -7,7 +7,7 @@
  * Version    : x.x.x
  * Description: Serial U-Boot 编排 SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  *
- *   serial_enter_uboot：重启打断 autoboot 进入 U-Boot 命令行（两层检测）。
+ *   serial_enter_uboot：重启打断 autoboot 进入 U-Boot 命令行（预检 + 两层检测）。
  *   serial_uboot_state：会话 U-Boot 标记的查询 / 检测 / 强制设置。
  *   标记决定 serial_exec 在该会话的 marker 包装风格（plain / subshell）。
  * ======================================================
@@ -23,8 +23,33 @@ import {
   clearUbootSession,
 } from "./sessions.js";
 import { UbootDetector } from "../../exec/prompt-detector.js";
+import type { UbootInterruptKey } from "../../exec/prompt-detector.js";
 
 // ── serial_enter_uboot ────────────────────────────────────────
+
+/**
+ * @brief autoboot 中断键的人读标签（日志与 MCP 响应共用）
+ *
+ * \x03 → Ctrl+C、\x15 → Ctrl+u、空格 → SPACE、换行 → Enter；
+ * 空串（尚未发送过中断键）→ (none)。
+ */
+function interruptKeyLabel(key: UbootInterruptKey | ""): string {
+  if (key === "") return "(none)";
+  if (key === "\x03") return "Ctrl+C";
+  if (key === "\x15") return "Ctrl+u";
+  if (key === " ") return "SPACE";
+  return "Enter";
+}
+
+/**
+ * @brief 预检响应里的缓冲区尾部截取
+ *
+ * 预检时缓冲区可能积压了大量历史输出（read(0) 不清缓冲），全量塞进
+ * MCP 响应既刷屏又浪费上下文，只取尾部 4000 字符——尾部即最新停靠证据。
+ */
+function bufferTail(text: string): string {
+  return text.slice(-4000).trim();
+}
 /**
  * @brief serial_enter_uboot 工具配置
  *
@@ -39,9 +64,17 @@ export const serialEnterUbootConfig: SdkToolConfig = {
   description:
     "Enter U-Boot by rebooting the device and stopping autoboot. " +
     "Detection rules (autoboot prompts, command prompt, verify env keys) " +
-    "are configurable via device config serial.uboot; falls back to built-in defaults. " +
-    "Two-layer strategy: prompt match first; if not matched within a short window, " +
-    "sends 'printenv' and verifies U-Boot env keys. Fails fast on kernel boot or verify timeout.",
+    "are configurable via device config serial.uboot; built-in defaults already cover " +
+    "Hit/Press x any-key/key/SPACE/Ctrl+C/Ctrl+u x stop/interrupt/abort wordings. " +
+    "Pre-check before rebooting (buffer tail, zero side effects): already at a U-Boot " +
+    "prompt returns success without rebooting; at a login/Password prompt fails fast " +
+    "('reboot' would be consumed as input). " +
+    "Kernel-boot detection and prompt matching are not gated on an interrupt: devices " +
+    "that boot straight to the kernel fail fast, devices that disable autoboot " +
+    "(bootdelay=-2) succeed fast, instead of waiting out the full timeout. " +
+    "After the interrupt, two-layer strategy: prompt match first; if not matched within " +
+    "a short window, sends 'printenv' and verifies U-Boot env keys. " +
+    "Fails fast on kernel boot or verify timeout.",
   inputSchema: {
     type: "object",
     properties: {
@@ -64,16 +97,22 @@ export const serialEnterUbootConfig: SdkToolConfig = {
 /**
  * @brief serial_enter_uboot 处理函数
  *
- * 流程（两层检测，对应 spec F3）：
+ * 流程（预检 + 两层检测，对应 spec F3）：
  *   1. 从设备配置读 serial.uboot 构造 UbootDetector；配置非法立即返回错误
- *   2. 发送 reboot 重启设备
- *   3. 阶段 1 — autoboot 提示检测：命中配置的 autobootPrompts 即发对应中断键
- *      （含 "Ctrl+c" 字样发 \x03，含 "Ctrl+u" 字样发 \x15，否则发换行）
- *   4. 阶段 2 — 主层：中断后窗口内，命中命令提示符即成功返回（via prompt）；
- *      内核启动特征则立即失败
- *   5. 阶段 3 — 验证层：主层窗口耗尽，发 printenv 一次，命中环境变量键即成功
- *      （via verify）；窗口耗尽或内核启动特征则快速失败
- *   6. 总超时兜底
+ *   2. 预检（发 reboot 前）：缓冲区尾部锚点分类——已在 U-Boot 直接置标记
+ *      返回成功（免重启）；停在 login:/Password: 直接失败（reboot 会被
+ *      当作凭据吞掉）。booting/autoboot/无结论不拦，按原流程走
+ *   3. 发送 reboot 重启设备；之后每 500ms 用 drain() 增量累积输出
+ *   4. 全程判定（不设"已中断"门槛）：内核启动特征命中立即失败；命令提示
+ *      符命中即成功（via prompt）——autoboot 文案未命中的设备（bootdelay=0
+ *      秒过 / bootdelay=-2 禁用 autoboot / 厂商文案变体）也能快速出结论，
+ *      不再干等到总超时
+ *   5. 阶段 1 — autoboot 提示检测（未中断时）：命中即发对应中断键
+ *      （Ctrl+c 字样发 \x03，Ctrl+u 字样发 \x15，SPACE 字样发空格，否则发换行）
+ *   6. 阶段 2 — 验证层：已中断且主层窗口耗尽仍未命中提示符时，发 printenv
+ *      一次，命中环境变量键即成功（via verify）；窗口耗尽或内核启动特征
+ *      则快速失败
+ *   7. 总超时兜底
  *
  * @param args  工具参数，包含 session_id 和可选的 timeoutMs（默认 60000 毫秒）
  * @return MCP 响应，包含进入 U-Boot 的结果和输出
@@ -104,7 +143,33 @@ export async function serialEnterUbootHandler(args: {
       return `Failed to build U-Boot detector (config error): ${msg}`;
     }
 
-    // 发送 reboot 重启设备
+    // ── 预检：发 reboot 前先看缓冲区尾部形态（零串口副作用）──
+    // 盲发 reboot 有两类注定空等到总超时的场景，用尾部锚点直接拦下：
+    //   - 已在 U-Boot：多数 U-Boot 的重启命令是 reset 而非 reboot，发了
+    //     只会得到 Unknown command，设备停在 => 提示符——目标态已达成，
+    //     直接置标记返回成功，省掉一整轮重启
+    //   - 停在 login:/Password:：reboot 会被当作用户名/口令吞掉，设备根
+    //     本不重启——直接失败并提示先登录
+    // 其余形态（booting/autoboot 过渡态、无结论的 shell 停靠）不拦：
+    // reboot 对它们仍然有效或无法更快判定，按原流程走
+    const preCheck = classifyUbootEnv(detector, shell.read(0));
+    if (preCheck?.kind === "uboot") {
+      markUbootSession(args.session_id);
+      const tail = bufferTail(shell.read(1));
+      logger.info(
+        `[serial_enter_uboot] pre-check: already in U-Boot (${preCheck.evidence}), skip reboot`
+      );
+      return `Already in U-Boot (via pre-check, ${preCheck.evidence}) — no reboot needed.\n\n${tail || "(no buffered output)"}`;
+    }
+    if (preCheck?.kind === "login") {
+      const tail = bufferTail(shell.read(1));
+      logger.warn(
+        "[serial_enter_uboot] pre-check: at login/Password prompt, 'reboot' would be consumed as input — abort"
+      );
+      return `Failed to enter U-Boot: session is at a login/Password prompt — 'reboot' would be consumed as input, not executed.\nLogin first (serial_shell_login), then retry.\n\n${tail || "(no buffered output)"}`;
+    }
+
+    // 发送 reboot 重启设备（write 清空缓冲并开始收集，判定材料从零累积）
     shell.write("reboot", 1);
     logger.info(
       `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
@@ -113,38 +178,22 @@ export async function serialEnterUbootHandler(args: {
     const deadline = Date.now() + timeoutMs;
     const verifyTimeoutMs = detector.verifyTimeoutMs;
     let allOutput = "";
-    let interruptKey = "";
+    let interruptKey: UbootInterruptKey | "" = "";
     let interruptedAt = 0; // 中断键发送时刻，用于主层窗口计时
     let verifyStarted = false; // 是否已发 printenv（保证只发一次）
     let verifyStartedAt = 0; // printenv 发送时刻，用于验证层窗口计时
 
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 500));
-      const chunk = shell.read(0); // 不清空缓冲区，持续累积
+      // drain() 增量取走本步新到的数据且继续收集。不能用 read(0) + 累加：
+      // read(0) 每次返回缓冲区全量，轮询后期 allOutput 会按轮次平方级
+      // 膨胀，每 500ms 都要在巨型字符串上重跑全部检测正则
+      const chunk = shell.drain();
       if (chunk) allOutput += chunk;
 
-      // 阶段 1：autoboot 提示检测（未中断时）
-      if (!interruptKey) {
-        const key = detector.matchAutoboot(allOutput);
-        if (key) {
-          shell.sendRaw(key, 1);
-          interruptKey =
-            key === "\x03" ? "Ctrl+C" : key === "\x15" ? "Ctrl+u" : "Enter";
-          interruptedAt = Date.now();
-          allOutput = ""; // 重置，接下来只收集 U-Boot 阶段输出
-          logger.info(
-            `[serial_enter_uboot] detected autoboot prompt, sent ${interruptKey}`
-          );
-          continue;
-        }
-      }
-
-      // 已中断后才进入主层 / 验证层判定
-      if (!interruptKey) {
-        continue;
-      }
-
-      // 内核启动特征 → 立即失败（不论主层还是验证层）
+      // 内核启动特征 → 立即失败。判定刻意不设"已中断"门槛：autoboot 文案
+      // 未命中（bootdelay=0 秒过、厂商变体不匹配）时中断键永远发不出去，
+      // 门槛会把"已越过 U-Boot"这一确定性失败证据挡到总超时才放行
       if (detector.matchKernelBoot(allOutput)) {
         logger.warn(
           "[serial_enter_uboot] kernel boot detected, abort (device bypassed U-Boot)"
@@ -152,18 +201,43 @@ export async function serialEnterUbootHandler(args: {
         return `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
       }
 
-      // 阶段 2：主层 — 提示符命中即成功
+      // 阶段 2：主层 — 命令提示符命中即成功（不设"已中断"门槛）：
+      //   - 已中断：打断 autoboot 后的正常停靠
+      //   - 未中断：bootdelay=-2 类设备禁用 autoboot，重启后直接停在提示
+      //     符，没有可打断的窗口——提示符本身就是成功证据
       if (!verifyStarted && detector.matchPrompt(allOutput)) {
         const finalOutput = shell.read(1);
         if (finalOutput) allOutput += finalOutput;
-        logger.info(
-          `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
-        );
         markUbootSession(args.session_id);
-        return `Entered U-Boot successfully (via prompt, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`;
+        if (interruptKey) {
+          logger.info(
+            `[serial_enter_uboot] prompt matched (via prompt), entered U-Boot`
+          );
+          return `Entered U-Boot successfully (via prompt, interrupt: ${interruptKeyLabel(interruptKey)}).\n\n${allOutput.trim()}`;
+        }
+        logger.info(
+          "[serial_enter_uboot] prompt matched without interrupt (autoboot disabled?), entered U-Boot"
+        );
+        return `Entered U-Boot successfully (via prompt, no interrupt needed).\n\n${allOutput.trim()}`;
       }
 
-      // 主层窗口耗尽 → 触发验证层（仅一次）
+      // 阶段 1：autoboot 提示检测（未中断时），命中即发对应中断键
+      if (!interruptKey) {
+        const key = detector.matchAutoboot(allOutput);
+        if (key) {
+          shell.sendRaw(key, 1);
+          interruptKey = key;
+          interruptedAt = Date.now();
+          allOutput = ""; // sendRaw(key,1) 已清缓冲，累积输出同步归零
+          logger.info(
+            `[serial_enter_uboot] detected autoboot prompt, sent ${interruptKeyLabel(key)}`
+          );
+        }
+        continue; // 中断效果从下一轮轮询开始观察
+      }
+
+      // 主层窗口耗尽 → 触发验证层（仅一次）。执行到此处必然已中断
+      // （未中断在上面 continue 了），interruptedAt 一定有效
       if (!verifyStarted && Date.now() - interruptedAt >= verifyTimeoutMs) {
         shell.sendRaw("\nprintenv\n", 1);
         verifyStarted = true;
@@ -181,10 +255,10 @@ export async function serialEnterUbootHandler(args: {
           const finalOutput = shell.read(1);
           if (finalOutput) allOutput += finalOutput;
           logger.info(
-            "[serial_enter_uboot] verify key matched (via verify), entered U-Boot"
+            `[serial_enter_uboot] verify key matched (via verify), entered U-Boot`
           );
           markUbootSession(args.session_id);
-          return `Entered U-Boot successfully (via verify, interrupt: ${interruptKey}).\n\n${allOutput.trim()}`;
+          return `Entered U-Boot successfully (via verify, interrupt: ${interruptKeyLabel(interruptKey)}).\n\n${allOutput.trim()}`;
         }
 
         // 验证层窗口耗尽 → 快速失败
@@ -202,7 +276,7 @@ export async function serialEnterUbootHandler(args: {
     if (remaining) allOutput += remaining;
 
     logger.warn(
-      `[serial_enter_uboot] overall timeout after ${timeoutMs}ms, interruptKey=${interruptKey || "(none)"}`
+      `[serial_enter_uboot] overall timeout after ${timeoutMs}ms, interruptKey=${interruptKeyLabel(interruptKey)}`
     );
     return `Timeout after ${timeoutMs}ms waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`;
   });

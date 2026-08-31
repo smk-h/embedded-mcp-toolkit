@@ -64,9 +64,18 @@ function parseEnterUbootResult(text) {
     return {
       ok: true,
       via: successMatch[1], // "prompt" | "verify"
-      interrupt: successMatch[2], // "Enter" | "Ctrl+u"
+      interrupt: successMatch[2], // "Enter" | "Ctrl+u" | "Ctrl+C" | "SPACE"
       output,
     };
+  }
+  // 两条免中断快速路径（2026-08-31 新增）：预检发现已在 U-Boot（免重启）、
+  // 重启后直接停靠提示符（bootdelay=-2 类设备，无需打断 autoboot）
+  const fastMatch = text.match(
+    /(?:Already in U-Boot|Entered U-Boot successfully) \(via (pre-check|prompt)/
+  );
+  if (fastMatch) {
+    const output = text.split("\n\n").slice(1).join("\n\n").trim();
+    return { ok: true, via: fastMatch[1], interrupt: "(none)", output };
   }
   return { ok: false, output: text.trim() };
 }
@@ -162,9 +171,11 @@ async function main() {
       );
       inUboot = true;
     } else {
-      // 区分三类失败：内核已启动 / 验证层超时 / 总超时，便于排查
+      // 区分四类失败：登录提示 / 内核已启动 / 验证层超时 / 总超时，便于排查
       let detail = parsed.output;
-      if (/kernel boot detected/.test(enterText)) {
+      if (/login\/Password prompt/.test(enterText)) {
+        detail = "会话停在 login/Password 提示，reboot 会被当作凭据吞掉；请先 serial_shell_login 登录再重试";
+      } else if (/kernel boot detected/.test(enterText)) {
         detail = "内核已启动，设备绕过了 U-Boot（倒计时未被中断），请调大 bootdelay 或提前中断";
       } else if (/no U-Boot env key matched/.test(enterText)) {
         detail = "验证层超时，命令提示符与环境变量键均未命中，请检查 serial.uboot.prompt 配置";

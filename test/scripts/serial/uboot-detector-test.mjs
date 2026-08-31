@@ -6,7 +6,7 @@
  *   覆盖 spec AC1/AC2/AC3/AC4/AC6/AC9 的可离线部分。
  *
  *   本脚本验证 UbootDetector 在"配置值直接是正则源码字符串 + 与默认值合并"模式下的行为：
- *     - 默认值与原硬编码 AUTOBOOT_*_RE / UBOOT_PROMPT_RE 等价
+ *     - 默认值覆盖主流 autoboot 措辞（prompt 等价原硬编码 /(?:=>|U-Boot>)\s*$/）
  *     - 配置值与默认值合并（非替换），用户配置补充默认而非覆盖
  *     - 无效正则构造抛错
  *
@@ -61,6 +61,30 @@ check("默认 autoboot：Ctrl+u 优先于 any key（数组顺序）", () => {
 });
 check("默认 autoboot：未命中返回 null", () => {
   assert.strictEqual(d.matchAutoboot("Press SPACE to abort"), null);
+});
+check("默认 autoboot：Press 句首变体命中（2026-08-31 扩充）", () => {
+  assert.strictEqual(d.matchAutoboot("Press any key to stop autoboot: 2"), "\n");
+});
+check("默认 autoboot：interrupt/abort 动词变体命中", () => {
+  assert.strictEqual(d.matchAutoboot("Hit any key to interrupt autoboot"), "\n");
+  assert.strictEqual(d.matchAutoboot("Press any key to abort autoboot"), "\n");
+});
+check("默认 autoboot：裸 key 措辞命中（Rockchip 风格文案）", () => {
+  assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot('CTRL+C')"), "\n");
+});
+check("默认 autoboot：SPACE 措辞发空格", () => {
+  assert.strictEqual(
+    d.matchAutoboot("Press SPACE to stop autoboot in 3 seconds"),
+    " "
+  );
+  assert.strictEqual(d.matchAutoboot("Hit SPACE to abort autoboot"), " ");
+});
+check("默认 autoboot：Ctrl+c 措辞发 \\x03", () => {
+  assert.strictEqual(d.matchAutoboot("Press Ctrl+c to interrupt autoboot"), "\x03");
+});
+check("默认 autoboot：无 autoboot 字样的文案仍不命中", () => {
+  assert.strictEqual(d.matchAutoboot("Press SPACE to abort"), null);
+  assert.strictEqual(d.matchAutoboot("Hit any key to continue"), null);
 });
 check("默认 prompt：匹配 => 结尾（AC1 兼容）", () => {
   assert.ok(d.matchPrompt("U-Boot 2016.03\n=>"));
@@ -146,7 +170,9 @@ const d2 = new UbootDetector({
   verifyEnvKeys: ["mykey"],
 });
 check("自定义 autoboot 命中（AC2）", () => {
-  assert.strictEqual(d2.matchAutoboot("Press SPACE to abort in 3s"), "\n");
+  // 含 SPACE 字样的条目发空格（2026-08-31 起按提示文案选键，
+  // 旧版对其余条目一律发换行）
+  assert.strictEqual(d2.matchAutoboot("Press SPACE to abort in 3s"), " ");
 });
 check("默认 autoboot 仍命中（合并保留默认）", () => {
   // 合并语义：用户配置补充默认，默认的 Hit any key / Hit Ctrl+u 仍能识别
