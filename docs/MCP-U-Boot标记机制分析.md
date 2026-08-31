@@ -31,9 +31,9 @@ export interface UbootYaml {
 
 ### 2. 默认值与合并规则
 
-内置默认值 `UbootDefaults` 定义在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L143)，未配置时行为与改动前的硬编码实现完全等价：
+内置默认值 `UbootDefaults` 定义在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L143)：
 
-- `autobootPrompts`：`Hit Ctrl+u to stop autoboot`（发 `\x15`）在前、`Hit any key to stop autoboot`（发换行）在后
+- `autobootPrompts`（2026-08-31 扩充，按优先级）：`Hit Ctrl+u to stop autoboot`（发 `\x15`）→ `Hit/Press Ctrl+c … stop/interrupt/abort autoboot`（发 `\x03`）→ `Hit/Press any key|a key|key …`（发换行）→ `Hit/Press SPACE …`（发空格）。覆盖 Hit/Press × any key/SPACE/Ctrl 类按键 × stop/interrupt/abort 动词的主流组合
 - `prompt`：`(?:=>|U-Boot>)\s*$`，无 flags（`=>` 和 `U-Boot>` 固定大小写）
 - `verifyEnvKeys`：`baudrate`、`bootdelay`
 - `verifyTimeoutMs`：4000；`kernelBootPattern`：`Starting kernel|Linux version`（带 `i` 标志，不可配置）
@@ -66,7 +66,7 @@ export interface UbootYaml {
 
 【**返回值**】
 
-- 命中返回中断键：`\x03`（条目含 `Ctrl+c` 字样）、`\x15`（含 `Ctrl+u` 字样）、`\n`（其余，如 any key）
+- 命中返回中断键：`\x03`（条目含 `Ctrl+c` 字样）、`\x15`（含 `Ctrl+u` 字样）、空格（含 `SPACE` 字样）、`\n`（其余，如 any key）
 - 未命中返回 `null`
 
 ### 2. matchPrompt()
@@ -117,17 +117,18 @@ export interface UbootYaml {
 
 - 命中内核启动特征返回 `true`，否则返回 `false`
 
-## 四、 标记的设置：serial_enter_uboot 两层检测
+## 四、 标记的设置：serial_enter_uboot 预检 + 两层检测
 
-`serialEnterUbootHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts#L78) 中实现，整体是一个 500ms 步进的轮询循环，内分三个阶段，总超时兜底。
+`serialEnterUbootHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts#L78) 中实现：发 `reboot` 前先做一次零副作用的被动预检，之后是 500ms 步进的轮询循环，内分三个阶段，总超时兜底。
 
-### 1. 三阶段流程
+### 1. 预检 + 三阶段流程
 
 1. 构造 `UbootDetector`：配置非法立即返回错误，不进入轮询
-2. 发送 `reboot`，进入 500ms 轮询；`read(0)` 不清空缓冲区，持续累积
-3. 阶段 1（未中断时）：`matchAutoboot()` 命中即发对应中断键，记录 `interruptedAt` 并清空累积输出，之后只收集 U-Boot 阶段输出
-4. 阶段 2（主层）：中断后 4s 窗口内，先查内核启动特征（命中即失败），再查 `matchPrompt()`，命中即 `markUbootSession()` 成功返回（via prompt）
-5. 阶段 3（验证层）：主层窗口耗尽仍未命中提示符时，发一次 `\nprintenv\n`（仅发一次），4s 窗口内 `matchVerifyKey()` 命中即成功（via verify）；窗口耗尽或命中内核特征则快速失败，建议重试
+2. **预检（发 reboot 前，2026-08-31 新增）**：对缓冲区尾部做 `classifyUbootEnv()` 分类——已在 U-Boot（尾部 `=>`/`U-Boot>`）直接置标记返回成功，免掉一整轮重启（多数 U-Boot 的重启命令是 `reset`，盲发 `reboot` 只会得到 Unknown command 后空等）；停在 `login:`/`Password:` 直接失败并提示先登录（`reboot` 会被当作凭据吞掉，设备根本不重启）
+3. 发送 `reboot`，进入 500ms 轮询；`drain()` 增量取走新到数据做累积
+4. **全程判定（不设「已中断」门槛，2026-08-31 调整）**：每轮先查内核启动特征（命中即失败），再查 `matchPrompt()`（命中即成功，via prompt）——`bootdelay=0` 秒过、`bootdelay=-2` 禁用 autoboot、厂商文案变体等 autoboot 提示未命中的设备也能快速出结论，不再干等到总超时
+5. 阶段 1（未中断时）：`matchAutoboot()` 命中即发对应中断键（Ctrl+c 字样发 `\x03`、Ctrl+u 字样发 `\x15`、SPACE 字样发空格、其余发换行），记录 `interruptedAt` 并清空累积输出，之后只收集 U-Boot 阶段输出
+6. 阶段 3（验证层）：已中断且主层窗口（4s）耗尽仍未命中提示符时，发一次 `\nprintenv\n`（仅发一次），4s 窗口内 `matchVerifyKey()` 命中即成功（via verify）；窗口耗尽或命中内核特征则快速失败，建议重试
 
 ### 2. 时序图
 
@@ -135,9 +136,10 @@ export interface UbootYaml {
 
 ### 3. 设计要点
 
-- **双窗口计时**：主层与验证层各自以 `interruptedAt` / `verifyStartedAt` 为起点的 4s 窗口，与总超时 `timeoutMs`（毫秒，默认 60000 即 60s，秒数 × 1000 换算）相互独立
-- **输出分段**：命中 autoboot 与发出 `printenv` 两处都会清空累积输出，保证各阶段判定材料干净，不被上一阶段的引导日志污染
-- **失败快速化**：内核启动特征是「越过 U-Boot」的确定性证据，任一层命中立即返回，不傻等超时
+- **预检拦截**：盲发 reboot 有两类注定空等总超时的场景（已在 U-Boot、停在登录提示），缓冲区尾部锚点在发送前直接拦下，要么免重启成功、要么快速失败给出登录指引
+- **双窗口计时**：主层与验证层各自以 `interruptedAt` / `verifyStartedAt` 为起点的 4s 窗口，与总超时 `timeoutMs`（毫秒，默认 60000 即 60s，秒数 × 1000 换算）相互独立；验证层只在已中断场景触发——未中断时设备可能仍在重启路上（DDR 训练/慢关机），盲发 printenv 会落在未就绪的控制台上被丢弃，白耗窗口制造假失败
+- **输出分段与增量累积**：命中 autoboot 与发出 `printenv` 两处都会清空累积输出，保证各阶段判定材料干净，不被上一阶段的引导日志污染；轮询用 `drain()` 增量取数，`read(0)` 返回全量再累加会随轮次平方级膨胀
+- **失败快速化**：内核启动特征是「越过 U-Boot」的确定性证据，判定不设「已中断」门槛——autoboot 文案未命中导致中断键发不出去时，同样立即返回失败，不傻等超时；配置非法构造期抛错，不进轮询
 
 ## 五、 标记的查询与同步：serial_uboot_state
 

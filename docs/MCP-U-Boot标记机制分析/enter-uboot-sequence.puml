@@ -16,7 +16,7 @@ skinparam NoteBackgroundColor #FFFBE6
 skinparam NoteBorderColor #E0B400
 skinparam NoteFontColor #5C4A00
 
-title serial_enter_uboot 两层检测时序
+title serial_enter_uboot 预检 + 两层检测时序
 
 participant "调用方\n(AI/脚本)" as C
 participant "enter_uboot\nhandler" as H
@@ -32,34 +32,38 @@ alt 配置含非法正则
   H --> C : 配置错误，快速返回
 end
 
+== 预检：发 reboot 前的被动形态判定（零串口副作用）==
+
+H -> H : classifyUbootEnv(\nshell.read(0) 缓冲区尾部)
+alt 已在 U-Boot（尾部 =>/U-Boot>）
+  H -> H : markUbootSession()
+  H --> C : 成功（via pre-check）\n免重启直接返回
+else 停在 login:/Password:
+  H --> C : 失败：先登录再重试\n（reboot 会被当作凭据吞掉）
+else booting/autoboot/无结论
+  note right of H : 不拦，按原流程发 reboot
+end
+
 == 阶段一：重启并打断 autoboot ==
 
 H -> S : write("reboot")
 loop 每 500ms 轮询，直到总超时
-  H -> S : read(0) 累积输出
+  H -> H : drain() 增量累积输出
+  H -> D : matchKernelBoot(allOutput)
+  D --> H : 命中 → 立即失败\n（不设"已中断"门槛）
+  H -> D : matchPrompt(allOutput)
+  D --> H : 命中 → markUbootSession()\n成功（via prompt）
+  note right of H : 未中断也可命中：\nbootdelay=-2 类设备\n重启后直接停靠提示符
   H -> D : matchAutoboot(allOutput)
-  D --> H : 命中 → 中断键\n(\\x03 / \\x15 / \\n)
+  D --> H : 命中 → 中断键\n(\\x03 / \\x15 / 空格 / \\n)
   H -> S : sendRaw(中断键)
   note right of H : 记录 interruptedAt\n清空输出缓冲
 end
 
-== 阶段二：主层 — 提示符判定 ==
+== 阶段二：验证层 — 环境变量键判定 ==
 
-loop 主层窗口（verifyTimeoutMs=4s）
-  H -> D : matchKernelBoot(output)
-  D --> H : 命中 → 立即失败
-  H -> D : matchPrompt(output)
-  alt 提示符命中
-    H -> H : markUbootSession()
-    H --> C : 成功（via prompt）
-  else 窗口耗尽未命中
-    H -> S : sendRaw("\\nprintenv\\n")
-    note right of H : 仅发一次\n记录 verifyStartedAt
-  end
-end
-
-== 阶段三：验证层 — 环境变量键判定 ==
-
+H -> S : 主层窗口(4s)耗尽仍未命中提示符\nsendRaw("\\nprintenv\\n")
+note right of H : 仅已中断场景触发（仅发一次）\n记录 verifyStartedAt
 loop 验证层窗口（4s）
   H -> D : matchVerifyKey(output)\n（字面量 key= 匹配）
   alt 命中 baudrate=/bootdelay=
@@ -72,7 +76,7 @@ end
 
 note over C, S
   全程兜底：总超时 timeoutMs 毫秒（默认 60000 = 60 秒）；
-  任一层命中内核启动特征立即判失败（设备越过 U-Boot）
+  任一轮命中内核启动特征立即判失败（设备越过 U-Boot）
 end note
 
 @enduml

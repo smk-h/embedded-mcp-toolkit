@@ -195,7 +195,9 @@ autobootPrompts:
 
 ### 1. autoboot 提示（autobootPrompts 字段）
 
-U-Boot 启动时会打印倒计时提示，让用户按键中断自动引导。两种常见文案。
+U-Boot 启动时会打印倒计时提示，让用户按键中断自动引导。
+
+【**先看默认值**】2026-08-31 起，内置默认值已覆盖主流措辞的组合：句首 `Hit`/`Press` × 按键 `any key`/`a key`/`key`/`SPACE`/`Ctrl+c` × 动词 `stop`/`interrupt`/`abort` × `autoboot`。多数板卡**无需配置**即可被识别；只有文案真正不同的板卡（如缺 `autoboot` 字样）才需要按下例自定义。
 
 #### 1.1 标准 any key 文案
 
@@ -234,7 +236,9 @@ Hit\s+any\s+key\s+to\s+stop\s+autoboot
 不匹配：
 
 - `Hitankey to stop autoboot` ❌（前几个词之间无空白）
-- `Press SPACE to stop autoboot` ❌（文案完全不同）
+- `Press SPACE to abort` ❌（缺 `autoboot` 字样，信息不足，需自定义）
+
+注意 `Press SPACE to stop autoboot` 现在默认即命中（✅），命中 SPACE 措辞的条目自动发送空格。
 
 #### 1.2 厂商 Ctrl+u 文案
 
@@ -268,11 +272,11 @@ Hit\s+Ctrl\+u\s+to\s+stop\s+autoboot
 - `Hit Ctrl+u to stop autoboot` ✅
 - `Hit Ctrl+u  to  stop autoboot` ✅（多空格）
 
-【**注意**】本项目中，`autobootPrompts` 数组里**含 `Ctrl+c` 字样**的条目（正则源码里是 `Ctrl\+c`）会自动发送 `\x03`（即 Ctrl+C）；**含 `Ctrl+u` 字样**的条目（`Ctrl\+u`）自动发送 `\x15`（即 Ctrl+u）；其余条目发送换行。这是约定行为，无需额外配置。
+【**注意**】本项目中，`autobootPrompts` 数组里**含 `Ctrl+c` 字样**的条目（正则源码里是 `Ctrl\+c`）会自动发送 `\x03`（即 Ctrl+C）；**含 `Ctrl+u` 字样**的条目（`Ctrl\+u`）自动发送 `\x15`（即 Ctrl+u）；**含 `SPACE` 字样**的条目自动发送空格；其余条目发送换行。这是约定行为，无需额外配置。
 
 #### 1.3 Rockchip 厂商 Ctrl+C 文案
 
-Rockchip 定制 U-Boot 的提示是 `Hit key to stop autoboot('CTRL+C')`，中断键为 Ctrl+C（`\x03`）。正则写法：
+Rockchip 定制 U-Boot 的提示是 `Hit key to stop autoboot('CTRL+C')`，中断键为 Ctrl+C（`\x03`）。默认值能命中该文案（裸 `key` 措辞）但发送的是换行；若板卡严格只认 Ctrl+C，按下例自定义。正则写法：
 
 ```yaml
 autobootPrompts:
