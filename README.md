@@ -14,34 +14,9 @@
 - **KeyProvider 密钥管理**：支持文件 IPC 和终端交互两种方式，自动处理 PSH 动态口令生成的密钥
 - **进程退出自动清理**：客户端断开或进程终止时自动释放所有串口、SSH、ADB 连接
 
-### 2. 为什么需要它？
+> 项目背景与价值定位（为什么需要它、与 PowerShell 直调的能力分界与场景选型）详见 [docs/项目简介.md](./docs/项目简介.md)。
 
-Claude Code / ZCode / OpenCode 已经能直接通过 PowerShell 调 `adb`、`ssh`、串口命令了，这个 MCP 还有意义吗？
-
-**回答**：对一次性命令（`adb install`、`ssh host "uname -a"`、扫端口、本地脚本）没有意义，PowerShell 直调更直接。它的价值在**有状态的长连接交互**和**领域流程固化**这两块——这正是 PowerShell 直调很难做到的，也是两千多行会话/shell/登录代码的着力点。
-
-#### 2.1 核心价值：把有状态的长连接，抽象成无状态的 LLM 工具调用
-
-| 能力 | PowerShell 直调 | 本 MCP | 说明 |
-|------|:---:|:---:|------|
-| 持久会话（多串口/SSH 并发） | ❌ | ✅ | session 持久化，跨多次工具调用保持连接、PTY、登录态、工作目录 |
-| 流式输出切片 | ❌ | ✅ | 提示符检测（`$`/`#`/`=>` 等）+ 超时熔断，把"连续流"切成"LLM 的离散返回" |
-| 常驻命令取采样（logcat/top） | ❌ | ✅ | exec 自动检测提示符，超时发 Ctrl+C，`[timed-out: ...]` 是中性采样而非报错 |
-| PSH 一键解锁登录 | ❌ | ✅ | `serial_shell_login` / `ssh_shell_login` 把 challenge → 动态口令 → 解锁整套流程固化进一个工具 |
-
-#### 2.2 怎么选：什么场景用 MCP，什么场景用 PowerShell
-
-| 场景 | 推荐 | 理由 |
-|------|------|------|
-| `adb install`、`adb push`、`ssh host "一次性命令"` | PowerShell 直调 | 无状态，MCP 多此一举 |
-| 扫端口、看网卡、跑本地脚本 | PowerShell 直调 | Host 本身就有 shell 能力 |
-| 串口交互、U-Boot、需要保持 PTY 的长会话 | **MCP 工具** | 有状态长连接 + 流切片，PowerShell 难搞 |
-| 嵌入式板卡 PSH 登录、多板卡并发调试 | **MCP 工具** | 领域流程固化 + 多会话管理 |
-| `logcat` / `top` 取采样 | **MCP 的 exec** | 解决"LLM 不知道命令何时结束"的真问题 |
-
-> 反过来：如果用 PowerShell 自己维护一个长 session、处理 PTY 缓冲、识别提示符、走 PSH 登录流程——本质上就是在重新实现这个 MCP。这正是它存在的理由。
-
-### 3. 架构关系
+### 2. 架构关系
 
 OpenCode、MCP Client 与 MCP Server 的三层关系如下：
 
@@ -73,9 +48,9 @@ OpenCode、MCP Client 与 MCP Server 的三层关系如下：
 
 **注意**：Server 发送的推送通知（如 `notifications/message`）由 Client 接收后止于 Host，**不会**转发给 Agent。因此需要 Agent 感知的事件应通过 tool 返回值（pull 模式）传递。
 
-### 4. 怎么安装
+### 3. 怎么安装
 
-#### 4.1 npm
+#### 3.1 npm
 
 目前支持工具的全局安装和本地指定目录安装，但是全局安装后还是只能在某个目录配置使用（需要claude配置文件、设备配置文件、mcp配置文件以及日志等），暂未测试过全局配置。
 
@@ -123,7 +98,7 @@ mcp-toolkit
 └── package.json                 # npm 项目依赖清单
 ```
 
-#### 4.2 源码安装
+#### 3.2 源码安装
 
 git clone源码后：
 
@@ -132,9 +107,9 @@ npm i         # 安装依赖
 npm run build # 编译，编译后就可以在当前目录下启动claude使用了
 ```
 
-### 5. 工具介绍
+### 4. 工具介绍
 
-#### 5.1 基础工具
+#### 4.1 基础工具
 
 | 工具名称 | 功能说明 | 常用提示词 |
 |---|---|---|
@@ -144,7 +119,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `host_info` | 查询 MCP 宿主端点（username@ip）与日志保存目录；跨机部署下供构造 scp 命令，并暴露业务日志 / 原始数据日志的绝对路径供 AI 清理；本地启动返回 local | `宿主端点是什么` / `日志保存在哪里` |
 | `greet_tool` | 演示用打招呼工具 | — |
 
-#### 5.2 串口工具
+#### 4.2 串口工具
 
 | 工具名称 | 功能说明 | 常用提示词 |
 |---|---|---|
@@ -163,7 +138,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 > [!WARNING]
 > **串口持续输出的设备慎用 ZMODEM 下载**：ZMODEM 是带内协议，设备持续打印（内核日志、常驻诊断输出等）会与协议帧物理交织。同等洪水强度下，下载方向（设备 `sz` → MCP）受污染双重命中（设备侧发送被打断 + MCP 接收侧污染）、恢复链路更脆、且受 `MAX_CRC_RETRIES=10` 重试上限约束，很容易传输失败；上传方向（MCP → 设备 `rz`）靠本地缓存可无限重传，相对能扛（仅吞吐滑坡）。若设备有持续打印，建议优先用上传；确需下载时，先停掉可控输出源（`dmesg -D`、kill 常驻打印任务）再传。完整分析见 [docs/MCP串口ZMODEM文件传输.md](./docs/MCP串口ZMODEM文件传输.md#四-串口持续输出对传输的影响)。
 
-#### 5.3 ADB 工具
+#### 4.3 ADB 工具
 
 | 工具名称 | 功能说明 | 常用提示词 |
 |---|---|---|
@@ -176,7 +151,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `adb_shell_exec` | 向 ADB shell 发送命令并等待输出（write + read，自动完成检测） | `adb 执行 logcat` / `在 adb 运行命令 xxx` |
 | `adb_shell_send_ctrl` | 向 ADB shell 会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `adb 发 Ctrl+C` / `中断 adb 命令` |
 
-#### 5.4 SSH 工具
+#### 4.4 SSH 工具
 
 | 工具名称 | 功能说明 | 常用提示词 |
 |---|---|---|
@@ -192,7 +167,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `ssh_sftp_upload` | 复用 SSH 会话经 SFTP 上传本地文件到远端（流式传输，适合大文件） | `上传文件到板卡` / `把 build.sh 传到 /tmp` |
 | `ssh_sftp_download` | 复用 SSH 会话经 SFTP 从远端下载文件到本地 | `从板卡下载文件` / `拉取 /var/log/dmesg` |
 
-#### 5.5 Windows 工具
+#### 4.5 Windows 工具
 
 | 工具名称 | 功能说明 | 常用提示词 |
 |---|---|---|
@@ -205,7 +180,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 >
 > `ssh_build` 的注册策略与 `power_shell_exec` **相反**：默认仅在**本地场景**（客户端与 MCP 同在本机 Windows）注册，此时编译服务器不可直达，`ssh_build` 是唯一编译通道；**远程 SSH 场景**下客户端已运行在 Linux 编译服务器上，自带 shell 即可本机编译，`ssh_build` 默认**不注册**，避免流量 Linux → Windows MCP → Linux 绕圈。在 `.mcp.json` 的 `env` 中设置 `SSH_BUILD_TOOLS=1` 可强制开启，`0` 强制关闭。
 
-#### <a id="section_exec_timeout">5.6 重要机制：exec 的常驻命令识别与双超时策略</a>
+#### <a id="section_exec_timeout">4.6 重要机制：exec 的常驻命令识别与双超时策略</a>
 
 `serial_exec` / `ssh_shell_exec` / `adb_shell_exec` 这三个交互式 exec 工具，采用了**提示符检测 + 分类超时**机制。核心思路：**普通命令靠提示符检测自然结束，常驻命令（ping/logcat/top 等永不返回提示符的）才默认套用短超时熔断**。
 
@@ -599,7 +574,7 @@ claude
 
 `embedded-board` 前面的 `✔ connected` 即表示连接成功。
 
-> 旧版每个通道各有一个 `serial_list` / `ssh_shell_list` / `power_shell_list` 列会话工具，现已统一合并为 `session_info`（跨连接类型查询，见 [5.1 基础工具](#51-基础工具)）。
+> 旧版每个通道各有一个 `serial_list` / `ssh_shell_list` / `power_shell_list` 列会话工具，现已统一合并为 `session_info`（跨连接类型查询，见 [4.1 基础工具](#41-基础工具)）。
 
 
 ### 2. 常用提示词
@@ -721,7 +696,7 @@ serial_exec(session_id, command="reboot", timeoutMs=120000)   ← 120 秒，远�
 
 **如何提醒 AI**：在对话里直接说清楚，例如「执行 reboot 重启设备，**用 write 发送、用 read 轮询读取，不要用 exec**」，或「执行 reboot，**等待时间至少 120 秒**」。否则 AI 容易直接用 exec 的默认 10 秒超时，结果启动到一半被 Ctrl+C 中断。
 
-> 完整机制说明见 [5.6 重要机制：exec 的提示符检测与超时熔断](#section_exec_timeout)。
+> 完整机制说明见 [4.6 重要机制：exec 的提示符检测与超时熔断](#section_exec_timeout)。
 
 > [!NOTE]
-> 在提交 [6066447](https://github.com/smk-h/embedded-mcp-toolkit/commit/6066447daad275a1e1bc5128d20018d8f0a224b3) 后，普通命令（包括 `reboot`）默认走 5 分钟兜底超时且**不再自动发 Ctrl+C**，旧版描述的超时被中断问题已修复。详见 [5.6 重要机制：exec 的常驻命令识别与双超时策略](#section_exec_timeout)。
+> 在提交 [6066447](https://github.com/smk-h/embedded-mcp-toolkit/commit/6066447daad275a1e1bc5128d20018d8f0a224b3) 后，普通命令（包括 `reboot`）默认走 5 分钟兜底超时且**不再自动发 Ctrl+C**，旧版描述的超时被中断问题已修复。详见 [4.6 重要机制：exec 的常驻命令识别与双超时策略](#section_exec_timeout)。
