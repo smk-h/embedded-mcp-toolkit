@@ -22,12 +22,16 @@ import { pkg } from "../sdk/shared/package-info.js";
 import {
   mcpBasicTools,
   mcpSshTools,
+  mcpSshBuildTools,
   mcpSerialTools,
   mcpWinTools,
   mcpPshellTools,
   mcpAdbTools,
 } from "./tools.js";
-import { shouldRegisterPshellTools } from "./pshell-policy.js";
+import {
+  shouldRegisterPshellTools,
+  shouldRegisterSshBuildTools,
+} from "./pshell-policy.js";
 
 // ── package info ───────────────────────────────────────────
 // 经由 package-info 统一读取：npm/源码模式读磁盘，单文件 exe 模式用打包期注入的字面量
@@ -67,6 +71,22 @@ for (const { name, config, handler } of mcpBasicTools) {
 
 for (const { name, config, handler } of mcpSshTools) {
   server.registerTool(name, config, handler);
+}
+
+// ── ssh_build 工具的条件注册 ────────────────────────────────
+// 与 power_shell_* 相反：远程 SSH 启动时 AI 客户端已运行在 Linux
+// 编译服务器上，自带 shell 可直接编译，经 MCP 绕行是冗余，不注册；
+// 本地启动（客户端与 MCP 同在 Windows 本机）时编译服务器不可直达，
+// 必须注册作为唯一编译通道。
+// SSH_BUILD_TOOLS=1/0 可强制开/关，策略矩阵见 pshell-policy.ts。
+if (shouldRegisterSshBuildTools(hostEndpoint.scenario, process.env)) {
+  for (const { name, config, handler } of mcpSshBuildTools) {
+    server.registerTool(name, config, handler);
+  }
+} else {
+  logger.info(
+    "[mcp] ssh_build tool not registered (remote-ssh launch; set SSH_BUILD_TOOLS=1 to force enable)"
+  );
 }
 
 for (const { name, config, handler } of mcpSerialTools) {

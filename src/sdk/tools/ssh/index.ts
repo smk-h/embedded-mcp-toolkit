@@ -45,7 +45,7 @@ import {
 // ── 工具列表 ────────────────────────────────────────────────
 
 /**
- * 所有已定义的 SSH 工具列表。
+ * 所有已定义的 SSH 工具列表（不含 ssh_build，见 sdkSshBuildTools）。
  * 添加新工具时只需在此数组中追加一项即可。
  */
 export const sdkSshTools: AnySdkToolDef[] = [
@@ -65,11 +65,19 @@ export const sdkSshTools: AnySdkToolDef[] = [
     sshConnectionsHandler
   ),
   sdkDefineTool("ssh_shell_login", sshShellLoginConfig, sshShellLoginHandler),
-  sdkDefineTool("ssh_build", sshBuildConfig, sshBuildHandler),
   sdkDefineTool("ssh_sftp_upload", sshSftpUploadConfig, sshSftpUploadHandler),
   sdkDefineTool(
     "ssh_sftp_download",
     sshSftpDownloadConfig,
     sshSftpDownloadHandler
   ),
+];
+
+/**
+ * ssh_build 远程编译工具，独立成组：
+ * 是否注册到 MCP 由 server.ts 按启动场景决定（仅本地启动注册），
+ * 策略见 src/mcp/pshell-policy.ts 的 shouldRegisterSshBuildTools。
+ */
+export const sdkSshBuildTools: AnySdkToolDef[] = [
+  sdkDefineTool("ssh_build", sshBuildConfig, sshBuildHandler),
 ];

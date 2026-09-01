@@ -16,6 +16,7 @@ import {
   sdkBasicTools,
   sdkAdbTools,
   sdkSshTools,
+  sdkSshBuildTools,
   sdkSerialTools,
   sdkWinTools,
   sdkPshellTools,
@@ -31,8 +32,15 @@ export const mcpBasicTools: ToolEntry[] = sdkBasicTools.map(adaptSdkTool);
 /** ADB 工具组（8 个）。添加新工具改到 src/sdk/tools/adb/index.ts，此处无需变动。 */
 export const mcpAdbTools: ToolEntry[] = sdkAdbTools.map(adaptSdkTool);
 
-/** SSH 工具组（11 个）。添加新工具改到 src/sdk/tools/ssh/index.ts，此处无需变动。 */
+/** SSH 工具组（10 个，不含 ssh_build）。添加新工具改到 src/sdk/tools/ssh/index.ts，此处无需变动。 */
 export const mcpSshTools: ToolEntry[] = sdkSshTools.map(adaptSdkTool);
+
+/**
+ * ssh_build 远程编译工具组（1 个）。
+ * 是否注册到 MCP 由 server.ts 按启动场景决定（仅本地启动注册），
+ * 策略见 pshell-policy.ts 的 shouldRegisterSshBuildTools。
+ */
+export const mcpSshBuildTools: ToolEntry[] = sdkSshBuildTools.map(adaptSdkTool);
 
 /** Serial 工具组（11 个）。添加新工具改到 src/sdk/tools/serial/index.ts，此处无需变动。 */
 export const mcpSerialTools: ToolEntry[] = sdkSerialTools.map(adaptSdkTool);
