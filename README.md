@@ -202,6 +202,8 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `power_shell_exec` | 独立进程一次性执行 PowerShell 命令（不依赖会话，UTF-8 编码免疫乱码，超时强杀整棵进程树，命令与结果落盘到 `{LOG_DIR}/local`） | `PowerShell 执行 ipconfig` / `用 ps 运行 xxx` |
 
 > **注册策略**：`power_shell_exec` 默认仅在**远程 SSH 场景**（本 MCP 由 Linux 侧 AI 客户端经 ssh 拉起，客户端无法直接访问本机）注册。若客户端（Claude Code / ZCode / OpenCode 等）**原生运行在本机 Windows**，它自带的 shell 工具可以直接执行 PowerShell，这些工具默认**不注册**，避免 AI 经 MCP 绕行。在 `.mcp.json` 的 `env` 中设置 `POWERSHELL_TOOLS=1` 可强制开启，`0` 强制关闭；启动日志中会记录实际决策。
+>
+> `ssh_build` 的注册策略与 `power_shell_exec` **相反**：默认仅在**本地场景**（客户端与 MCP 同在本机 Windows）注册，此时编译服务器不可直达，`ssh_build` 是唯一编译通道；**远程 SSH 场景**下客户端已运行在 Linux 编译服务器上，自带 shell 即可本机编译，`ssh_build` 默认**不注册**，避免流量 Linux → Windows MCP → Linux 绕圈。在 `.mcp.json` 的 `env` 中设置 `SSH_BUILD_TOOLS=1` 可强制开启，`0` 强制关闭。
 
 #### <a id="section_exec_timeout">5.6 重要机制：exec 的常驻命令识别与双超时策略</a>
 

@@ -22,6 +22,8 @@
 
 > ⚠️ 同一 SSH 会话同一时间仅支持**一个**编译任务。需要并行编译时，应通过 `ssh_shell_open` 打开多个会话，各分配一个 `ssh_build`。
 
+【**注册策略**】`ssh_build` 默认仅在**本地启动**（AI 客户端与 MCP 同在 Windows 本机）时注册——此时编译服务器不可直达，`ssh_build` 是唯一编译通道；**远程 SSH 启动**（AI 客户端已运行在 Linux 编译服务器上）时默认**不注册**——客户端自带 shell 即可本机编译，经 MCP 绕行只会让流量 Linux → Windows MCP → Linux 绕圈。在 `.mcp.json` 的 `env` 中设置 `SSH_BUILD_TOOLS=1` 可强制开启，`0` 强制关闭；启动日志中会记录实际决策。该策略与 `power_shell_exec` 的注册策略正好相反。
+
 ### 2. 一次完整编译的调用流程
 
 ![ssh_build 时序图](./MCP编译工具/img/sequence.svg)
