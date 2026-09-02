@@ -56,3 +56,8 @@ my-psh/psh
 my-psh/psh_demo2/libs/libqrencode-4.1.1
 my-psh/psh_demo2/libs/mbedtls-4.0.0
 psh
+
+# ---- PPT 目录的构建缓存（渲染 PNG、中间产物、备份，不入库）----
+ppt/.tmp
+ppt/~$*.pptx
+
