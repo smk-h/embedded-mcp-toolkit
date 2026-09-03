@@ -7,7 +7,8 @@
  *
  *   本脚本验证 UbootDetector 在"配置值直接是正则源码字符串 + 与默认值合并"模式下的行为：
  *     - 默认值覆盖主流 autoboot 措辞（prompt 等价原硬编码 /(?:=>|U-Boot>)\s*$/）
- *     - 配置值与默认值合并（非替换），用户配置补充默认而非覆盖
+ *     - 配置值与默认值合并（非替换），用户条目在前（优先级更高），默认条目在后兜底，
+ *       字面重复时保留用户条目、删默认副本（2026-09-03 起）
  *     - 无效正则构造抛错
  *
  *   用法：
@@ -69,8 +70,39 @@ check("默认 autoboot：interrupt/abort 动词变体命中", () => {
   assert.strictEqual(d.matchAutoboot("Hit any key to interrupt autoboot"), "\n");
   assert.strictEqual(d.matchAutoboot("Press any key to abort autoboot"), "\n");
 });
-check("默认 autoboot：裸 key 措辞命中（Rockchip 风格文案）", () => {
-  assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot('CTRL+C')"), "\n");
+check("默认 autoboot：裸 key 措辞命中（无按键提示时回退发换行）", () => {
+  assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot: 3"), "\n");
+});
+check("默认 autoboot：Rockchip 括号后缀按键提示改发 \\x03（2026-09-03 选键规则）", () => {
+  // Rockchip U-Boot 的按键藏在括号后缀里，正则命中的通用措辞本身不含按键；
+  // 选键以命中行文本为准，行内 CTRL+C 字样优先于条目静态映射（换行）
+  assert.strictEqual(
+    d.matchAutoboot("Hit key to stop autoboot('CTRL+C')"),
+    "\x03"
+  );
+  assert.strictEqual(
+    d.matchAutoboot("Hit key to stop autoboot('CTRL+C'):  2  1  0"),
+    "\x03",
+    "带倒计时数字的完整实测文案"
+  );
+});
+check("默认 autoboot：多行缓冲中命中行文本生效（LubanCat-2 实测现场）", () => {
+  // 真实场景是整段累积输出，倒计时数字与提示同行，前后还有其他 U-Boot 日志
+  const output =
+    "Net:   eth0: ethernet@fe2a0000, eth1: ethernet@fe010000\n" +
+    "Hit key to stop autoboot('CTRL+C'):  2  1  0 \n" +
+    "Found U-Boot script /boot.scr\n";
+  assert.strictEqual(d.matchAutoboot(output), "\x03");
+});
+check("默认 autoboot：括号后缀按键提示的优先级 u > c > space", () => {
+  assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot(CTRL+U)"), "\x15");
+  assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot(CTRL-C)"), "\x03");
+  assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot('SPACE')"), " ");
+});
+check("默认 autoboot：按键提示字样只在命中行内生效（跨行不误判）", () => {
+  // 历史日志行提到 ctrl+c 不影响本次选键——选键只看命中所在行
+  const output = "debug: send ctrl+c to cancel\nHit any key to stop autoboot: 3";
+  assert.strictEqual(d.matchAutoboot(output), "\n");
 });
 check("默认 autoboot：SPACE 措辞发空格", () => {
   assert.strictEqual(
@@ -150,6 +182,15 @@ check("matched* 系列：返回命中的具体判据（业务日志标注结论�
   );
   assert.strictEqual(d.matchedKernelBoot("U-Boot 2016.03"), null);
 });
+check("matchedAutoboot：Rockchip 场景返回通用规则源码 + 行文本修正的中断键", () => {
+  const ab = d.matchedAutoboot("Hit key to stop autoboot('CTRL+C'):  2  1  0");
+  assert.ok(ab !== null, "命中 autoboot 条目");
+  assert.strictEqual(ab.interruptKey, "\x03", "行内 CTRL+C 字样优先于静态映射");
+  assert.ok(
+    /any\\s\+key/.test(ab.source),
+    "命中的仍是通用 'Hit key' 规则（按键来自行文本而非正则源码）"
+  );
+});
 check("matchKernelBoot：Starting kernel（AC8）", () => {
   assert.ok(d.matchKernelBoot("Starting kernel ..."));
 });
@@ -163,7 +204,7 @@ check("matchKernelBoot：普通输出不命中", () => {
   assert.ok(!d.matchKernelBoot("U-Boot 2016.03"));
 });
 
-console.log("\n[2] UbootDetector 配置合并（AC2/AC3/AC6 — 用户配置补充默认，非替换）");
+console.log("\n[2] UbootDetector 配置合并（AC2/AC3/AC6 — 用户在前、默认兜底，非替换）");
 const d2 = new UbootDetector({
   autobootPrompts: ["Press\\s+SPACE\\s+to\\s+abort"],
   prompt: "Marvell>>\\s*$",
@@ -175,9 +216,48 @@ check("自定义 autoboot 命中（AC2）", () => {
   assert.strictEqual(d2.matchAutoboot("Press SPACE to abort in 3s"), " ");
 });
 check("默认 autoboot 仍命中（合并保留默认）", () => {
-  // 合并语义：用户配置补充默认，默认的 Hit any key / Hit Ctrl+u 仍能识别
+  // 合并语义：用户配置在前，默认规则在后兜底，Hit any key / Hit Ctrl+u 仍能识别
   assert.strictEqual(d2.matchAutoboot("Hit any key to stop autoboot"), "\n");
   assert.strictEqual(d2.matchAutoboot("Hit Ctrl+u to stop autoboot"), "\x15");
+});
+check("用户条目排在默认规则之前（2026-09-03 起，数组顺序即匹配优先级）", () => {
+  // 用户规则与默认通用规则都能命中文案时，用户规则先被尝试
+  const dd = new UbootDetector({
+    autobootPrompts: ["Hit\\s+key\\s+to\\s+stop\\s+autoboot.*CTRL\\+C"],
+  });
+  const ab = dd.matchedAutoboot(
+    "Hit key to stop autoboot('CTRL+C'):  2  1  0"
+  );
+  assert.ok(ab !== null, "命中 autoboot 条目");
+  assert.ok(/CTRL\\\+C/.test(ab.source), "命中的是用户规则而非默认通用规则");
+  assert.strictEqual(ab.interruptKey, "\x03");
+});
+check("用户条目与默认字面重复时保留用户条目，删默认副本（保留前面的）", () => {
+  const dd = new UbootDetector({
+    autobootPrompts: [
+      "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot", // 与默认 [0] 字面重复
+      "MYBOARD\\s+autoboot",
+    ],
+  });
+  const pats = dd.getDebugState().autobootPatterns.map((p) => p.source);
+  assert.strictEqual(
+    pats[0],
+    "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot",
+    "重复条目保留用户的（位置在前）"
+  );
+  assert.strictEqual(pats[1], "MYBOARD\\s+autoboot", "用户条目整体在最前");
+  assert.strictEqual(
+    pats.filter((s) => s === "Hit\\s+Ctrl\\+u\\s+to\\s+stop\\s+autoboot")
+      .length,
+    1,
+    "默认数组中的重复副本被删除"
+  );
+  assert.ok(
+    pats.includes(
+      "(?:Hit|Press)\\s+(?:any\\s+key|a\\s+key|key)\\s+to\\s+(?:stop|interrupt|abort)\\s+autoboot"
+    ),
+    "其余默认规则仍保留兜底"
+  );
 });
 check("自定义 prompt 命中（AC3）", () => {
   assert.ok(d2.matchPrompt("\nMarvell>>"));

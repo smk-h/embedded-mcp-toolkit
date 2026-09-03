@@ -130,10 +130,11 @@ export class PromptDetector {
 /**
  * @brief autoboot 中断键类型
  *
- * matchAutoboot 命中后应发送的按键，由命中条目的正则源码字样决定：
- *   - "\n"  ：any key / a key / key 等通用措辞（换行是最通用的打断键）
- *   - "\x15"：Ctrl+u 字样
- *   - "\x03"：Ctrl+c 字样
+ * matchAutoboot 命中后应发送的按键，分两层决定（命中行文本优先，见
+ * UbootDetector 类注释「中断键选择规则」）：
+ *   - "\n"  ：通用措辞且行内无按键提示（换行是最通用的打断键）
+ *   - "\x15"：Ctrl+u 字样（命中行或正则源码）
+ *   - "\x03"：Ctrl+c 字样（命中行或正则源码）
  *   - " "   ：SPACE 字样（空格是这类提示的指定打断键）
  */
 export type UbootInterruptKey = "\n" | "\x15" | "\x03" | " ";
@@ -169,6 +170,50 @@ const UbootDefaults = {
 } as const;
 
 /**
+ * @brief autoboot 命中行的按键提示字样 → 中断键（优先级自上而下）
+ *
+ * 行内提示扫描表：厂商常把指定按键附在通用文案里（正则命中的部分可能
+ * 不含按键），命中行出现这些字样时优先发对应控制键。优先级沿用静态
+ * 映射的约定：Ctrl+u → Ctrl+c → SPACE；分隔符兼容 + 和 -
+ * （CTRL+C / CTRL-C 都有厂商在用）。
+ */
+const AUTOBOOT_KEY_HINTS: ReadonlyArray<{
+  re: RegExp;
+  key: UbootInterruptKey;
+}> = [
+  { re: /ctrl\s*[-+]\s*u/i, key: "\x15" },
+  { re: /ctrl\s*[-+]\s*c/i, key: "\x03" },
+  { re: /\bspace\b/i, key: " " },
+];
+
+/**
+ * @brief 依 autoboot 命中行文本决定中断键，行内无提示字样时回退静态映射
+ *
+ * 只扫命中所在行（以命中起点定位行边界），不扫全量输出——累积缓冲里
+ * 历史日志的巧合字样不应影响本次选键。倒计时数字与提示同行
+ * （如 ":  2  1  0"），不含提示字样，无干扰。
+ *
+ * @param output 累积的串口输出
+ * @param matchIndex autoboot 正则命中的起始下标
+ * @param fallback 命中条目构造期按正则源码选定的静态中断键
+ * @returns 本次应发送的中断键
+ */
+function resolveAutobootKey(
+  output: string,
+  matchIndex: number,
+  fallback: UbootInterruptKey
+): UbootInterruptKey {
+  const lineStart = output.lastIndexOf("\n", matchIndex) + 1;
+  const lineEnd = output.indexOf("\n", matchIndex);
+  const line =
+    lineEnd === -1 ? output.slice(lineStart) : output.slice(lineStart, lineEnd);
+  for (const hint of AUTOBOOT_KEY_HINTS) {
+    if (hint.re.test(line)) return hint.key;
+  }
+  return fallback;
+}
+
+/**
  * @brief U-Boot 状态检测器
  *
  * 持有从配置解析来的四类正则与验证键，提供四个 match 方法：
@@ -186,9 +231,15 @@ const UbootDefaults = {
  *   - autoboot / kernelBoot 带 "i"（文案可能大小写不一）
  *   - prompt 无 flags（=> 和 U-Boot> 固定大小写）
  *
- * 中断键选择规则：遍历 autobootPrompts 数组，命中含 "Ctrl+c" 字样
- * （大小写不敏感）的条目返回 \x03，含 "Ctrl+u" 字样的条目返回 \x15，
- * 含 "SPACE" 字样的条目返回空格，其余返回换行。数组顺序即优先级。
+ * 中断键选择规则（两层，命中行文本优先，2026-09-03 起）：
+ *   1. 行内提示：取正则命中所在整行，行内出现 Ctrl+u / Ctrl+c / SPACE
+ *      字样（大小写不敏感，分隔符兼容 + 和 -）时优先发对应控制键——
+ *      厂商常把指定按键写成括号后缀（Rockchip
+ *      "Hit key to stop autoboot('CTRL+C')"），正则命中的通用措辞本身
+ *      不含按键，只看正则源码会错发换行（LubanCat-2 实测踩坑）。
+ *   2. 静态回退：行内无提示字样时，按条目正则源码字样选键（含 Ctrl+c
+ *      字样返回 \x03，含 Ctrl+u 返回 \x15，含 SPACE 返回空格，其余换行）。
+ * 数组顺序即正则匹配优先级。
  */
 export class UbootDetector {
   /** @brief autoboot 正则与对应中断键的映射，按配置数组顺序 */
@@ -213,7 +264,8 @@ export class UbootDetector {
    * @brief 构造 U-Boot 状态检测器
    *
    * 三字段与默认值**合并**（非替换，spec F4）：
-   *   - autobootPrompts：默认在前 + 用户在后（默认优先级更高）
+   *   - autobootPrompts：用户在前 + 默认在后（用户优先级更高，2026-09-03 起；
+   *     此前默认在前，用户更精确的规则会被通用默认规则抢先而永不命中）
    *   - verifyEnvKeys：默认 ∪ 用户（去重）
    *   - prompt：联合正则（剥离尾部 \s*$ 后 (?:A|B) 合并）
    *
@@ -223,18 +275,20 @@ export class UbootDetector {
    * @throws {Error} 当配置字段是无效正则（如括号不闭合）时，由 new RegExp 抛出
    */
   constructor(config?: UbootYaml) {
-    // autobootPrompts：默认在前（优先级高），用户追加在后（补充识别），按字面去重保持顺序
+    // autobootPrompts：用户在前（优先级高），默认在后（兜底识别），按字面
+    // 去重保持顺序——用户与默认字面重复时保留用户的（在前），删默认的（在后）
     const userAutoboot = config?.autobootPrompts ?? [];
     const mergedAutoboot = dedupPreserveOrder([
-      ...UbootDefaults.autobootPrompts,
       ...userAutoboot,
+      ...UbootDefaults.autobootPrompts,
     ]);
     this.autobootEntries = mergedAutoboot.map((s) => ({
       // autoboot 文案可能大小写不一，带 i 标志（与原 AUTOBOOT_*_RE 一致）
       re: new RegExp(s, "i"),
-      // 含 "Ctrl+c" 字样的条目对应发 \x03，含 "Ctrl+u" 的对应发 \x15，
-      // 含 "SPACE" 的对应发空格，其余发换行（注意 s 是正则源码字符串，
-      // "+" 会被用户转义成 "\+"，故匹配时兼容两种写法）
+      // 静态回退键：行内无按键提示字样时使用。含 "Ctrl+c" 字样的条目发
+      // \x03，含 "Ctrl+u" 的发 \x15，含 "SPACE" 的发空格，其余发换行
+      // （注意 s 是正则源码字符串，"+" 会被用户转义成 "\+"，故匹配时
+      // 兼容两种写法；命中行文本的优先级更高，见 resolveAutobootKey）
       interruptKey: /ctrl\\?\+c/i.test(s)
         ? "\x03"
         : /ctrl\\?\+u/i.test(s)
@@ -301,6 +355,12 @@ export class UbootDetector {
   /**
    * @brief 匹配 autoboot 提示，返回命中的正则源码与对应中断键
    *
+   * 中断键两层决定（命中行文本优先）：
+   *   1. 正则命中所在行出现 Ctrl+u / Ctrl+c / SPACE 字样时发对应控制键
+   *      ——覆盖 Rockchip "Hit key to stop autoboot('CTRL+C')" 这类
+   *      按键藏在括号后缀里的厂商文案；
+   *   2. 行内无提示字样时回退条目静态映射（构造期按正则源码字样选定）。
+   *
    * 业务日志/响应需要标注"最终是哪一条 autoboot prompt 命中"，故连同
    * 正则源码一起返回；matchAutoboot 是只取中断键的快捷方式。
    *
@@ -311,8 +371,12 @@ export class UbootDetector {
     output: string
   ): { source: string; interruptKey: UbootInterruptKey } | null {
     for (const entry of this.autobootEntries) {
-      if (entry.re.test(output)) {
-        return { source: entry.re.source, interruptKey: entry.interruptKey };
+      const m = entry.re.exec(output);
+      if (m) {
+        return {
+          source: entry.re.source,
+          interruptKey: resolveAutobootKey(output, m.index, entry.interruptKey),
+        };
       }
     }
     return null;
@@ -492,7 +556,7 @@ export function createUbootPromptDetector(config?: UbootYaml): PromptDetector {
  * @brief 数组去重，保持首次出现顺序
  *
  * 用于 autobootPrompts 合并时去重——用户配置与默认值字面相同时只保留一份
- * （默认在前，优先级更高）。注意仅做字面相等判断，不做正则语义等价判断。
+ * （用户在前，优先级更高）。注意仅做字面相等判断，不做正则语义等价判断。
  *
  * @param arr 输入数组
  * @returns 去重后的新数组（保持首次出现顺序）

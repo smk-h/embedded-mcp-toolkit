@@ -35,7 +35,7 @@ interface KeyProviderYaml {
  * 详见 docs/regex-guide.md。
  */
 export interface UbootYaml {
-  autobootPrompts?: string[]; // autoboot 提示字符串数组，按数组顺序匹配；含 "Ctrl+c" 字样 → 发送 \x03，含 "Ctrl+u" 字样 → 发送 \x15，其余 → 发送换行
+  autobootPrompts?: string[]; // autoboot 提示字符串数组，用户条目排在默认规则之前（字面重复时保留用户条目）；中断键按命中行文本优先选（Ctrl+u/Ctrl+c/SPACE 字样 → \x15/\x03/空格），行内无提示再按条目字样回退（Ctrl+c → \x03、Ctrl+u → \x15、SPACE → 空格、其余 → 换行）
   prompt?: string; // 命令提示符字符串，命中即判成功（主层）
   verifyEnvKeys?: string[]; // 提示符未命中时发 printenv 验证的环境变量键名数组（纯字面量，不走正则转换）
 }
