@@ -223,14 +223,19 @@ export async function serialEnterUbootHandler(args: {
 
       // 阶段 1：autoboot 提示检测（未中断时），命中即发对应中断键
       if (!interruptKey) {
-        const key = detector.matchAutoboot(allOutput);
-        if (key) {
-          shell.sendRaw(key, 1);
-          interruptKey = key;
+        const hit = detector.matchedAutoboot(allOutput);
+        if (hit) {
+          shell.sendRaw(hit.interruptKey, 1);
+          interruptKey = hit.interruptKey;
           interruptedAt = Date.now();
           allOutput = ""; // sendRaw(key,1) 已清缓冲，累积输出同步归零
+          // 命中行截断到 120 字符：倒计时数字同行，防御异常长行刷屏
+          const line =
+            hit.matchedLine.length > 120
+              ? `${hit.matchedLine.slice(0, 120)}…`
+              : hit.matchedLine;
           logger.info(
-            `[serial_enter_uboot] detected autoboot prompt, sent ${interruptKeyLabel(key)}`
+            `[serial_enter_uboot] detected autoboot prompt(${line}), sent ${interruptKeyLabel(hit.interruptKey)}`
           );
         }
         continue; // 中断效果从下一轮轮询开始观察

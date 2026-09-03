@@ -93,6 +93,11 @@ check("默认 autoboot：多行缓冲中命中行文本生效（LubanCat-2 实�
     "Hit key to stop autoboot('CTRL+C'):  2  1  0 \n" +
     "Found U-Boot script /boot.scr\n";
   assert.strictEqual(d.matchAutoboot(output), "\x03");
+  assert.strictEqual(
+    d.matchedAutoboot(output)?.matchedLine,
+    "Hit key to stop autoboot('CTRL+C'):  2  1  0",
+    "matchedLine 只含命中行（去首尾空白），非全量缓冲"
+  );
 });
 check("默认 autoboot：括号后缀按键提示的优先级 u > c > space", () => {
   assert.strictEqual(d.matchAutoboot("Hit key to stop autoboot(CTRL+U)"), "\x15");
@@ -189,6 +194,11 @@ check("matchedAutoboot：Rockchip 场景返回通用规则源码 + 行文本修�
   assert.ok(
     /any\\s\+key/.test(ab.source),
     "命中的仍是通用 'Hit key' 规则（按键来自行文本而非正则源码）"
+  );
+  assert.strictEqual(
+    ab.matchedLine,
+    "Hit key to stop autoboot('CTRL+C'):  2  1  0",
+    "携带命中行文本（供业务日志展示'实际检测到的提示行'）"
   );
 });
 check("matchKernelBoot：Starting kernel（AC8）", () => {

@@ -187,11 +187,22 @@ const AUTOBOOT_KEY_HINTS: ReadonlyArray<{
 ];
 
 /**
- * @brief 依 autoboot 命中行文本决定中断键，行内无提示字样时回退静态映射
+ * @brief 取正则命中所在行的文本（去除首尾空白）
  *
- * 只扫命中所在行（以命中起点定位行边界），不扫全量输出——累积缓冲里
- * 历史日志的巧合字样不应影响本次选键。倒计时数字与提示同行
- * （如 ":  2  1  0"），不含提示字样，无干扰。
+ * 行内按键提示扫描与业务日志展示共用——命中行即"检测到的 autoboot 提示行"。
+ * 以命中起点定位行边界，不扫全量输出——累积缓冲里历史日志的巧合字样
+ * 不应影响本次判定。倒计时数字与提示同行（如 ":  2  1  0"），无干扰。
+ */
+function autobootLineAt(output: string, matchIndex: number): string {
+  const lineStart = output.lastIndexOf("\n", matchIndex) + 1;
+  const lineEnd = output.indexOf("\n", matchIndex);
+  const raw =
+    lineEnd === -1 ? output.slice(lineStart) : output.slice(lineStart, lineEnd);
+  return raw.trim();
+}
+
+/**
+ * @brief 依 autoboot 命中行文本决定中断键，行内无提示字样时回退静态映射
  *
  * @param output 累积的串口输出
  * @param matchIndex autoboot 正则命中的起始下标
@@ -203,10 +214,7 @@ function resolveAutobootKey(
   matchIndex: number,
   fallback: UbootInterruptKey
 ): UbootInterruptKey {
-  const lineStart = output.lastIndexOf("\n", matchIndex) + 1;
-  const lineEnd = output.indexOf("\n", matchIndex);
-  const line =
-    lineEnd === -1 ? output.slice(lineStart) : output.slice(lineStart, lineEnd);
+  const line = autobootLineAt(output, matchIndex);
   for (const hint of AUTOBOOT_KEY_HINTS) {
     if (hint.re.test(line)) return hint.key;
   }
@@ -353,7 +361,7 @@ export class UbootDetector {
   }
 
   /**
-   * @brief 匹配 autoboot 提示，返回命中的正则源码与对应中断键
+   * @brief 匹配 autoboot 提示，返回命中的正则源码、中断键与命中行文本
    *
    * 中断键两层决定（命中行文本优先）：
    *   1. 正则命中所在行出现 Ctrl+u / Ctrl+c / SPACE 字样时发对应控制键
@@ -362,20 +370,24 @@ export class UbootDetector {
    *   2. 行内无提示字样时回退条目静态映射（构造期按正则源码字样选定）。
    *
    * 业务日志/响应需要标注"最终是哪一条 autoboot prompt 命中"，故连同
-   * 正则源码一起返回；matchAutoboot 是只取中断键的快捷方式。
+   * 正则源码一起返回；matchedLine 是命中行原文（去首尾空白），供日志
+   * 展示"实际检测到的提示行"；matchAutoboot 是只取中断键的快捷方式。
    *
    * @param output 累积的串口输出
-   * @returns 命中条目（正则源码 + 中断键），未命中返回 null
+   * @returns 命中条目（正则源码 + 中断键 + 命中行文本），未命中返回 null
    */
-  public matchedAutoboot(
-    output: string
-  ): { source: string; interruptKey: UbootInterruptKey } | null {
+  public matchedAutoboot(output: string): {
+    source: string;
+    interruptKey: UbootInterruptKey;
+    matchedLine: string;
+  } | null {
     for (const entry of this.autobootEntries) {
       const m = entry.re.exec(output);
       if (m) {
         return {
           source: entry.re.source,
           interruptKey: resolveAutobootKey(output, m.index, entry.interruptKey),
+          matchedLine: autobootLineAt(output, m.index),
         };
       }
     }
