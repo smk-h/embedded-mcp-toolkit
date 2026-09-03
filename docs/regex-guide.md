@@ -272,11 +272,13 @@ Hit\s+Ctrl\+u\s+to\s+stop\s+autoboot
 - `Hit Ctrl+u to stop autoboot` ✅
 - `Hit Ctrl+u  to  stop autoboot` ✅（多空格）
 
-【**注意**】本项目中，`autobootPrompts` 数组里**含 `Ctrl+c` 字样**的条目（正则源码里是 `Ctrl\+c`）会自动发送 `\x03`（即 Ctrl+C）；**含 `Ctrl+u` 字样**的条目（`Ctrl\+u`）自动发送 `\x15`（即 Ctrl+u）；**含 `SPACE` 字样**的条目自动发送空格；其余条目发送换行。这是约定行为，无需额外配置。
+【**注意**】中断键分两层决定，**命中行文本优先**（2026-09-03 起）：autoboot 正则命中所在行出现 `Ctrl+c` / `Ctrl+u` / `SPACE` 字样（大小写不敏感，分隔符兼容 `+` 和 `-`）时，优先发送对应控制键（`\x03` / `\x15` / 空格）——即使按键不在正则命中的文字里也能识别；行内无提示字样时，才按条目正则源码字样回退：含 `Ctrl+c` 字样发 `\x03`（即 Ctrl+C）、含 `Ctrl+u` 字样发 `\x15`（即 Ctrl+u）、含 `SPACE` 字样发空格，其余条目发换行。这是约定行为，无需额外配置。
 
 #### 1.3 Rockchip 厂商 Ctrl+C 文案
 
-Rockchip 定制 U-Boot 的提示是 `Hit key to stop autoboot('CTRL+C')`，中断键为 Ctrl+C（`\x03`）。默认值能命中该文案（裸 `key` 措辞）但发送的是换行；若板卡严格只认 Ctrl+C，按下例自定义。正则写法：
+Rockchip 定制 U-Boot 的提示是 `Hit key to stop autoboot('CTRL+C')`，中断键为 Ctrl+C（`\x03`）。**2026-09-03 起默认值即可正确处理，无需自定义**：通用规则命中"Hit key … autoboot"措辞后，选键会扫描命中行文本，发现括号后缀里的 `CTRL+C` 字样，自动改发 `\x03`。（此前只按正则源码选键，对这种"按键藏在括号后缀"的文案会错发换行导致中断失败——LubanCat-2 实测踩坑后已修复。）
+
+如需在旧版本上临时绕过，可自定义正则让 `Ctrl\+c` 字样进入条目源码：
 
 ```yaml
 autobootPrompts:
@@ -407,7 +409,7 @@ Starting\s+kernel|Linux\s+version
 
 本项目的 `serial.uboot` 配置与内置默认值是**合并**关系，不是替换：
 
-- **autobootPrompts**：用户数组**追加**到默认数组之后。默认在前（优先级更高），用户在后（补充识别）。即使用户只配了一条自定义提示，默认的 `Hit any key` / `Hit Ctrl+u` 仍能识别
+- **autobootPrompts**：用户数组排在**默认数组之前**（2026-09-03 起，用户优先级更高；此前默认在前）。用户配的精确规则先被尝试，不会被通用默认规则抢先；即使用户只配了一条自定义提示，默认的 `Hit any key` / `Hit Ctrl+u` 仍能在后兜底识别
 - **verifyEnvKeys**：用户数组与默认数组合并去重
 - **prompt**：用户正则与默认正则联合成"任一命中即算"的大正则。例如用户配 `Marvell>>\s*$`，合并后能识别 `Marvell>>`、`=>`、`U-Boot>` 三种
 
@@ -415,7 +417,7 @@ Starting\s+kernel|Linux\s+version
 
 当用户配置与默认值**字面相等**时，会自动去重，避免合并后产生冗余正则：
 
-- **autobootPrompts**：按字符串字面去重，保持首次出现顺序（默认在前）。例如默认有 `Hit\s+Ctrl\+u...`，用户又抄了一份相同的，合并后只保留一条
+- **autobootPrompts**：按字符串字面去重，保持首次出现顺序（用户在前）。例如默认有 `Hit\s+Ctrl\+u...`，用户又抄了一份相同的，合并后只保留用户那条（位置在前），默认副本被删除
 - **verifyEnvKeys**：用 `Set` 去重。例如默认有 `baudrate`，用户也配了 `baudrate`，合并后只有一个
 - **prompt**：用户值与默认值**字面相等**时直接用默认值，不联合（避免产生 `(?:(?:=>|U-Boot>)|(?:(?:=>|U-Boot>)))` 这种嵌套冗余）
 
@@ -485,7 +487,7 @@ embedded-mcp-toolkit regex-verify board-example -v
 - 你的自定义提示是否成功合并到 autoboot 列表
 - prompt 联合正则有没有冗余（去重是否生效）
 - verifyKeys 是否包含了你期望的所有键
-- autoboot 条目的中断键（`\x03` / `\x15` 还是 `\n`）是否正确
+- autoboot 条目的中断键（`\x03` / `\x15` 还是 `\n`）是否正确（`-v` 展示的是行内无提示时的静态回退键；实际发送时还会结合命中行文本修正，见 1.2 节约定）
 
 ### 2. 浏览器开发者工具
 

@@ -38,9 +38,9 @@ export interface UbootYaml {
 - `verifyEnvKeys`：`baudrate`、`bootdelay`
 - `verifyTimeoutMs`：4000；`kernelBootPattern`：`Starting kernel|Linux version`（带 `i` 标志，不可配置）
 
-合并策略是「默认优先的并集」，而非覆盖替换：
+合并策略是「并集互补」，而非覆盖替换（autobootPrompts 自 2026-09-03 起改为用户优先）：
 
-- `autobootPrompts`：默认值在前、用户值追加在后，字面相等去重，数组顺序即匹配优先级
+- `autobootPrompts`：用户值在前、默认值在后兜底，字面相等去重时保留用户条目、删默认副本，数组顺序即匹配优先级
 - `prompt`：仅当用户值与默认值**字面不同**时才联合——剥离两者尾部 `\s*$` 后拼成 `(?:(?:A)|(?:B))\s*$`；用户照抄默认值时跳过合并，避免 `(?:A|A)` 冗余
 - `verifyEnvKeys`：默认 ∪ 用户，去重后全部小写化，匹配时走 `key=` 字面量包含判断
 
@@ -58,7 +58,7 @@ export interface UbootYaml {
 
 【**函数作用**】
 
-按配置数组顺序逐条测试 autoboot 提示正则（构造时统一带 `i` 标志），命中即返回该条目绑定的中断键
+按配置数组顺序逐条测试 autoboot 提示正则（构造时统一带 `i` 标志），命中即返回应发送的中断键（两层选键：命中行文本优先，条目静态映射回退，2026-09-03 起）
 
 【**参数含义**】
 
@@ -66,7 +66,7 @@ export interface UbootYaml {
 
 【**返回值**】
 
-- 命中返回中断键：`\x03`（条目含 `Ctrl+c` 字样）、`\x15`（含 `Ctrl+u` 字样）、空格（含 `SPACE` 字样）、`\n`（其余，如 any key）
+- 命中返回中断键，两层决定（命中行文本优先）：命中所在行出现 `Ctrl+u` / `Ctrl+c` / `SPACE` 字样（大小写与 `+`/`-` 分隔符不敏感）时优先发对应控制键 `\x15` / `\x03` / 空格——覆盖 Rockchip `Hit key to stop autoboot('CTRL+C')` 这类按键藏在括号后缀的文案；行内无提示字样再按条目正则源码字样回退（含 `Ctrl+c` 发 `\x03`、含 `Ctrl+u` 发 `\x15`、含 `SPACE` 发空格、其余如 any key 发 `\n`）
 - 未命中返回 `null`
 
 ### 2. matchPrompt()
@@ -127,7 +127,7 @@ export interface UbootYaml {
 2. **预检（发 reboot 前，2026-08-31 新增）**：对缓冲区尾部做 `classifyUbootEnv()` 分类——已在 U-Boot（尾部 `=>`/`U-Boot>`）直接置标记返回成功，免掉一整轮重启（多数 U-Boot 的重启命令是 `reset`，盲发 `reboot` 只会得到 Unknown command 后空等）；停在 `login:`/`Password:` 直接失败并提示先登录（`reboot` 会被当作凭据吞掉，设备根本不重启）
 3. 发送 `reboot`，进入 500ms 轮询；`drain()` 增量取走新到数据做累积
 4. **全程判定（不设「已中断」门槛，2026-08-31 调整）**：每轮先查内核启动特征（命中即失败），再查 `matchPrompt()`（命中即成功，via prompt）——`bootdelay=0` 秒过、`bootdelay=-2` 禁用 autoboot、厂商文案变体等 autoboot 提示未命中的设备也能快速出结论，不再干等到总超时
-5. 阶段 1（未中断时）：`matchAutoboot()` 命中即发对应中断键（Ctrl+c 字样发 `\x03`、Ctrl+u 字样发 `\x15`、SPACE 字样发空格、其余发换行），记录 `interruptedAt` 并清空累积输出，之后只收集 U-Boot 阶段输出
+5. 阶段 1（未中断时）：`matchAutoboot()` 命中即发对应中断键（两层选键，2026-09-03 起：命中行文本优先——行内 Ctrl+u/Ctrl+c/SPACE 字样发 `\x15`/`\x03`/空格，覆盖 Rockchip 括号后缀 `('CTRL+C')` 文案；行内无提示再按正则源码字样回退，其余发换行），记录 `interruptedAt` 并清空累积输出，之后只收集 U-Boot 阶段输出
 6. 阶段 3（验证层）：已中断且主层窗口（4s）耗尽仍未命中提示符时，发一次 `\nprintenv\n`（仅发一次），4s 窗口内 `matchVerifyKey()` 命中即成功（via verify）；窗口耗尽或命中内核特征则快速失败，建议重试
 
 ### 2. 时序图
