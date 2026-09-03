@@ -67,6 +67,7 @@ export interface UbootYaml {
 【**返回值**】
 
 - 命中返回中断键，两层决定（命中行文本优先）：命中所在行出现 `Ctrl+u` / `Ctrl+c` / `SPACE` 字样（大小写与 `+`/`-` 分隔符不敏感）时优先发对应控制键 `\x15` / `\x03` / 空格——覆盖 Rockchip `Hit key to stop autoboot('CTRL+C')` 这类按键藏在括号后缀的文案；行内无提示字样再按条目正则源码字样回退（含 `Ctrl+c` 发 `\x03`、含 `Ctrl+u` 发 `\x15`、含 `SPACE` 发空格、其余如 any key 发 `\n`）
+- 复数形式的 `matchedAutoboot()` 额外返回命中正则源码 `source` 与命中行文本 `matchedLine`（去首尾空白），供业务日志展示"实际检测到的提示行"与结论出处
 - 未命中返回 `null`
 
 ### 2. matchPrompt()
