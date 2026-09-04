@@ -1,0 +1,33 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="串口数据流全景：从 MCP 工具到设备终端的往返通路", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.8, ranksep=0.35];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  subgraph cluster_host {
+    label="主机侧（MCP 工具箱）";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    tool   [label="serial_exec / write / read / send_ctrl", fillcolor="#DCE9FB", width=3.2];
+    runner [label="runExec 编排\n发命令 / 轮询 drain / 结束判定"];
+    sh     [label="SerialShell\n(serialport 库 或 net.Socket, tcp://)"];
+    drv    [label="OS 串口驱动\n(FTDI / CH340, 接收 FIFO)"];
+    tool -> runner;
+    runner -> sh;
+    sh -> drv;
+  }
+
+  subgraph cluster_dev {
+    label="设备侧";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    uart [label="UART 控制器\n字节帧收发 (115200 8N1)"];
+    tty  [label="tty 终端子系统 (console)\n行规程：回显 / 行缓冲 / Ctrl+C 转 SIGINT", fillcolor="#DDF3E4"];
+    prog [label="U-Boot / 内核 printk / 登录 shell\n(多来源共用一条线, 输出交错)", fillcolor="#FFF3D6"];
+    prog -> tty [dir=back];
+    tty -> uart [dir=back];
+  }
+
+  uart -> drv [dir=back, headlabel="TX：字节帧序列", labelangle=15];
+  prog -> runner [color="#5C9E6E", fontcolor="#5C9E6E", headlabel="RX：回显+输出+提示符", labelangle=32, labeldistance=1.4];
+}

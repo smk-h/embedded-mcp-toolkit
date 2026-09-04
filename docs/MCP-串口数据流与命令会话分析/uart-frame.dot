@@ -1,0 +1,17 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="UART 异步帧结构：1 字节的线上形态（8N1）", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.5, ranksep=0.5];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  frame [shape=record, style="filled", fillcolor="#FFFFFF", color="#7A93BE",
+         label="线路空闲(高电平) | 起始位(拉低) | D0 最先发 | D1 | D2 | D3 | D4 | D5 | D6 | D7 | 停止位(拉高) | 线路空闲…"];
+
+  params [label="常见配置 115200 8N1\n(8 数据位 / 无校验 / 1 停止位)", fillcolor="#DDF3E4"];
+  risk [label="异步：无时钟线，双方按约定波特率各自采样\n失配的表现是乱码而非报错", fillcolor="#FFF3D6"];
+
+  frame -> params [label="每字节一帧, 背靠背连续发送"];
+  frame -> risk [label="每帧收发两端各自定时"];
+}

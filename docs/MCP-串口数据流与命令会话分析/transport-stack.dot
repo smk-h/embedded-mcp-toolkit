@@ -1,0 +1,48 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="三种通道的分层对照：「一次性 / 交互」之分存在于哪一层", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.5, ranksep=0.45];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  top [label="MCP 工具箱的三种通道", fillcolor="#DCE9FB"];
+
+  subgraph cluster_ssh {
+    label="SSH（RFC 4254）";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    s1 [label="exec / shell / subsystem 请求\n(之分是协议概念)", fillcolor="#DCE9FB"];
+    s2 [label="连接协议：通道复用 + 窗口流控\nexit-status 结束信号"];
+    s3 [label="传输层：KEX 加密 + 完整性校验\n(二进制包, 有消息边界)"];
+    s4 [label="TCP/IP"];
+    s1 -> s2 -> s3 -> s4;
+  }
+
+  subgraph cluster_serial {
+    label="串口（UART）";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    x1 [label="命令字符串 + 换行\n(之分只是应用层约定)", fillcolor="#DCE9FB"];
+    x2 [label="设备侧 tty 行规程\n回显 / 行缓冲 / Ctrl+C 转 SIGINT"];
+    x3 [label="UART 字节流\n无边界 / 无校验 / 无确认 / 无地址"];
+    x4 [label="TX / RX 电平\n(异步, 约定波特率)"];
+    x1 -> x2 -> x3 -> x4;
+  }
+
+  subgraph cluster_adb {
+    label="ADB";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    a1 [label="adb shell 字节流\n(-t -t 强制分配 PTY)", fillcolor="#DCE9FB"];
+    a2 [label="adbd 协议：消息帧 + 校验\n(新 shell 协议有退出码与 stderr 分离)"];
+    a3 [label="USB / TCP"];
+    a1 -> a2 -> a3;
+  }
+
+  bottom [label="之分所在层：SSH = 协议请求层 ｜ 串口 = 应用层约定 ｜ ADB = 流参数\n协议级结束信号只有 SSH 的 exit-status", fillcolor="#DCE9FB"];
+
+  top -> s1;
+  top -> x1;
+  top -> a1;
+  s4 -> bottom;
+  x4 -> bottom;
+  a3 -> bottom;
+}

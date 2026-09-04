@@ -1,0 +1,62 @@
+@startuml serial-exec-sim-seq
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 串口上模拟「一次性命令」：输出匹配替代协议信号
+
+participant "调用方\n(AI / MCP 工具)" as C
+participant "runExec\n编排" as R
+participant "SerialShell" as H
+participant "设备 console\n(shell / U-Boot)" as D
+
+== 发送（无 exec 请求, 只是一条普通输入行） ==
+
+C -> R : serial_exec("uname -a", timeout)
+R -> H : drain() 冲刷上次残留输出
+R -> H : write("(uname -a); echo \"___MCP_EXEC_DONE_<rand>___:$?\"\n")
+note right of H
+  换行符就是串口上的「回车键」：
+  与人敲键盘无法区分,
+  设备 tty 原样回显这一行
+end note
+H -> D : 字节帧序列
+
+== 轮询与结束判定（约 200ms 周期, deadline 兜底） ==
+
+loop 到 deadline 为止
+  R -> H : drain() 增量累积输出
+  alt marker 命中（首选, 确定性）
+    R -> R : 截断 marker 及其后内容\n解析 $? 得退出码
+    R --> C : 输出 + [exit code: N]
+  else 提示符末尾锚定（快路径）
+    R --> C : 输出返回（退出码未知）
+  else 到达 deadline 超时熔断
+    alt 常驻命令 (ping / logcat / tail -f)
+      R -> H : send_ctrl(Ctrl+C)\n采样超时, 中性语义
+    else 普通命令
+      R --> C : 兜底超时, 不发中断\n(提示符正则可能未匹配)
+    end
+  end
+end
+
+note over C, D
+  对照 SSH exec：协议直接回 exit-status；
+  串口只能「读输出猜结束」——
+  marker 注入把猜测变成确定性匹配
+end note
+
+@enduml

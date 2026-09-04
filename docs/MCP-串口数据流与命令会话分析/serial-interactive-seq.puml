@@ -1,0 +1,66 @@
+@startuml serial-interactive-seq
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 串口交互会话：打开即收听的常驻字节流
+
+participant "调用方\n(AI / MCP 工具)" as C
+participant "SerialShell\n(主机侧)" as H
+participant "USB-UART 桥 /\nQEMU tcp://" as L
+participant "设备 tty console\n(行规程)" as T
+participant "shell / U-Boot" as S
+
+== 打开端口（无握手、无认证、无协商） ==
+
+C -> H : serial_open\n(COM3, 115200 8N1)
+H -> L : 打开端口 / 建立 TCP 连接
+note over C, S
+  串口没有「建立会话」的过程：
+  不认证、不协商参数、无通道概念；
+  设备上电起输出就一直在线上跑
+end note
+H -> H : 等 banner 500ms\n(接入即「进行中」, 只能看到片段)
+
+== 交互循环（终端对话语义, 由设备侧行规程实现） ==
+
+loop 每条命令
+  C -> H : write("uname -a\n")
+  H -> L : 字节帧序列 (TX)
+  L -> T : 字节帧序列 (RX)
+  T -> S : 行缓冲后整行交付\n(echo=on 时逐字符回显)
+  S --> T : 命令输出 + 新提示符
+  T --> H : 回程字节流\n(回显 / 输出 / 提示符 / 内核日志 同一条线)
+  H --> C : read / drain 累积返回
+end
+
+C -> H : send_ctrl(Ctrl+C = 0x03)
+H -> L : 单字节帧
+L -> T : RX
+T -> S : 行规程转 SIGINT 发给前台进程组
+S --> H : ^C 回显 + 新提示符
+
+== 关闭（无协议告别） ==
+
+C -> H : close()
+H -> L : 关端口
+note over C, S
+  close 不通知设备：
+  无人读时输出照发，
+  接收 FIFO 满后静默丢弃
+end note
+
+@enduml
