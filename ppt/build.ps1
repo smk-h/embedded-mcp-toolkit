@@ -2,6 +2,8 @@
 # 用法：powershell -ExecutionPolicy Bypass -File build.ps1
 #       成品/中间产物若正被 PowerPoint 打开，会自动关掉这几个文档再继续（不影响其他打开的文档）；
 #       仅当自动关闭失败时需要加 -Force 强制结束 POWERPNT 进程
+# Linux/macOS 等价脚本：./linux_build.sh
+# 架构图直接引用 ../docs/项目简介/img/*.svg（随仓库分发），.tmp/ 仅为构建缓存，清理后可直接重建
 param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'

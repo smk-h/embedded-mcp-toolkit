@@ -1,7 +1,8 @@
 /* embedded-mcp-toolkit 项目介绍 PPT 重建脚本
  *
  * 用法（在本 ppt/ 目录下执行）：
- *   powershell -ExecutionPolicy Bypass -File build.ps1    # 一键执行下面三步；文件被 PowerPoint 打开时会自动关闭
+ *   powershell -ExecutionPolicy Bypass -File build.ps1    # Windows 一键执行下面三步；文件被 PowerPoint 打开时会自动关闭
+ *   ./linux_build.sh                                      # Linux/macOS 一键执行同样的三步
  *   npm i -D pptxgenjs                                    # 仅首次：本地安装依赖（ESM import 不走 NODE_PATH）
  *   node build_ppt.mjs                                    # 生成 .tmp/out_new.pptx（.tmp/ 为 gitignore 的构建缓存目录）
  *   python post_fix.py .tmp/out_new.pptx .tmp/out_fixed.pptx
@@ -10,7 +11,7 @@
  *
  * 注意：
  *   - 页码分母写死在 header() 的 "N / 24" 里，增删页面后需同步修正页码
- *   - 图片素材（.tmp/*.png）也在 .tmp/ 下，清理 .tmp 后需重新渲染，否则构建报缺图
+ *   - 架构图直接引用 ../docs/项目简介/img/*.svg（矢量，随 git 仓库分发，无额外素材依赖）
  *
  * 设计系统：深海军蓝 PRIMARY + 琥珀 ACCENT（串口/控制台主题），白底内容页，深色封面/封底
  * 母题：深色终端窗口（三个窗口圆点 + 等宽字体）；禁用标题下划线/色条/边条
@@ -432,8 +433,9 @@ function band(s, text, y, h, opts) {
 {
   const s = pres.addSlide();
   header(s, "PART 02 · 背景知识", "MCP 三大角色与连接关系", 11);
-  const w = 9.0, h = w / 1.8549;
-  s.addImage({ path: ".tmp/final_mcp_roles.png", x: (W - w) / 2, y: 1.66, w, h });
+  // 直接引用 docs/项目简介/img/mcp-architecture.svg（矢量，684x409pt）
+  const h = 4.9, w = h * (684 / 409);
+  s.addImage({ path: "../docs/项目简介/img/mcp-architecture.svg", x: (W - w) / 2, y: 1.66, w, h });
   s.addText("每个 MCP Client 与一个 MCP Server 一一对应（1:1）；Host 内可同时管理多个 Client", T({ x: M, y: 6.72, w: CW, h: 0.32, fontSize: 12.5, color: MUTED, align: "center", margin: 0 }));
 }
 
@@ -579,8 +581,9 @@ function band(s, text, y, h, opts) {
 {
   const s = pres.addSlide();
   header(s, "PART 04 · 部署方案", "部署方案一：本地同机（用法一）", 17);
-  const ih = 5.15, iw = ih * 1.4823;
-  s.addImage({ path: ".tmp/trimmed_image3.png", x: M, y: 1.62, w: iw, h: ih });
+  // 直接引用 docs/项目简介/img/usage1-local.svg（矢量，1604x658pt）
+  const iw = 7.63, ih = iw * (658 / 1604);
+  s.addImage({ path: "../docs/项目简介/img/usage1-local.svg", x: M, y: 1.62 + (5.15 - ih) / 2, w: iw, h: ih });
   const cx = M + iw + 0.28, cwd = W - M - cx;
   card(s, cx, 1.62, cwd, 5.15);
   s.addText("要点", T({ x: cx + 0.28, y: 1.9, w: cwd - 0.56, h: 0.4, fontSize: 16, bold: true, color: PRIMARY, margin: 0 }));
@@ -596,8 +599,9 @@ function band(s, text, y, h, opts) {
 {
   const s = pres.addSlide();
   header(s, "PART 04 · 部署方案", "部署方案二：跨机远程（用法二）", 18);
-  const ih = 5.15, iw = ih * 1.3362;
-  s.addImage({ path: ".tmp/trimmed_image4.png", x: M, y: 1.62, w: iw, h: ih });
+  // 直接引用 docs/项目简介/img/usage2-remote.svg（矢量，839x712pt）
+  const ih = 5.15, iw = ih * (839 / 712);
+  s.addImage({ path: "../docs/项目简介/img/usage2-remote.svg", x: M, y: 1.62, w: iw, h: ih });
   const cx = M + iw + 0.28, cwd = W - M - cx;
   card(s, cx, 1.62, cwd, 5.15);
   s.addText("要点", T({ x: cx + 0.28, y: 1.9, w: cwd - 0.56, h: 0.4, fontSize: 16, bold: true, color: PRIMARY, margin: 0 }));
