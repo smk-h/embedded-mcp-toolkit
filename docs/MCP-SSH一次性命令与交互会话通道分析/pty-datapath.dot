@@ -1,0 +1,41 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="数据通路对比：同一条 session 通道上，无 PTY 与有 PTY 的「数据纯净度」不同", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.6, ranksep=0.45];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  top [label="session 通道（同一条通道，两种数据形态）", fillcolor="#DCE9FB"];
+
+  subgraph cluster_nopty {
+    label="无 PTY：exec 请求默认形态";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    p1 [label="远端进程 uname -a", fillcolor="#FFFFFF"];
+    s1 [label="sshd", fillcolor="#FFFFFF"];
+    c1 [label="客户端：原样字节流\n（无回显 / 无提示符，stdout / stderr 分离）"];
+    p1 -> s1;
+    s1 -> c1;
+  }
+
+  subgraph cluster_pty {
+    label="有 PTY：shell 请求（交互会话）";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    p2 [label="登录 shell / 前台进程", fillcolor="#FFFFFF"];
+    ld [label="PTY 从端 + 行规程\n回显 / 行缓冲 / Ctrl+C 转 SIGINT", fillcolor="#FFF3D6"];
+    m2 [label="PTY 主端（键盘字节也从这里进入）", fillcolor="#FFFFFF"];
+    s2 [label="sshd", fillcolor="#FFFFFF"];
+    c2 [label="客户端终端模拟器\n渲染提示符 / 回显 / ANSI 转义序列"];
+    p2 -> ld;
+    ld -> m2;
+    m2 -> s2;
+    s2 -> c2;
+  }
+
+  end [label="数据纯净度不同：exec 输出可直接解析\nshell 输出需净化（回显剥离 / 提示符检测）后才能程序化消费", fillcolor="#DCE9FB"];
+
+  top -> p1;
+  top -> p2;
+  c1 -> end;
+  c2 -> end;
+}

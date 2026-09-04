@@ -1,0 +1,29 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="一条 TCP 连接上的通道复用（RFC 4254 §5）", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.45, ranksep=0.6];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  subgraph cluster_client {
+    label="ssh 客户端（本机进程）";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    conn [label="一条已认证的 SSH 连接\n（KEX + 认证只做一次）", fillcolor="#DCE9FB"];
+  }
+
+  wire [label="加密隧道：一条 TCP 连接，所有通道消息交错传输\n（每通道每方向独立滑动窗口 §5.2，WINDOW_ADJUST 补充信用）", fillcolor="#FFF3D6"];
+
+  subgraph cluster_server {
+    label="sshd 服务端（各通道独立编号，互不阻塞）";
+    style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+    ch0 [label="session 通道 #0\nshell 请求 + PTY（交互会话）", fillcolor="#FFFFFF"];
+    ch1 [label="session 通道 #1\nsubsystem 请求（sftp-server）", fillcolor="#FFFFFF"];
+    ch2 [label="direct-tcpip 通道 #2\n（端口转发）", fillcolor="#FFFFFF"];
+  }
+
+  conn -> wire [label="SSH_MSG_* 二进制包"];
+  wire -> ch0;
+  wire -> ch1;
+  wire -> ch2;
+}

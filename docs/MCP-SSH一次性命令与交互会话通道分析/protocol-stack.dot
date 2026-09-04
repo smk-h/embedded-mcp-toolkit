@@ -1,0 +1,37 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="SSH 协议分层：两种用法都落在 session 通道上", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.4, ranksep=0.55];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  tcp   [label="TCP/IP 承载（默认 22 端口）", fillcolor="#FFF3D6"];
+  trans [label="SSH-TRANS 传输层（RFC 4253）\n版本交换 / KEX 密钥交换 / 加密与完整性", fillcolor="#DDF3E4"];
+  auth  [label="SSH-USERAUTH 认证层（RFC 4252）\npassword / publickey / hostbased", fillcolor="#DDF3E4"];
+
+  subgraph cluster_conn {
+    label="SSH-CONN 连接协议（RFC 4254）：把加密隧道复用为多个逻辑通道";
+    style="rounded,filled"; fillcolor="#DCE9FB"; color="#7A93BE"; fontcolor="#1F2933";
+
+    subgraph cluster_session {
+      label="session 通道（远程执行一个程序，可多次打开）";
+      style="rounded,filled"; fillcolor="#F2F6FC"; color="#7A93BE"; fontcolor="#1F2933";
+      shellr [label="shell 请求\n交互式 shell"];
+      execr  [label="exec 请求\n一次性命令"];
+      subr   [label="subsystem 请求\n预定义子系统（sftp）"];
+    }
+    other [label="其他通道类型：direct-tcpip / forwarded-tcpip / x11", fillcolor="#FFFFFF"];
+  }
+
+  prog [label="远端程序：bash -c 命令 / 交互 shell / sftp-server", fillcolor="#FFF3D6"];
+
+  tcp -> trans;
+  trans -> auth;
+  auth -> shellr;
+  auth -> execr [style=invis];
+  auth -> subr  [style=invis];
+  shellr -> prog;
+  execr -> prog;
+  subr -> prog;
+}

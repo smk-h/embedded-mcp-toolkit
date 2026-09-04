@@ -1,0 +1,66 @@
+@startuml interactive-sequence
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title 交互会话 (pty-req + shell) 建立与数据流
+
+participant "ssh 客户端\n+ 终端模拟器" as C
+participant "sshd" as S
+participant "伪终端 PTY\n主端 + 行规程" as P
+participant "登录 shell /\n前台进程" as SH
+
+== 传输建立 (同 exec: TCP / KEX / 认证) ==
+
+C -> S : CHANNEL_OPEN (90) type = "session"
+S --> C : CHANNEL_OPEN_CONFIRMATION (91)
+
+== 通道内请求序列 (顺序敏感) ==
+
+C -> S : CHANNEL_REQUEST (98)\n("pty-req" §6.2:\nterm=xterm, 80x24, 模式位)
+S -> P : 创建伪终端
+S --> C : CHANNEL_SUCCESS (99)
+C -> S : CHANNEL_REQUEST (98)\n("env" §6.4, 可选,\n是否生效取决于服务端 AcceptEnv)
+C -> S : CHANNEL_REQUEST (98)\n("shell" §6.5)
+S --> C : CHANNEL_SUCCESS (99)
+S -> SH : 启动登录 shell\n挂到 PTY 从端
+S --> C : 命令回显 + 提示符\n(user@host:~$)
+
+== 交互循环 (双向原始字节流) ==
+
+loop 直到用户退出
+  C -> S : 键盘字节流\n(0x03=Ctrl+C、0x04=Ctrl+D、\n方向键转义序列)
+  S -> P : 写入 PTY 主端
+  P -> SH : 行规程处理后送达\n(Ctrl+C 转成 SIGINT 发给前台进程组)
+  SH --> C : 输出 + 输入回显 + 提示符\n+ ANSI 转义序列 (颜色/光标)
+end
+
+C -> S : CHANNEL_REQUEST (98)\n("window-change" §6.7,\n终端尺寸变化时随时可发)
+
+== 会话结束 ==
+
+C -> S : 用户敲 exit / Ctrl+D
+SH --> S : shell 退出
+S --> C : CHANNEL_REQUEST (98)\n("exit-status", 仅此一次)
+S --> C : CHANNEL_EOF (96) → CHANNEL_CLOSE (97)
+C --> S : CHANNEL_CLOSE (97)
+note over C, S
+  shell 是长驻进程，协议层不为其中
+  执行的每条命令单独回报结束与退出码，
+  这是交互会话做自动化的核心难点
+end note
+
+@enduml

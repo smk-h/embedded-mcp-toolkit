@@ -1,0 +1,66 @@
+@startuml exec-sequence
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title exec 一次性命令的完整生命周期 (RFC 4254)
+
+participant "ssh 客户端\n(OpenSSH / ssh2 库)" as C
+participant "sshd\n(服务端)" as S
+participant "用户默认 shell\n(以 -c 方式执行)" as SH
+
+== 传输建立 (每条新连接都要完整走一遍) ==
+
+C -> S : TCP 连接 22 端口
+C -> S : 版本串交换\n(SSH-2.0-xxx)
+C -> S : KEX 密钥交换 + 主机密钥验证
+C -> S : 用户认证 (publickey / password)
+note over C, S
+  SSH-TRANS + SSH-USERAUTH 层的固定开销，
+  与后续执行方式无关；
+  ControlMaster 复用连接可跳过本阶段
+end note
+
+== session 通道建立 ==
+
+C -> S : CHANNEL_OPEN (90)\ntype = "session"
+S --> C : CHANNEL_OPEN_CONFIRMATION (91)
+C -> S : CHANNEL_REQUEST (98)\n("env" §6.4, 可选)
+C -> S : CHANNEL_REQUEST (98)\n("exec", 命令字符串)
+S --> C : CHANNEL_SUCCESS (99)
+note right of S : 默认不分配 PTY
+
+== 命令执行与数据回传 ==
+
+S -> SH : shell -c "命令字符串"
+SH --> S : stdout / stderr 分开产出
+S --> C : CHANNEL_DATA (94)\nstdout
+S --> C : CHANNEL_EXTENDED_DATA (95)\nstderr, data_type_code = 1
+
+== 结束闭环 ==
+
+SH --> S : 进程退出
+S --> C : CHANNEL_REQUEST (98)\n("exit-status" §6.10, 退出码)
+S --> C : CHANNEL_EOF (96)
+S --> C : CHANNEL_CLOSE (97)
+C --> S : CHANNEL_CLOSE (97)
+note over C, S
+  exit-status 是命令结束与退出码的协议级权威信号，
+  不依赖提示符、超时等应用层推断；
+  命令被信号杀死时改发 "exit-signal"
+end note
+
+@enduml

@@ -1,0 +1,29 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="session 通道的三种启动方式（RFC 4254 §6.5）", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.4, ranksep=0.6];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  c    [label="客户端", fillcolor="#DCE9FB"];
+  open [label="CHANNEL_OPEN（90）\nchannel_type = \"session\""];
+
+  subgraph cluster_req {
+    label="启动请求（同一条通道生命周期内三选一）";
+    style="rounded,filled"; fillcolor="#DDF3E4"; color="#7A93BE"; fontcolor="#1F2933";
+    shr [label="shell 请求：启动用户默认登录 shell\n典型：ssh host（通常先发 pty-req）", fillcolor="#FFFFFF"];
+    exr [label="exec 请求：执行给定命令，跑完即收\n典型：ssh host uname -a、rsync、git", fillcolor="#FFFFFF"];
+    sur [label="subsystem 请求：启动预定义子系统\n典型：sftp、新式 scp", fillcolor="#FFFFFF"];
+  }
+
+  s [label="sshd（pty-req / env 可先于 shell 或 exec：ssh -t）", fillcolor="#DCE9FB"];
+
+  c -> open;
+  open -> shr;
+  open -> exr [style=invis];
+  open -> sur [style=invis];
+  shr -> s;
+  exr -> s;
+  sur -> s;
+}

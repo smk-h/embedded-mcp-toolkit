@@ -1,0 +1,32 @@
+digraph G {
+  fontname="Noto Sans CJK SC";
+  graph [fontname="Noto Sans CJK SC", label="远程执行方式选型决策", labelloc="t",
+         fontsize=16, fontcolor="#1F2933", bgcolor="white", nodesep=0.5, ranksep=0.5];
+  node [fontname="Noto Sans CJK SC", shape=box, style="rounded,filled",
+        fillcolor="#F7F9FC", color="#7A93BE", fontcolor="#1F2933", fontsize=12];
+  edge [fontname="Noto Sans CJK SC", color="#5A5A5A", fontcolor="#333333", fontsize=11];
+
+  start [label="远程执行需求", shape=oval, fillcolor="#DCE9FB"];
+  stop  [label="确定执行方式", shape=oval, fillcolor="#DCE9FB"];
+
+  d1 [label="人工操作?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  d2 [label="单命令取输出?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+  d3 [label="预定义子协议?", shape=diamond, fillcolor="#FFF3D6", color="#E0B400", fontcolor="#5C4A00"];
+
+  a1 [label="交互会话：pty-req + shell\nvim / top 可用，命令间共享状态"];
+  a2 [label="一次性命令：exec\nexit-status 权威结束，stderr 分离"];
+  a3 [label="subsystem 请求\n如 sftp-server"];
+  a4 [label="交互会话 + 应用层结束标记\n嵌入式 MCP 工具的折中（marker 注入）"];
+
+  start -> d1;
+  d1 -> a1 [label="是（人机交互）"];
+  d1 -> d2 [label="否（程序调用）"];
+  d2 -> a2 [label="是"];
+  d2 -> d3 [label="否"];
+  d3 -> a3 [label="是"];
+  d3 -> a4 [label="否"];
+  a1 -> stop;
+  a2 -> stop;
+  a3 -> stop;
+  a4 -> stop;
+}
