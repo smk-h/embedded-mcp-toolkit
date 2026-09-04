@@ -581,9 +581,9 @@ function band(s, text, y, h, opts) {
 {
   const s = pres.addSlide();
   header(s, "PART 04 · 部署方案", "部署方案一：本地同机（用法一）", 17);
-  // 直接引用 docs/项目简介/img/usage1-local.svg（矢量，1604x658pt）
-  const iw = 7.63, ih = iw * (658 / 1604);
-  s.addImage({ path: "../docs/项目简介/img/usage1-local.svg", x: M, y: 1.62 + (5.15 - ih) / 2, w: iw, h: ih });
+  // 直接引用 docs/项目简介/img/usage1-local.excalidraw.svg（矢量，1320x980pt）
+  const iw = 7.63, ih = iw * (980 / 1320);
+  s.addImage({ path: "../docs/项目简介/img/usage1-local.excalidraw.svg", x: M, y: 1.62 + (5.15 - ih) / 2, w: iw, h: ih });
   const cx = M + iw + 0.28, cwd = W - M - cx;
   card(s, cx, 1.62, cwd, 5.15);
   s.addText("要点", T({ x: cx + 0.28, y: 1.9, w: cwd - 0.56, h: 0.4, fontSize: 16, bold: true, color: PRIMARY, margin: 0 }));
@@ -599,18 +599,18 @@ function band(s, text, y, h, opts) {
 {
   const s = pres.addSlide();
   header(s, "PART 04 · 部署方案", "部署方案二：跨机远程（用法二）", 18);
-  // 直接引用 docs/项目简介/img/usage2-remote.svg（矢量，839x712pt）
-  const ih = 5.15, iw = ih * (839 / 712);
-  s.addImage({ path: "../docs/项目简介/img/usage2-remote.svg", x: M, y: 1.62, w: iw, h: ih });
-  const cx = M + iw + 0.28, cwd = W - M - cx;
-  card(s, cx, 1.62, cwd, 5.15);
-  s.addText("要点", T({ x: cx + 0.28, y: 1.9, w: cwd - 0.56, h: 0.4, fontSize: 16, bold: true, color: PRIMARY, margin: 0 }));
+  // 图片：上下结构，占满宽度
+  const ih = 4.2, iw = ih * (1618 / 684);
+  const ix = (W - iw) / 2;
+  s.addImage({ path: "../docs/项目简介/img/usage2-remote.excalidraw.svg", x: ix, y: 1.5, w: iw, h: ih });
+  // 文字：图片下方
+  card(s, M, 5.9, CW, 1.1);
+  s.addText("要点", T({ x: M + 0.28, y: 6.0, w: 0.8, h: 0.3, fontSize: 14, bold: true, color: PRIMARY, margin: 0 }));
   s.addText([
-    { text: "为什么：COM3 / USB-ADB / PowerShell 绑定 Windows，Linux 够不到", options: { bullet: bu(), breakLine: true } },
-    { text: "链路实质：JSON-RPC 写进 ssh stdin → TCP:22 → remote-start-mcp.bat 拉起的 node 进程，响应原路写回", options: { bullet: bu(), breakLine: true } },
-    { text: "宿主端点提示：检测 SSH_CONNECTION，经 instructions + host_info 传达端点（仅 username@ip）", options: { bullet: bu(), breakLine: true } },
-    { text: "编译路由指引：方式二下引导 AI 用本机交叉编译，避免绕圈", options: { bullet: bu() } },
-  ], T({ x: cx + 0.28, y: 2.42, w: cwd - 0.56, h: 4.1, fontSize: 12.5, valign: "top", paraSpaceAfter: 12, margin: 0 }));
+    { text: "COM3 / USB-ADB / PowerShell 绑定 Windows，Linux 够不到 → MCP Server 留守 Windows", options: { bullet: bu(), breakLine: true } },
+    { text: "JSON-RPC 走 ssh stdin → TCP:22 → remote-start-mcp.bat 拉起 node，响应原路写回", options: { bullet: bu(), breakLine: true } },
+    { text: "宿主端点提示：检测 SSH_CONNECTION，经 instructions + host_info 传达端点", options: { bullet: bu() } },
+  ], T({ x: M + 1.1, y: 6.0, w: CW - 1.38, h: 0.9, fontSize: 11, valign: "top", paraSpaceAfter: 6, margin: 0 }));
 }
 
 /* ============ S16 部署落地 ============ */
