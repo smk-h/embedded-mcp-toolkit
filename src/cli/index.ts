@@ -15,6 +15,7 @@ import { pkg } from "../sdk/shared/package-info.js";
 import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
+import { runCreate } from "./commands/create/index.js";
 import { runSshdConfig } from "./commands/sshd-config/index.js";
 import { runRemoteMcpConfig } from "./commands/remote-mcp-config/index.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
@@ -27,6 +28,7 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * ├── init                       ← 初始化配置文件（.action()）
  * ├── uninstall                  ← 清理 init 生成的文件（.action()）
  * ├── split                      ← 拆分 config.yaml 为 devices/*.yaml（.action()）
+ * ├── create                     ← 交互式创建新设备配置文件（.action()）
  * ├── regex-verify               ← 自测设备 yaml 的 U-Boot 正则配置（.action()）
  * ├── sshd-config                ← 配置 Windows OpenSSH 免密登录环境（.action()）
  * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode 的 MCP 桥接（.action()）
@@ -183,6 +185,31 @@ program
   .option("-f, --force", "覆盖已存在的设备文件", false)
   .action((opts) => {
     runSplit(opts);
+  });
+
+// =============================================================================
+// create 命令 —— 交互式创建新设备配置文件
+// =============================================================================
+
+/**
+ * @brief 设备配置创建命令
+ *
+ * 读取 .embedded/configs/devices/board-example.yaml 模板，交互问答采集设备名与
+ * 串口/SSH/ADB 连接参数，生成 <设备名>.yaml（保留模板注释与未涉及段）。
+ * -y 快速模式免交互直接生成 board-default.yaml（同名自动递增后缀）。
+ */
+program
+  .command("create")
+  .description(
+    "交互式创建新设备配置文件（基于 board-example.yaml 模板，保留注释）"
+  )
+  .option(
+    "-y, --yes",
+    "快速模式：免交互直接生成 board-default.yaml（同名自动递增后缀）",
+    false
+  )
+  .action(async (opts) => {
+    await runCreate(opts);
   });
 
 // =============================================================================
