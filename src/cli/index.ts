@@ -16,6 +16,7 @@ import { startMcpServer } from "../mcp/server.js";
 import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
 import { runCreate } from "./commands/create/index.js";
+import { runList } from "./commands/dev/list.js";
 import { runSshdConfig } from "./commands/sshd-config/index.js";
 import { runRemoteMcpConfig } from "./commands/remote-mcp-config/index.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
@@ -29,7 +30,8 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * ├── uninstall                  ← 清理 init 生成的文件（.action()）
  * ├── split                      ← 拆分 config.yaml 为 devices/*.yaml（.action()）
  * ├── dev                        ← 设备配置管理父命令（无 .action()，聚合子命令）
- * │   └── create                 ←   交互式创建新设备配置文件（后续挂 list/del 等）
+ * │   ├── create                 ←   交互式创建新设备配置文件
+ * │   └── list                   ←   列出全部设备（含模板）及三通道状态
  * ├── regex-verify               ← 自测设备 yaml 的 U-Boot 正则配置（.action()）
  * ├── sshd-config                ← 配置 Windows OpenSSH 免密登录环境（.action()）
  * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode 的 MCP 桥接（.action()）
@@ -197,7 +199,7 @@ program
  *
  * 聚合 .embedded/configs/devices/ 下设备配置文件的管理子命令，
  * 本身无 .action()，仅作为命名空间（dev --help 查看子命令）。
- * 后续在此继续挂载 list/del 等子命令。
+ * 已挂载 create/list，后续继续扩展 del 等子命令。
  *
  * @par 子命令类型 父命令（无 .action()）—— 仅聚合子命令，直接运行显示帮助。
  */
@@ -230,6 +232,25 @@ devCommand
   )
   .action(async (opts) => {
     await runCreate(opts);
+  });
+
+/**
+ * @brief 设备列表子命令
+ *
+ * 只读扫描 .embedded/configs/devices/ 下全部设备 yaml（含模板
+ * board-example），按通道禁用约定判定串口/SSH/ADB 三通道启用状态，
+ * 输出对齐表格并标注模板与默认设备；坏文件跳过并告警。
+ *
+ * @par 子命令类型 dev 下的二级内联命令 —— 通过 .action() 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit dev list
+ */
+devCommand
+  .command("list")
+  .description("列出 devices/ 下全部设备（含模板）及串口/SSH/ADB 通道状态")
+  .action(() => {
+    runList();
   });
 
 // =============================================================================
