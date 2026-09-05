@@ -28,7 +28,8 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * ├── init                       ← 初始化配置文件（.action()）
  * ├── uninstall                  ← 清理 init 生成的文件（.action()）
  * ├── split                      ← 拆分 config.yaml 为 devices/*.yaml（.action()）
- * ├── create                     ← 交互式创建新设备配置文件（.action()）
+ * ├── dev                        ← 设备配置管理父命令（无 .action()，聚合子命令）
+ * │   └── create                 ←   交互式创建新设备配置文件（后续挂 list/del 等）
  * ├── regex-verify               ← 自测设备 yaml 的 U-Boot 正则配置（.action()）
  * ├── sshd-config                ← 配置 Windows OpenSSH 免密登录环境（.action()）
  * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode 的 MCP 桥接（.action()）
@@ -188,17 +189,36 @@ program
   });
 
 // =============================================================================
-// create 命令 —— 交互式创建新设备配置文件
+// dev 命令 —— 设备配置管理父命令（聚合 create/list/del 等子命令）
 // =============================================================================
 
 /**
- * @brief 设备配置创建命令
+ * @brief 设备配置管理父命令
+ *
+ * 聚合 .embedded/configs/devices/ 下设备配置文件的管理子命令，
+ * 本身无 .action()，仅作为命名空间（dev --help 查看子命令）。
+ * 后续在此继续挂载 list/del 等子命令。
+ *
+ * @par 子命令类型 父命令（无 .action()）—— 仅聚合子命令，直接运行显示帮助。
+ */
+const devCommand = program
+  .command("dev")
+  .description("管理 .embedded/configs/devices/ 下的设备配置文件");
+
+/**
+ * @brief 设备配置创建子命令
  *
  * 读取 .embedded/configs/devices/board-example.yaml 模板，交互问答采集设备名与
  * 串口/SSH/ADB 连接参数，生成 <设备名>.yaml（保留模板注释与未涉及段）。
  * -y 快速模式免交互直接生成 board-default.yaml（同名自动递增后缀）。
+ *
+ * @par 子命令类型 dev 下的二级内联命令 —— 通过 .action() 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit dev create
+ * embedded-mcp-toolkit dev create -y
  */
-program
+devCommand
   .command("create")
   .description(
     "交互式创建新设备配置文件（基于 board-example.yaml 模板，保留注释）"
