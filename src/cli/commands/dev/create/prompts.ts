@@ -5,15 +5,15 @@
  * Author     : sumu
  * Date       : 2026/09/05
  * Version    : x.x.x
- * Description: create 命令交互问答 — 六段问答、输入解析与就地重提示循环
- *              （plan/ch19 模块 B）
+ * Description: create 命令交互问答 — 六段问答、输入解析与 validate 内联
+ *              校验原地重绘（plan/ch19 模块 B）
  * ======================================================
  */
 
 import { existsSync } from "fs";
 import { join } from "path";
 
-import { cancel, isCancel, log, text } from "@clack/prompts";
+import { cancel, isCancel, text } from "@clack/prompts";
 
 // ============================================================
 // 类型
@@ -156,95 +156,124 @@ function exitOnCancel(): never {
 }
 
 /**
+ * @brief 校验通过后的二次解析：断言成功并返回结果
+ * @details validate 回调已拦截非法输入，提交值必然可解析；此处兜底防御，
+ *          理论上不可达。
+ */
+function unwrapPortBaud(input: string): SerialConn {
+  const result = parsePortBaud(input);
+  if (typeof result === "string") {
+    throw new Error(result);
+  }
+  return result;
+}
+
+/** @brief 同 unwrapPortBaud，用于 SSH 的「IP@端口」 */
+function unwrapIpPort(input: string): SshConn {
+  const result = parseIpPort(input);
+  if (typeof result === "string") {
+    throw new Error(result);
+  }
+  return result;
+}
+
+/** @brief 同 unwrapPortBaud，用于「用户名@密码」 */
+function unwrapUserPass(input: string): Credential {
+  const result = parseUserPass(input);
+  if (typeof result === "string") {
+    throw new Error(result);
+  }
+  return result;
+}
+
+/**
  * @brief 交互输入设备名
- * @details 循环校验：仅允许字母/数字/点/下划线/连字符；同名设备文件已存在时
- *          提示冲突并要求重新输入，绝不覆盖（spec F3）。
+ * @details 经 validate 内联校验：仅允许字母/数字/点/下划线/连字符；同名设备
+ *          文件已存在时提示冲突并原地重绘要求重新输入，绝不覆盖（spec F3）。
  * @param devicesDir 设备目录，用于同名冲突检查
  * @returns 合法且无冲突的设备名
  */
 export async function askDeviceName(devicesDir: string): Promise<string> {
-  for (;;) {
-    const raw = await text({
-      message: "设备名（用作配置文件名）",
-      placeholder: "如 myboard",
-    });
-    if (isCancel(raw)) {
-      exitOnCancel();
-    }
-    const name = raw.trim();
-    if (!DEVICE_NAME_RE.test(name)) {
-      log.warning("设备名仅允许字母、数字、点、下划线、连字符");
-      continue;
-    }
-    if (existsSync(join(devicesDir, `${name}.yaml`))) {
-      log.warning(`设备 "${name}" 已存在，请换一个名字`);
-      continue;
-    }
-    return name;
+  const raw = await text({
+    message: "设备名（用作配置文件名）",
+    placeholder: "如 myboard",
+    validate: (value) => {
+      const name = (value ?? "").trim();
+      if (!DEVICE_NAME_RE.test(name)) {
+        return "设备名仅允许字母、数字、点、下划线、连字符";
+      }
+      if (existsSync(join(devicesDir, `${name}.yaml`))) {
+        return `设备 "${name}" 已存在，请换一个名字`;
+      }
+    },
+  });
+  if (isCancel(raw)) {
+    exitOnCancel();
   }
+  return raw.trim();
 }
 
 /**
  * @brief 交互输入串口连接信息
  * @details 一次输入「端口@波特率」；直接回车返回 null 表示禁用串口；
- *          格式不合法就地重新提示（spec F4）。
+ *          格式不合法经 validate 内联提示并原地重绘（spec F4）。
  * @returns 串口连接信息；未启用返回 null
  */
 export async function askSerialConnection(): Promise<SerialConn | null> {
-  for (;;) {
-    const raw = await text({
-      message: "串口连接 端口@波特率（直接回车禁用串口）",
-      placeholder: "如 COM3@115200",
-    });
-    if (isCancel(raw)) {
-      exitOnCancel();
-    }
-    const input = raw.trim();
-    if (!input) {
-      return null;
-    }
-    const result = parsePortBaud(input);
-    if (typeof result === "string") {
-      log.warning(result);
-      continue;
-    }
-    return result;
+  const raw = await text({
+    message: "串口连接 端口@波特率（直接回车禁用串口）",
+    placeholder: "如 COM3@115200",
+    validate: (value) => {
+      const input = (value ?? "").trim();
+      if (!input) {
+        return; // 空输入合法：禁用串口
+      }
+      const result = parsePortBaud(input);
+      if (typeof result === "string") {
+        return result;
+      }
+    },
+  });
+  if (isCancel(raw)) {
+    exitOnCancel();
   }
+  const input = raw.trim();
+  return input ? unwrapPortBaud(input) : null;
 }
 
 /**
  * @brief 交互输入 SSH 连接信息
- * @details 一次输入「IP@端口」，不带 @端口 时默认 22；直接回车返回 null 表示禁用
- *          SSH；格式不合法就地重新提示（spec F6）。
+ * @details 一次输入「IP@端口」，不带 @端口 时默认 22；直接回车返回 null 表示
+ *          禁用 SSH；格式不合法经 validate 内联提示并原地重绘（spec F6）。
  * @returns SSH 连接信息；未启用返回 null
  */
 export async function askSshConnection(): Promise<SshConn | null> {
-  for (;;) {
-    const raw = await text({
-      message: "SSH 连接 IP@端口（直接回车禁用 SSH）",
-      placeholder: "如 192.168.1.10@22（不带 @端口默认 22）",
-    });
-    if (isCancel(raw)) {
-      exitOnCancel();
-    }
-    const input = raw.trim();
-    if (!input) {
-      return null;
-    }
-    const result = parseIpPort(input);
-    if (typeof result === "string") {
-      log.warning(result);
-      continue;
-    }
-    return result;
+  const raw = await text({
+    message: "SSH 连接 IP@端口（直接回车禁用 SSH）",
+    placeholder: "如 192.168.1.10@22（不带 @端口默认 22）",
+    validate: (value) => {
+      const input = (value ?? "").trim();
+      if (!input) {
+        return; // 空输入合法：禁用 SSH
+      }
+      const result = parseIpPort(input);
+      if (typeof result === "string") {
+        return result;
+      }
+    },
+  });
+  if (isCancel(raw)) {
+    exitOnCancel();
   }
+  const input = raw.trim();
+  return input ? unwrapIpPort(input) : null;
 }
 
 /**
  * @brief 交互输入登录凭据（用户名@密码）
- * @details required=true（SSH 凭据，spec F7）时空输入就地重提示；
+ * @details required=true（SSH 凭据，spec F7）时空输入经 validate 内联提示；
  *          required=false（串口凭据，spec F5）时空输入返回 null，
- *          由调用方落盘为 none。格式不合法就地重新提示。
+ *          由调用方落盘为 none。格式不合法经 validate 内联提示并原地重绘。
  * @param message 提示文本
  * @param required 凭据是否必填
  * @returns 登录凭据；允许为空且用户直接回车时返回 null
@@ -253,31 +282,30 @@ export async function askCredential(
   message: string,
   required: boolean
 ): Promise<Credential | null> {
-  for (;;) {
-    const raw = await text({
-      message,
-      placeholder: required
-        ? "如 root@root（必填）"
-        : "如 root@root（直接回车填 none）",
-    });
-    if (isCancel(raw)) {
-      exitOnCancel();
-    }
-    const input = raw.trim();
-    if (!input) {
-      if (!required) {
-        return null;
+  const raw = await text({
+    message,
+    placeholder: required
+      ? "如 root@root（必填）"
+      : "如 root@root（直接回车填 none）",
+    validate: (value) => {
+      const input = (value ?? "").trim();
+      if (!input) {
+        if (!required) {
+          return; // 空输入合法：落盘 none
+        }
+        return "该通道已启用，登录用户名和密码为必填项";
       }
-      log.warning("该通道已启用，登录用户名和密码为必填项");
-      continue;
-    }
-    const result = parseUserPass(input);
-    if (typeof result === "string") {
-      log.warning(result);
-      continue;
-    }
-    return result;
+      const result = parseUserPass(input);
+      if (typeof result === "string") {
+        return result;
+      }
+    },
+  });
+  if (isCancel(raw)) {
+    exitOnCancel();
   }
+  const input = raw.trim();
+  return input ? unwrapUserPass(input) : null;
 }
 
 /**
