@@ -16,7 +16,7 @@ skinparam NoteBackgroundColor #FFFBE6
 skinparam NoteBorderColor #E0B400
 skinparam NoteFontColor #5C4A00
 
-title serial_enter_uboot 预检 + 两层检测时序
+title serial_enter_uboot 预检 + 两层检测时序（含 restart 分支）
 
 participant "调用方\n(AI/脚本)" as C
 participant "enter_uboot\nhandler" as H
@@ -25,32 +25,36 @@ participant "设备串口\n(U-Boot/内核)" as S
 
 == 准备：构造检测器 ==
 
-C -> H : serial_enter_uboot\n(session_id, timeoutMs=60000)
+C -> H : serial_enter_uboot\n(session_id, timeoutMs, restart=false)
 H -> D : new UbootDetector(\ngetUbootConfig(device))
 alt 配置含非法正则
   D --> H : throw Error
   H --> C : 配置错误，快速返回
 end
 
-== 预检：发 reboot 前的被动形态判定（零串口副作用）==
+== 预检：发重启命令前的被动形态判定（零串口副作用）==
 
 H -> H : classifyUbootEnv(\nshell.read(0) 缓冲区尾部)
-alt 已在 U-Boot（尾部 =>/U-Boot>）
+alt 已在 U-Boot（尾部 =>/U-Boot>）且 restart=false
   H -> H : markUbootSession()
   H --> C : 成功（via pre-check）\n免重启直接返回
+else 已在 U-Boot 且 restart=true（2026-09-06 新增）
+  H -> H : markUbootSession()\n（尾部锚点 = 新鲜正证据）
+  note right of H : 走"重启再进 U-Boot"完整周期：\nU-Boot → reset → 拦截 autoboot → U-Boot\n（Linux 全程不参与，省掉先 boot 进\nLinux 再 reboot 的往返）
 else 停在 login:/Password:
   H --> C : 失败：先登录再重试\n（reboot 会被当作凭据吞掉）
 else booting/autoboot/无结论
-  note right of H : 不拦，按原流程发 reboot
+  note right of H : 不拦，按系统侧流程发 reboot
 end
 
 == 阶段一：重启并打断 autoboot ==
 
-H -> S : write("reboot")
-loop 每 500ms 轮询，直到总超时
+H -> S : write(重启命令)\n系统侧 "reboot" / U-Boot 侧 "reset"
+loop 前 5s 每 150ms 快轮询，之后每 500ms（直到总超时）
   H -> H : drain() 增量累积输出
   H -> D : matchKernelBoot(allOutput)
-  D --> H : 命中 → 立即失败\n（不设"已中断"门槛）
+  D --> H : 命中 → 立即失败\n+ clearUbootSession()
+  note right of H : 离开 U-Boot 的确定性反证，就地清位\n（不等 exec/read 自校正晚一拍）\n失败响应提示：等 Linux 起来后\n用默认模式（reboot 路径）重试
   H -> D : matchPrompt(allOutput)
   D --> H : 命中 → markUbootSession()\n成功（via prompt）
   note right of H : 未中断也可命中：\nbootdelay=-2 类设备\n重启后直接停靠提示符
@@ -70,13 +74,14 @@ loop 验证层窗口（4s）
     H -> H : markUbootSession()
     H --> C : 成功（via verify）
   else 窗口耗尽
-    H --> C : 失败：验证超时\n建议重试
+    H --> C : 失败：验证超时\n标记不动（大概率仍停在提示符）\n提示 serial_uboot_state detect
   end
 end
 
 note over C, S
   全程兜底：总超时 timeoutMs 毫秒（默认 60000 = 60 秒）；
-  任一轮命中内核启动特征立即判失败（设备越过 U-Boot）
+  任一轮命中内核启动特征立即判失败并清标记（设备越过 U-Boot）；
+  总超时出口标记维持循环前的值（缺失证据不清），提示 detect 定位
 end note
 
 @enduml

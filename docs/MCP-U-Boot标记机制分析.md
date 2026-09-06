@@ -8,7 +8,7 @@
 - 标记在何时被设置、查询、同步、清理，各自的判断逻辑
 - 为什么刻意不用「提示符排除法」清理标记（2026-08-27 事故复盘）
 
-![标记生命周期总览](./MCP-U-Boot标记机制分析/img/mark-set-clear-lifecycle.svg)
+![标记生命周期总览](./MCP-U-Boot标记机制分析/img/mark-set-clear-lifecycle.excalidraw.svg)
 
 ## 二、 配置体系：serial.uboot 子段
 
@@ -44,7 +44,7 @@ export interface UbootYaml {
 - `prompt`：仅当用户值与默认值**字面不同**时才联合——剥离两者尾部 `\s*$` 后拼成 `(?:(?:A)|(?:B))\s*$`；用户照抄默认值时跳过合并，避免 `(?:A|A)` 冗余
 - `verifyEnvKeys`：默认 ∪ 用户，去重后全部小写化，匹配时走 `key=` 字面量包含判断
 
-![配置合并规则](./MCP-U-Boot标记机制分析/img/config-merge.svg)
+![配置合并规则](./MCP-U-Boot标记机制分析/img/config-merge.excalidraw.svg)
 
 【**容错原则**】配置含非法正则时 `new UbootDetector()` 在构造期抛错，调用方捕获后快速返回配置错误，不进入轮询；`serial_exec` / `serial_read` 内的检查则降级为跳过，不阻断主流程。
 
@@ -120,16 +120,17 @@ export interface UbootYaml {
 
 ## 四、 标记的设置：serial_enter_uboot 预检 + 两层检测
 
-`serialEnterUbootHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts#L78) 中实现：发 `reboot` 前先做一次零副作用的被动预检，之后是 500ms 步进的轮询循环，内分三个阶段，总超时兜底。
+`serialEnterUbootHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 中实现：发重启命令前先做一次零副作用的被动预检（`restart=true` 时已在 U-Boot 会改发 `reset`，走"重启再进 U-Boot"完整周期），之后是快轮询起步的轮询循环（前 5 秒 150ms、之后 500ms——`reset` 路径没有 Linux 关机日志当缓冲，autoboot 窗口只有 bootdelay 的 1~3 秒），内分三个阶段，总超时兜底。
 
 ### 1. 预检 + 三阶段流程
 
 1. 构造 `UbootDetector`：配置非法立即返回错误，不进入轮询
-2. **预检（发 reboot 前，2026-08-31 新增）**：对缓冲区尾部做 `classifyUbootEnv()` 分类——已在 U-Boot（尾部 `=>`/`U-Boot>`）直接置标记返回成功，免掉一整轮重启（多数 U-Boot 的重启命令是 `reset`，盲发 `reboot` 只会得到 Unknown command 后空等）；停在 `login:`/`Password:` 直接失败并提示先登录（`reboot` 会被当作凭据吞掉，设备根本不重启）
-3. 发送 `reboot`，进入 500ms 轮询；`drain()` 增量取走新到数据做累积
-4. **全程判定（不设「已中断」门槛，2026-08-31 调整）**：每轮先查内核启动特征（命中即失败），再查 `matchPrompt()`（命中即成功，via prompt）——`bootdelay=0` 秒过、`bootdelay=-2` 禁用 autoboot、厂商文案变体等 autoboot 提示未命中的设备也能快速出结论，不再干等到总超时
+2. **预检（发重启命令前，2026-08-31 新增）**：对缓冲区尾部做 `classifyUbootEnv()` 分类——已在 U-Boot（尾部 `=>`/`U-Boot>`）时：`restart=false`（默认）直接置标记返回成功，免掉一整轮重启；`restart=true`（2026-09-06 新增）置标记后改发 `reset` 走"重启再进 U-Boot"完整周期（U-Boot → reset → 拦截 autoboot → U-Boot，Linux 全程不参与，省掉"先 boot 进 Linux 再 reboot"的往返）。停在 `login:`/`Password:` 直接失败并提示先登录（`reboot` 会被当作凭据吞掉，设备根本不重启）
+3. 按预检结论选择重启命令发送——系统侧 `reboot`、U-Boot 侧（`restart=true`）`reset`（U-Boot 标准命令，`reboot` 在 hush 下只会 Unknown command）；进入轮询（前 5 秒 150ms 快轮询抓 autoboot 短窗口，之后 500ms），`drain()` 增量取走新到数据做累积
+4. **全程判定（不设「已中断」门槛，2026-08-31 调整）**：每轮先查内核启动特征（命中即失败并**清标记**——离开 U-Boot 的确定性反证，就地清位不必等 exec/read 自校正晚一拍，失败响应提示等 Linux 起来后用默认模式重试），再查 `matchPrompt()`（命中即成功，via prompt）——`bootdelay=0` 秒过、`bootdelay=-2` 禁用 autoboot、厂商文案变体等 autoboot 提示未命中的设备也能快速出结论，不再干等到总超时
 5. 阶段 1（未中断时）：`matchAutoboot()` 命中即发对应中断键（两层选键，2026-09-03 起：命中行文本优先——行内 Ctrl+u/Ctrl+c/SPACE 字样发 `\x15`/`\x03`/空格，覆盖 Rockchip 括号后缀 `('CTRL+C')` 文案；行内无提示再按正则源码字样回退，其余发换行），记录 `interruptedAt` 并清空累积输出，之后只收集 U-Boot 阶段输出
-6. 阶段 3（验证层）：已中断且主层窗口（4s）耗尽仍未命中提示符时，发一次 `\nprintenv\n`（仅发一次），4s 窗口内 `matchVerifyKey()` 命中即成功（via verify）；窗口耗尽或命中内核特征则快速失败，建议重试
+6. 阶段 3（验证层）：已中断且主层窗口（4s）耗尽仍未命中提示符时，发一次 `\nprintenv\n`（仅发一次），4s 窗口内 `matchVerifyKey()` 命中即成功（via verify）；窗口耗尽或命中内核特征则快速失败——验证超时**标记不动**（能走到验证层说明中断已成功、设备大概率仍停在提示符，只是 printenv 输出未被键名规则覆盖），提示 `serial_uboot_state detect` 定位
+7. **总超时兜底**：标记维持循环前的值不动——超时是"缺失证据"而非"离开证据"（2026-08-27 误清事故结论）；且 restart 入口刚置过位，保持置位是容错方向：plain 包装在 Linux 下照常可用（下次 exec 冲刷自愈），而 cleared + 设备实际停在 U-Boot 会让 subshell 包装（hush 无子 shell 语法）直接不可用。响应提示 `serial_uboot_state detect` 定位
 
 ### 2. 时序图
 
@@ -137,14 +138,15 @@ export interface UbootYaml {
 
 ### 3. 设计要点
 
-- **预检拦截**：盲发 reboot 有两类注定空等总超时的场景（已在 U-Boot、停在登录提示），缓冲区尾部锚点在发送前直接拦下，要么免重启成功、要么快速失败给出登录指引
+- **预检拦截**：盲发重启命令有两类注定空等总超时的场景（已在 U-Boot、停在登录提示），缓冲区尾部锚点在发送前直接拦下——`restart=false` 时免重启成功、或快速失败给出登录指引；`restart=true`（2026-09-06 新增）时改走 `reset` 重启周期
+- **restart 周期的标记出口策略（2026-09-06）**：入口按尾部锚点置位（周期全程持会话锁，中途标记不可被其他工具观察，出口状态即全部语义），之后只有两种证据会动标记——验证成功（保持置位）与内核启动特征（清位）；验证超时与总超时一律维持原值。超时维持置位是容错方向：错成 set + 实际 Linux 时 plain 包装照常可用且下次 exec 冲刷自愈，错成 cleared + 实际 U-Boot 时 subshell 包装直接不可用，前者破坏面更小
 - **双窗口计时**：主层与验证层各自以 `interruptedAt` / `verifyStartedAt` 为起点的 4s 窗口，与总超时 `timeoutMs`（毫秒，默认 60000 即 60s，秒数 × 1000 换算）相互独立；验证层只在已中断场景触发——未中断时设备可能仍在重启路上（DDR 训练/慢关机），盲发 printenv 会落在未就绪的控制台上被丢弃，白耗窗口制造假失败
 - **输出分段与增量累积**：命中 autoboot 与发出 `printenv` 两处都会清空累积输出，保证各阶段判定材料干净，不被上一阶段的引导日志污染；轮询用 `drain()` 增量取数，`read(0)` 返回全量再累加会随轮次平方级膨胀
 - **失败快速化**：内核启动特征是「越过 U-Boot」的确定性证据，判定不设「已中断」门槛——autoboot 文案未命中导致中断键发不出去时，同样立即返回失败，不傻等超时；配置非法构造期抛错，不进轮询
 
 ## 五、 标记的查询与同步：serial_uboot_state
 
-`serialUbootStateHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts#L321) 中实现，提供四个动作。
+`serialUbootStateHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 中实现，提供四个动作。
 
 ### 1. 四个动作
 
@@ -173,7 +175,7 @@ export interface UbootYaml {
 
 3/4 级过渡态判据同时是**探测护栏**：autoboot 倒计时期间探测命令的回车会打断引导进入 U-Boot（状态改变事故），booting 期间探测无消费者纯浪费，故必须先于探测判定。
 
-![detect 分类判定流程](./MCP-U-Boot标记机制分析/img/detect-classify-flow.svg)
+![detect 分类判定流程](./MCP-U-Boot标记机制分析/img/detect-classify-flow.excalidraw.svg)
 
 ### 3. 标记同步规则
 
@@ -206,13 +208,19 @@ const fullCommand: string =
 
 U-Boot 态会话的 2 级回落检测器收窄为「仅 U-Boot 提示符集」——由 `createUbootPromptDetector()`（[`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L403)）构造，而非通用默认正则。原因：U-Boot 下 TFTP/升级类命令用连续 `#` 刷进度条，通用正则「行尾 `#`」分支会把进度帧误判为 Linux root 提示符导致提前返回（实测 alg 升级 42s 的命令 406ms 即被截胡）。U-Boot 会话 plain 包装必有 marker，真结束由 1 级 marker 确定性判定，无需通用提示符参与。
 
-![serial_exec 标记消费决策](./MCP-U-Boot标记机制分析/img/exec-marker-decision.svg)
+![serial_exec 标记消费决策](./MCP-U-Boot标记机制分析/img/exec-marker-decision.excalidraw.svg)
 
 ## 七、 标记的清理
 
-标记的存取由 [`src/sdk/tools/serial/sessions.ts`](../src/sdk/tools/serial/sessions.ts) 中三个函数完成：`markUbootSession()`（L43）、`isUbootSession()`（L49）、`clearUbootSession()`（L54）。清理路径有四条。
+标记的存取由 [`src/sdk/tools/serial/sessions.ts`](../src/sdk/tools/serial/sessions.ts) 中三个函数完成：`markUbootSession()`（L43）、`isUbootSession()`（L49）、`clearUbootSession()`（L54）。清理路径有五条。
 
-### 1. serial_exec 自校正（证据驱动）
+### 1. serial_enter_uboot 失败出口（2026-09-06 新增）
+
+`serial_enter_uboot` 轮询中命中内核启动特征时，除失败返回外就地 `clearUbootSession()`。restart 周期里该场景意味着"reset 后没拦住 autoboot、设备正在进 Linux"，而分支入口刚按尾部锚点置过位——不清会让 `serial_exec` 拿 plain 包装去跑 Linux shell。证据就在手上，无需等 exec/read 自校正晚一拍。失败响应同时给出收敛路径：等 Linux 起来后用默认模式（reboot 路径）重试。
+
+【**刻意不为**】验证超时与总超时出口**不清标记**：超时是缺失证据而非离开证据，维持循环前的值是容错方向（见第四节设计要点）；状态定位交给 `serial_uboot_state` detect。
+
+### 2. serial_exec 自校正（证据驱动）
 
 U-Boot 态会话执行命令后，对「本次输出 + 前置冲刷残留（`flushed`）」做 `matchKernelBoot()` 检查，命中即判定已离开 U-Boot（`reset`/`boot`/`bootm` 或设备自行重启），清除标记，后续 `serial_exec` 恢复 subshell 包装。
 
@@ -220,22 +228,22 @@ U-Boot 态会话执行命令后，对「本次输出 + 前置冲刷残留（`flu
 
 【**刻意不为**】不用「提示符排除法」（completedBy=prompt 且尾部非 U-Boot 提示符）清标记：负向证据不可靠，`#` 进度帧等垃圾尾部同样能触发误判（2026-08-27 事故即由此误清）。权威同步入口是 `serial_uboot_state` 的 detect/clear。
 
-### 2. serial_read 同步清理
+### 3. serial_read 同步清理
 
 手动 `serial_read` 读到的内容若含内核启动特征，同样清标记。覆盖「用户手动 read 读到 reset/bootm 后内核日志」的场景——证据若被 read 取走而未判定，下次 exec 前置冲刷已无可回收材料。检测器构造失败（配置非法）时跳过检查，不阻断 read 主流程。
 
-### 3. serial_uboot_state 手动清理
+### 4. serial_uboot_state 手动清理
 
 `action=clear` 强制清除；`detect` 得出 `system`/`login` 结论时自动同步清除。这是自动机制失同步时的权威人工入口。
 
-### 4. 会话销毁
+### 5. 会话销毁
 
 `serial_close`（[`src/sdk/tools/serial/shell.ts`](../src/sdk/tools/serial/shell.ts#L219)）在关闭会话后清标记；MCP Server 进程退出时 `disposeAllSerialSessions()`（[`src/sdk/tools/serial/sessions.ts`](../src/sdk/tools/serial/sessions.ts#L65)）对整个 `ubootSessions` Set 做 `clear()`，无泄漏。
 
 ## 八、 设计要点总结
 
 - **单一事实源**：标记只存 `session_id`，环境真相在设备端；检测（detect）负责同步，exec/read 负责自校正，close 负责回收
-- **正向证据驱动**：设置靠提示符/环境变量键（阳性），清理解靠内核启动特征（阳性）；负向证据（提示符不在）一律不作为清理依据
+- **正向证据驱动**：设置靠提示符/环境变量键（阳性），清理解靠内核启动特征（阳性）；负向证据（提示符不在）一律不作为清理依据；restart 周期（2026-09-06）把这条原则走满——入口按尾部锚点置位、内核特征清位、超时（缺失证据）维持原值
 - **失败快速化**：任一层命中内核特征立即失败；配置非法构造期抛错，不进轮询
 - **合并而非覆盖**：用户配置只增不减，保证默认行为始终兜底；字面相等判断避免语义等价的复杂分析
 - **零副作用优先**：detect 先读缓冲区尾部锚点，能不动串口就不动串口；形态无区分度的场景（`#` 等）由两段式行为探测兜底（printenv ≥2 键 → echo $$），探测命令消耗一行输入且有明确警告
