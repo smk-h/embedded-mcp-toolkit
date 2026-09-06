@@ -129,7 +129,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `serial_read` | 读取串口会话的输出数据 | `读取串口输出` / `看看串口返回了什么` |
 | `serial_exec` | 向串口发送命令并等待输出（write + read，自动完成检测，含常驻命令识别与双超时机制） | `在串口执行 uname -a` / `让串口运行命令 xxx` |
 | `serial_shell_login` | 一键串口登录，自动检测 PSH 状态并解锁 | `串口一键登录` / `串口登录 board-test` |
-| `serial_enter_uboot` | 重启设备并进入 U-Boot 命令行 | `重启进入 uboot` / `进入 U-Boot 命令行` |
+| `serial_enter_uboot` | 重启设备并进入 U-Boot 命令行（`restart=true` 支持已在 U-Boot 时发 `reset` 重启再进一次，Linux 全程不参与） | `重启进入 uboot` / `进入 U-Boot 命令行` |
 | `serial_uboot_state` | 查询/检测/强制设置串口会话的 U-Boot 标记（detect/set/clear/status），标记决定 exec 的 marker 包装风格 | `检测当前是否在 U-Boot` / `标记为 U-Boot 会话` |
 | `serial_send_ctrl` | 向串口会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `串口发 Ctrl+C` / `中断串口命令` |
 | `serial_upload` | 经 ZMODEM 上传二进制文件到设备（复用串口会话，不释放端口；设备需有 lrzsz） | `串口上传固件` / `把 update.bin 传到设备` |

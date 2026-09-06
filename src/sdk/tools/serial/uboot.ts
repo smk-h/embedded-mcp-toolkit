@@ -8,6 +8,8 @@
  * Description: Serial U-Boot 编排 SDK 工具（协议无关，MCP 注册见 src/mcp/tools.ts）
  *
  *   serial_enter_uboot：重启打断 autoboot 进入 U-Boot 命令行（预检 + 两层检测）。
+ *     restart=true 支持已在 U-Boot 时发 reset 重启并再次拦截 autoboot
+ *     （U-Boot → reset → U-Boot，Linux 全程不参与）。
  *   serial_uboot_state：会话 U-Boot 标记的查询 / 检测 / 强制设置。
  *   标记决定 serial_exec 在该会话的 marker 包装风格（plain / subshell）。
  * ======================================================
@@ -69,6 +71,9 @@ export const serialEnterUbootConfig: SdkToolConfig = {
     "Pre-check before rebooting (buffer tail, zero side effects): already at a U-Boot " +
     "prompt returns success without rebooting; at a login/Password prompt fails fast " +
     "('reboot' would be consumed as input). " +
+    "restart=true forces a reboot cycle even when already at a U-Boot prompt: sends " +
+    "the U-Boot 'reset' command and re-intercepts autoboot to land back in U-Boot " +
+    "(Linux is never involved; the Linux-side path keeps using 'reboot'). " +
     "Kernel-boot detection and prompt matching are not gated on an interrupt: devices " +
     "that boot straight to the kernel fail fast, devices that disable autoboot " +
     "(bootdelay=-2) succeed fast, instead of waiting out the full timeout. " +
@@ -89,6 +94,14 @@ export const serialEnterUbootConfig: SdkToolConfig = {
           "Entering U-Boot requires a full device reboot, so the wait is genuinely long — " +
           "scale generously and convert seconds to ms by multiplying by 1000 (e.g. 90s = 90000).",
       },
+      restart: {
+        type: "boolean",
+        description:
+          "Force a reboot cycle even when the device is already at a U-Boot prompt: " +
+          "sends 'reset' (U-Boot's reboot command) and re-intercepts autoboot to land " +
+          "back in U-Boot — Linux is never involved. Default false returns success " +
+          "without rebooting when already in U-Boot.",
+      },
     },
     required: ["session_id"],
   },
@@ -99,31 +112,40 @@ export const serialEnterUbootConfig: SdkToolConfig = {
  *
  * 流程（预检 + 两层检测，对应 spec F3）：
  *   1. 从设备配置读 serial.uboot 构造 UbootDetector；配置非法立即返回错误
- *   2. 预检（发 reboot 前）：缓冲区尾部锚点分类——已在 U-Boot 直接置标记
- *      返回成功（免重启）；停在 login:/Password: 直接失败（reboot 会被
- *      当作凭据吞掉）。booting/autoboot/无结论不拦，按原流程走
- *   3. 发送 reboot 重启设备；之后每 500ms 用 drain() 增量累积输出
- *   4. 全程判定（不设"已中断"门槛）：内核启动特征命中立即失败；命令提示
- *      符命中即成功（via prompt）——autoboot 文案未命中的设备（bootdelay=0
- *      秒过 / bootdelay=-2 禁用 autoboot / 厂商文案变体）也能快速出结论，
- *      不再干等到总超时
+ *   2. 预检（发重启命令前）：缓冲区尾部锚点分类——
+ *      - 已在 U-Boot：restart=false 直接置标记返回成功（免重启）；
+ *        restart=true 置标记后改发 reset，走"重启再进 U-Boot"完整周期
+ *        （U-Boot → reset → U-Boot，Linux 全程不参与）
+ *      - 停在 login:/Password: 直接失败（reboot 会被当作凭据吞掉）。
+ *        booting/autoboot/无结论不拦，按原流程走
+ *   3. 按当前环境发送重启命令（Linux 侧 reboot / U-Boot 侧 reset）；之后
+ *      以 150ms 快轮询起步（reset 路径没有 Linux 关机日志当缓冲，autoboot
+ *      窗口短），5 秒后回落 500ms，drain() 增量累积输出
+ *   4. 全程判定（不设"已中断"门槛）：内核启动特征命中立即失败并清标记
+ *      （离开 U-Boot 的确定性反证）；命令提示符命中即成功（via prompt）——
+ *      autoboot 文案未命中的设备（bootdelay=0 秒过 / bootdelay=-2 禁用
+ *      autoboot / 厂商文案变体）也能快速出结论，不再干等到总超时
  *   5. 阶段 1 — autoboot 提示检测（未中断时）：命中即发对应中断键
  *      （Ctrl+c 字样发 \x03，Ctrl+u 字样发 \x15，SPACE 字样发空格，否则发换行）
  *   6. 阶段 2 — 验证层：已中断且主层窗口耗尽仍未命中提示符时，发 printenv
  *      一次，命中环境变量键即成功（via verify）；窗口耗尽或内核启动特征
  *      则快速失败
- *   7. 总超时兜底
+ *   7. 总超时兜底：标记维持循环前的值不动（超时是缺失证据而非离开证据，
+ *      见 2026-08-27 误清事故结论），响应提示用 serial_uboot_state 定位
  *
- * @param args  工具参数，包含 session_id 和可选的 timeoutMs（默认 60000 毫秒）
+ * @param args  工具参数：session_id、可选 timeoutMs（默认 60000 毫秒）、
+ *              可选 restart（已在 U-Boot 时强制重启再进一次）
  * @return MCP 响应，包含进入 U-Boot 的结果和输出
  */
 export async function serialEnterUbootHandler(args: {
   session_id: string;
   timeoutMs?: number;
+  restart?: boolean;
 }) {
   const timeoutMs = args.timeoutMs ?? 60000;
+  const restart = args.restart ?? false;
   logger.info(
-    `[serial_enter_uboot] session_id=${args.session_id} timeoutMs=${timeoutMs}`
+    `[serial_enter_uboot] session_id=${args.session_id} timeoutMs=${timeoutMs} restart=${restart}`
   );
 
   const shell = serialStore.get(args.session_id);
@@ -143,23 +165,37 @@ export async function serialEnterUbootHandler(args: {
       return `Failed to build U-Boot detector (config error): ${msg}`;
     }
 
-    // ── 预检：发 reboot 前先看缓冲区尾部形态（零串口副作用）──
-    // 盲发 reboot 有两类注定空等到总超时的场景，用尾部锚点直接拦下：
+    // ── 预检：发重启命令前先看缓冲区尾部形态（零串口副作用）──
+    // 盲发重启命令有两类注定空等到总超时的场景，用尾部锚点直接拦下：
     //   - 已在 U-Boot：多数 U-Boot 的重启命令是 reset 而非 reboot，发了
-    //     只会得到 Unknown command，设备停在 => 提示符——目标态已达成，
-    //     直接置标记返回成功，省掉一整轮重启
+    //     只会得到 Unknown command。restart=false 时目标态已达成，直接置
+    //     标记返回成功（免重启）；restart=true 时改发 reset 走一轮"重启再
+    //     进 U-Boot"的完整周期
     //   - 停在 login:/Password:：reboot 会被当作用户名/口令吞掉，设备根
     //     本不重启——直接失败并提示先登录
     // 其余形态（booting/autoboot 过渡态、无结论的 shell 停靠）不拦：
     // reboot 对它们仍然有效或无法更快判定，按原流程走
     const preCheck = classifyUbootEnv(detector, shell.read(0));
+    // 重启命令按当前环境选择：Linux 侧用 reboot；U-Boot 侧用 reset（U-Boot
+    // 标准命令，reboot 在 hush 下只会 Unknown command）
+    let rebootCommand = "reboot";
     if (preCheck?.kind === "uboot") {
+      if (!restart) {
+        markUbootSession(args.session_id);
+        const tail = bufferTail(shell.read(1));
+        logger.info(
+          `[serial_enter_uboot] pre-check: already in U-Boot (${preCheck.evidence}), skip reboot`
+        );
+        return `Already in U-Boot (via pre-check, ${preCheck.evidence}) — no reboot needed.\n\n${tail || "(no buffered output)"}`;
+      }
+      // restart=true：尾部锚点是几秒内的新鲜正证据，入口先置标记（顺带
+      // 覆盖"新会话标记为空但设备停在 =>"的边角情形）。周期全程持会话锁，
+      // 中途标记不可被其他工具观察，出口策略见各失败/成功分支
       markUbootSession(args.session_id);
-      const tail = bufferTail(shell.read(1));
+      rebootCommand = "reset";
       logger.info(
-        `[serial_enter_uboot] pre-check: already in U-Boot (${preCheck.evidence}), skip reboot`
+        `[serial_enter_uboot] restart: already in U-Boot (${preCheck.evidence}), sending 'reset' to reboot back into U-Boot`
       );
-      return `Already in U-Boot (via pre-check, ${preCheck.evidence}) — no reboot needed.\n\n${tail || "(no buffered output)"}`;
     }
     if (preCheck?.kind === "login") {
       const tail = bufferTail(shell.read(1));
@@ -169,14 +205,21 @@ export async function serialEnterUbootHandler(args: {
       return `Failed to enter U-Boot: session is at a login/Password prompt — 'reboot' would be consumed as input, not executed.\nLogin first (serial_shell_login), then retry.\n\n${tail || "(no buffered output)"}`;
     }
 
-    // 发送 reboot 重启设备（write 清空缓冲并开始收集，判定材料从零累积）
-    shell.write("reboot", 1);
+    // 发送重启命令（write 清空缓冲并开始收集，判定材料从零累积）
+    shell.write(rebootCommand, 1);
     logger.info(
-      `[serial_enter_uboot] cmd=reboot sent, waiting for autoboot prompt...`
+      `[serial_enter_uboot] cmd=${rebootCommand} sent, waiting for autoboot prompt...`
     );
 
     const deadline = Date.now() + timeoutMs;
     const verifyTimeoutMs = detector.verifyTimeoutMs;
+    // reset 路径没有 Linux 关机日志当缓冲：U-Boot 数百毫秒内就到 autoboot
+    // 倒计时（窗口通常仅 bootdelay 1~3 秒），前 5 秒用 150ms 快轮询抓窗口，
+    // 之后恢复 500ms 常规节奏
+    const startedAt = Date.now();
+    const FAST_POLL_MS = 150;
+    const FAST_POLL_WINDOW_MS = 5000;
+    const POLL_MS = 500;
     let allOutput = "";
     let interruptKey: UbootInterruptKey | "" = "";
     let interruptedAt = 0; // 中断键发送时刻，用于主层窗口计时
@@ -184,7 +227,9 @@ export async function serialEnterUbootHandler(args: {
     let verifyStartedAt = 0; // printenv 发送时刻，用于验证层窗口计时
 
     while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 500));
+      const pollMs =
+        Date.now() - startedAt < FAST_POLL_WINDOW_MS ? FAST_POLL_MS : POLL_MS;
+      await new Promise((r) => setTimeout(r, pollMs));
       // drain() 增量取走本步新到的数据且继续收集。不能用 read(0) + 累加：
       // read(0) 每次返回缓冲区全量，轮询后期 allOutput 会按轮次平方级
       // 膨胀，每 500ms 都要在巨型字符串上重跑全部检测正则
@@ -195,10 +240,14 @@ export async function serialEnterUbootHandler(args: {
       // 未命中（bootdelay=0 秒过、厂商变体不匹配）时中断键永远发不出去，
       // 门槛会把"已越过 U-Boot"这一确定性失败证据挡到总超时才放行
       if (detector.matchKernelBoot(allOutput)) {
+        // 内核启动 = 离开 U-Boot 的确定性反证，就地清标记（restart 分支
+        // 入口刚置位过，不清会让 serial_exec 拿 plain 包装去跑 Linux），
+        // 不必等下一次 exec 前置冲刷的自愈
+        clearUbootSession(args.session_id);
         logger.warn(
           "[serial_enter_uboot] kernel boot detected, abort (device bypassed U-Boot)"
         );
-        return `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
+        return `Failed to enter U-Boot: kernel boot detected (device bypassed U-Boot — autoboot window missed).\nDevice is heading into Linux; once it is up, retry serial_enter_uboot in default mode (reboot path).\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
       }
 
       // 阶段 2：主层 — 命令提示符命中即成功（不设"已中断"门槛）：
@@ -266,24 +315,30 @@ export async function serialEnterUbootHandler(args: {
           return `Entered U-Boot successfully (via verify, interrupt: ${interruptKeyLabel(interruptKey)}).\n\n${allOutput.trim()}`;
         }
 
-        // 验证层窗口耗尽 → 快速失败
+        // 验证层窗口耗尽 → 快速失败。标记不动：能走到验证层说明已中断成功、
+        // 设备大概率仍在 U-Boot 提示符（printenv 输出未被键名规则覆盖），
+        // 置位方向是对的；状态存疑交给 detect 定位
         if (Date.now() - verifyStartedAt >= verifyTimeoutMs) {
           logger.warn(
             `[serial_enter_uboot] verify timeout (${verifyTimeoutMs}ms), no env key matched`
           );
-          return `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
+          return `Failed to enter U-Boot: no U-Boot env key matched within ${verifyTimeoutMs}ms.\nDevice state uncertain — run serial_uboot_state (action=detect) to locate the device before retrying.\n\n${allOutput.trim() || "(no output)"}\n\nRetry recommended.`;
         }
       }
     }
 
-    // 总超时兜底
+    // 总超时兜底。标记刻意维持进入循环前的值（超时是"缺失证据"而非"离开
+    // 证据"——2026-08-27 误清事故的结论；且 restart 分支入口刚置过位，此时
+    // 保持置位是容错方向：plain 包装在 Linux 下照常可用、下次 exec 冲刷会
+    // 带出自愈证据，而 cleared + 设备实际停在 U-Boot 会让 subshell 包装
+    // 直接不可用）。状态定位交给 serial_uboot_state detect
     const remaining = shell.read(1);
     if (remaining) allOutput += remaining;
 
     logger.warn(
       `[serial_enter_uboot] overall timeout after ${timeoutMs}ms, interruptKey=${interruptKeyLabel(interruptKey)}`
     );
-    return `Timeout after ${timeoutMs}ms waiting for U-Boot.\n\n${allOutput.trim() || "(no output)"}`;
+    return `Timeout after ${timeoutMs}ms waiting for U-Boot.\nDevice state unknown — run serial_uboot_state (action=detect) to locate the device before retrying.\n\n${allOutput.trim() || "(no output)"}`;
   });
 }
 
