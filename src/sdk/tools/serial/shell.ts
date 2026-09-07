@@ -484,6 +484,32 @@ export async function serialExecHandler(args: {
       promptDetector = new PromptDetector(getPromptPattern(deviceName));
     }
 
+    // U-Boot 态构造检测器一次，两处共用（同一判据 matchKernelBoot）：
+    //   1. 早退注入（kernelBootDetector）：reset/boot 等复位类命令销毁发
+    //      命令的 hush shell，marker 逻辑上不可能出现，内核启动特征即等待
+    //      目标失效的确定性证据，命中立即返回（completedBy=kernelBoot）
+    //      不等超时。
+    //   2. 执行后自校正（下方）：同一证据判定已离开 U-Boot，清除会话标记。
+    // 刻意仅 U-Boot 态构造：Linux 会话下 "Linux version" 误报面大
+    // （cat /proc/version、dmesg 等命令输出直接命中），会在命令输出
+    // 中途灾难性截断。
+    // 配置非法时两者一起降级（仅失去早退优化与自校正，超时兜底照常），
+    // 不阻断 exec 主流程。
+    let ubootDetector: UbootDetector | undefined;
+    if (wasUboot) {
+      try {
+        ubootDetector = new UbootDetector(getUbootConfig(deviceName));
+      } catch (err) {
+        logger.warn(
+          `[serial_exec] uboot detector config error, kernel-boot early-exit & self-correction disabled: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+    const kernelBootDetector = ubootDetector
+      ? (accumulated: string): boolean =>
+          ubootDetector.matchKernelBoot(accumulated)
+      : undefined;
+
     const execResult = await runExec({
       shell,
       command: args.command,
@@ -497,6 +523,7 @@ export async function serialExecHandler(args: {
       // 去掉子 shell 括号（hush 无该语法），`; echo` 仍无条件执行，
       // 1级 marker 检测照常生效
       markerStyle: wasUboot ? "plain" : "subshell",
+      kernelBootDetector,
     });
 
     // U-Boot 态执行后自校正标记：证据出现内核启动特征（reset/boot/bootm
@@ -513,19 +540,13 @@ export async function serialExecHandler(args: {
     // 清标记：负向证据不可靠——# 进度帧等垃圾尾部同样能触发（2026-08-27
     // 事故即由此误清）。权威同步入口为 serial_uboot_state 的
     // detect/clear 动作。
-    if (wasUboot) {
-      let leftUboot = false;
-      try {
-        const ubootDetector = new UbootDetector(getUbootConfig(deviceName));
-        leftUboot = ubootDetector.matchKernelBoot(
-          execResult.flushed + execResult.output
-        );
-      } catch (err) {
-        // uboot 配置含非法正则时不应阻断 exec 主流程，跳过本次自校正
-        logger.warn(
-          `[serial_exec] uboot detector config error, skip self-correction: ${err instanceof Error ? err.message : String(err)}`
-        );
-      }
+    //
+    // 复用早退注入的同一检测器实例（上方已构造，配置非法时为 undefined，
+    // 跳过本次自校正），不再重复构造。
+    if (ubootDetector) {
+      const leftUboot = ubootDetector.matchKernelBoot(
+        execResult.flushed + execResult.output
+      );
       if (leftUboot) {
         clearUbootSession(args.session_id);
         logger.info(`[serial_exec] left U-Boot detected, cleared session mark`);
@@ -536,6 +557,13 @@ export async function serialExecHandler(args: {
     if (execResult.timeoutKind === "none" && execResult.exitCode !== null) {
       output =
         (output ? output + "\n" : "") + `[exit code: ${execResult.exitCode}]`;
+    } else if (execResult.completedBy === "kernelBoot") {
+      // 复位类命令（reset/boot）早退：内核启动特征证明发命令的 shell 已
+      // 销毁、marker 不可能再出现。命令本身已生效（复位/引导动作已开始），
+      // 引导后续用 serial_read 轮询接续，不要再用 exec（无 shell 可检测）。
+      output =
+        (output ? output + "\n" : "") +
+        `[已进入内核启动: ${args.command} 已生效并销毁 U-Boot shell, marker 不再可能出现, 已收集 ${execResult.elapsedMs}ms 输出; 后续启动日志请用 serial_read 轮询读取]`;
     } else if (execResult.timeoutKind === "sampling") {
       output =
         (output ? output + "\n" : "") +

@@ -17,6 +17,9 @@
  *     - 1级 marker 注入（确定性，首选）：命令尾部拼 echo "MARKER:$?"，
  *       marker 出现即命令结束，附带退出码，不受刷屏影响
  *     - 2级 末尾锚定（快路径）：提示符正则锚定输出末尾，无刷屏设备秒判
+ *   另有一级「内核启动早退」（可选，kernelBootDetector 注入时启用）：
+ *   复位类命令（reset/boot）销毁发命令的 shell，marker 逻辑上不可能出现，
+ *   内核启动特征即等待目标失效的确定性证据，命中立即返回不等超时。
  *
  *   marker 包装按环境分两种风格（markerStyle，默认 subshell）：
  *     - subshell：POSIX shell（Linux/Android），(cmd); echo "MARKER:$?"——
@@ -159,6 +162,21 @@ export interface ExecInput {
    * 不展开 $? 时按字面量匹配，exitCode 为 null。
    */
   readonly markerStyle?: MarkerStyle;
+  /**
+   * 内核启动特征早退检测（可选，仅 U-Boot 态串口会话注入）。
+   *
+   * 注入后轮询循环在 marker 未命中时调用本函数检查累积输出：出现
+   * 内核启动特征（Starting kernel / Linux version）即证明发命令的
+   * shell 已被销毁（reset/boot 等复位类命令），marker 物理上不可能
+   * 再出现，等待目标失效——立即返回（completedBy="kernelBoot"），
+   * 不再耗到兜底超时。检查顺序在 marker 之后：命令真实完成时
+   * marker 必然出现，不能让输出中巧合的内核字样抢先截断。
+   *
+   * 检测函数由调用方注入（如 UbootDetector.matchKernelBoot 的闭包），
+   * exec-runner 保持通道无关，不依赖 U-Boot 检测器类型。未注入时
+   * 本行为完全关闭（Linux 会话误报面大，刻意不启用）。
+   */
+  readonly kernelBootDetector?: (accumulated: string) => boolean;
   /** 设备级 exec 超时配置（常驻命令扩展名单 + 采样/兜底时长），由 handler 注入 */
   readonly execTimeoutConfig?: ExecTimeoutConfig;
 }
@@ -198,13 +216,17 @@ export interface ExecResult {
   readonly interrupted: boolean;
   /**
    * 完成路径：
-   *   - marker ：1级 marker 命中（确定性；输出截断于 marker，不含其后的提示符）
-   *   - prompt ：2级 提示符末尾锚定命中（输出末尾即提示符）
-   *   - timeout：超时熔断（采样/兜底）
+   *   - marker     ：1级 marker 命中（确定性；输出截断于 marker，不含其后的提示符）
+   *   - prompt     ：2级 提示符末尾锚定命中（输出末尾即提示符）
+   *   - kernelBoot ：内核启动特征命中（仅 U-Boot 态注入检测器时启用）。
+   *                  reset/boot 等复位类命令已销毁发命令的 shell，marker
+   *                  不可能再出现，检测到内核启动即证明等待目标失效，
+   *                  立即返回并交还全量输出（含早期启动日志）
+   *   - timeout    ：超时熔断（采样/兜底）
    * 调用方可据此区分输出末尾的语义：marker 完成时末尾无提示符，
    * 不能凭输出末尾判断当前所处 shell 环境（如 U-Boot 标记自校正）。
    */
-  readonly completedBy: "marker" | "prompt" | "timeout";
+  readonly completedBy: "marker" | "prompt" | "kernelBoot" | "timeout";
   /** 超时类型（取代单纯布尔 timedOut 的语义载体，none 表示未超时） */
   readonly timeoutKind: ExecTimeoutKind;
   /** 是否超时（= timeoutKind !== "none"，派生布尔，保持向后兼容） */
@@ -232,6 +254,8 @@ function sleep(ms: number): Promise<void> {
  *   3. PTY 回显剥离：丢弃首行（提示符 + 命令回显），\n 之后才是真实输出
  *   4. 轮询 buffer（最长 effectiveTimeout）：
  *      - 检测到提示符 → 立即返回（timeoutKind="none"）
+ *      - （注入 kernelBootDetector 时）检测到内核启动特征 → 立即返回
+ *        （completedBy="kernelBoot"，复位类命令的 shell 已销毁）
  *      - 超过 effectiveTimeout 仍未现提示符 → 按常驻性分支熔断：
  *        · 常驻命令（采样超时）：发 Ctrl+C 终止，返回 timeoutKind="sampling"（中性）
  *        · 普通命令（兜底超时）：不发 Ctrl+C，返回 timeoutKind="fallback"（异常）
@@ -393,6 +417,34 @@ export async function runExec(input: ExecInput): Promise<ExecResult> {
         interrupted: false,
         timeoutKind: "none",
         completedBy: "prompt",
+        timedOut: false,
+        elapsedMs,
+      };
+    }
+
+    // ── 3级：内核启动特征早退（仅注入 kernelBootDetector 的会话启用） ──
+    // 复位类命令（reset/boot/bootm）已销毁发命令的 shell：marker 的 echo
+    // 永远不可能执行，等待目标在逻辑上不可达成。内核启动特征（Starting
+    // kernel / Linux version）出现即证明设备已越过 U-Boot 进入内核引导，
+    // 继续轮询只是耗时间——立即返回，输出全量交回（含早期启动日志）。
+    // 检查放在 marker 之后：命令真实完成时 marker 必然出现，不能让输出中
+    // 巧合的内核字样抢先截断正常命令（串口 U-Boot 态下该字样基本不可能
+    // 来自命令输出，但顺序上仍保持 marker 优先的确定性）。
+    if (
+      input.kernelBootDetector &&
+      input.kernelBootDetector(accumulated)
+    ) {
+      const elapsedMs: number = Date.now() - startTime;
+      logger.info(
+        `${input.logPrefix} kernel boot detected (shell destroyed, marker unreachable), returning after ${elapsedMs}ms`
+      );
+      return {
+        output: accumulated.trim(),
+        flushed,
+        exitCode: null,
+        interrupted: false,
+        timeoutKind: "none",
+        completedBy: "kernelBoot",
         timedOut: false,
         elapsedMs,
       };

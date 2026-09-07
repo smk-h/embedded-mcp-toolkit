@@ -157,6 +157,108 @@ function check(name, cond, detail = "") {
   console.log("SKIP  default-timeout path (covered by cases 3/4 via timeoutMs)");
 }
 
+// ── 7. 内核启动早退（kernelBootDetector 注入 + 复位类命令场景） ──
+// reset 后 hush shell 已销毁，marker 永不出现；输出先到 U-Boot 重启横幅、
+// 后到内核启动特征 → 检测器命中即返回，不等 effectiveTimeout 耗尽
+{
+  const shell = new FakeShell([
+    { afterMs: 300, data: "\nU-Boot 2017.09 ...\nresetting ...\n" },
+    {
+      afterMs: 1500,
+      data: "Starting kernel ...\n[ 0.000000] Booting Linux on physical CPU\n",
+    },
+  ]);
+  const detectorCalls = [];
+  const kernelBootDetector = (acc) => {
+    detectorCalls.push(acc.length);
+    return /starting\s+kernel|linux\s+version/i.test(acc);
+  };
+  const t0 = Date.now();
+  const r = await runExec(
+    makeInput(shell, {
+      command: "reset",
+      markerStyle: "plain",
+      kernelBootDetector,
+      timeoutMs: 30000,
+    })
+  );
+  const elapsed = Date.now() - t0;
+  check(
+    "kernelBoot path: completedBy=kernelBoot",
+    r.completedBy === "kernelBoot",
+    `got ${r.completedBy}`
+  );
+  check("kernelBoot path: not timedOut", !r.timedOut, `timedOut=${r.timedOut}`);
+  check(
+    "kernelBoot path: exitCode null (marker unreachable)",
+    r.exitCode === null
+  );
+  check(
+    "kernelBoot path: output keeps kernel log",
+    r.output.includes("Starting kernel"),
+    `got "${r.output}"`
+  );
+  check(
+    "kernelBoot path: returns well before timeout (elapsed ~1.7s < 30s)",
+    elapsed >= 1500 && elapsed < 5000,
+    `elapsed=${elapsed}ms`
+  );
+  check(
+    "kernelBoot path: detector actually consulted",
+    detectorCalls.length > 0
+  );
+  await shell.close();
+}
+
+// ── 8. 未注入 kernelBootDetector 时早退完全关闭（向后兼容） ──
+// 相同的内核启动输出，无检测器 → 只能跑满 timeoutMs 走 fallback（旧行为）
+{
+  const shell = new FakeShell([
+    { afterMs: 300, data: "\nU-Boot 2017.09 ...\nresetting ...\n" },
+    {
+      afterMs: 1500,
+      data: "Starting kernel ...\n[ 0.000000] Booting Linux on physical CPU\n",
+    },
+  ]);
+  const r = await runExec(
+    makeInput(shell, { command: "reset", markerStyle: "plain", timeoutMs: 1500 })
+  );
+  check(
+    "no-detector path: falls back to timeout (early-exit fully off)",
+    r.completedBy === "timeout" && r.timeoutKind === "fallback",
+    `completedBy=${r.completedBy}, timeoutKind=${r.timeoutKind}`
+  );
+  check(
+    "no-detector path: output still delivered in full",
+    r.output.includes("Starting kernel")
+  );
+  await shell.close();
+}
+
+// ── 9. marker 优先于内核启动特征（正常命令不受早退截断） ──
+// 命令输出中巧合含 "Linux version" 字样，但 marker 先到 → 走 marker 路径，
+// 证明检测顺序：marker > kernelBoot（确定性优先于环境判定）
+{
+  const shell = new FakeShell([
+    {
+      afterMs: 100,
+      data: "\nLinux version 5.4.0 (copied from banner)\n___MCP_EXEC_DONE_xxxxxx___:0\n",
+    },
+  ]);
+  const r = await runExec(
+    makeInput(shell, {
+      timeoutMs: 5000,
+      kernelBootDetector: (acc) => /linux\s+version/i.test(acc),
+    })
+  );
+  check(
+    "marker precedence: marker wins over kernel-boot string in output",
+    r.completedBy === "marker" && r.exitCode === 0,
+    `completedBy=${r.completedBy}, exitCode=${r.exitCode}`
+  );
+  await shell.close();
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) FAILED`);
   process.exit(1);
