@@ -13,6 +13,11 @@
  *     7. restart=true  + 停在 login 提示  → 失败快出，不发任何命令
  *     8. restart=true  + bootdelay=-2     → reset 后直接停提示符，免中断成功
  *     9. restart=true  + 空缓冲（新会话） → 回退发 reboot（环境未知按系统侧处理）
+ *    10. restart=true  + 标记置位 + 空缓冲 → 标记兜底发 reset（2026-09-07 事故回归：
+ *        上次成功进入的出口 read(1) 已清走尾锚，标记是唯一事实源）
+ *    11. restart=false + 标记置位 + 空缓冲 → 标记兜底免重启直接成功，不发命令
+ *    12. restart=true  + 标记置位 + login  → 新鲜缓冲反证赢过可能过期的标记
+ *                                            （login 拦截仍生效，不发命令）
  *
  *   运行前置：已 build（out/ 存在）
  *   运行：node test/scripts/serial/uboot-restart-flow-test.mjs
@@ -23,6 +28,7 @@ import { serialEnterUbootHandler } from "../../../out/sdk/tools/serial/uboot.js"
 import {
   serialStore,
   isUbootSession,
+  markUbootSession,
 } from "../../../out/sdk/tools/serial/sessions.js";
 
 /**
@@ -219,6 +225,52 @@ async function main() {
     });
     check("环境未知时回退 reboot", written[0], "reboot");
     check("标记置位（提示符命中即成功）", isUbootSession(sessionId), true);
+  }
+
+  // 10. restart=true + 标记置位 + 空缓冲：标记兜底发 reset（事故回归——
+  //     上次成功进入的出口 read(1) 清走尾锚，缓冲无结论但标记是事实源）
+  {
+    const sessionId = "sess_mark_reset";
+    markUbootSession(sessionId);
+    const { result, written } = await runScenario("mark_reset", {
+      initialBuffer: "",
+      restart: true,
+      chunks: BOOT_CYCLE,
+    });
+    check("空缓冲但有标记：发 reset 而非 reboot", written[0], "reset");
+    checkIncludes("成功进入 U-Boot", result, "Entered U-Boot successfully (via prompt");
+    check("标记保持置位", isUbootSession(sessionId), true);
+  }
+
+  // 11. restart=false + 标记置位 + 空缓冲：标记兜底免重启直接成功
+  {
+    const sessionId = "sess_mark_idle";
+    markUbootSession(sessionId);
+    const { result, written } = await runScenario("mark_idle", {
+      initialBuffer: "",
+      restart: false,
+    });
+    checkIncludes(
+      "标记兜底判定已在 U-Boot",
+      result,
+      "Already in U-Boot (via pre-check, session mark (buffer inconclusive))"
+    );
+    check("未发送任何串口命令", written.length, 0);
+    check("标记保持置位", isUbootSession(sessionId), true);
+  }
+
+  // 12. restart=true + 标记置位 + 停在 login 提示：新鲜缓冲反证赢过可能
+  //     过期的标记，login 拦截仍生效（设备已回 Linux 登录态，reset 会被吞）
+  {
+    const sessionId = "sess_mark_login";
+    markUbootSession(sessionId);
+    const { result, written } = await runScenario("mark_login", {
+      initialBuffer: "davinci login: ",
+      restart: true,
+    });
+    checkIncludes("login 反证优先于标记", result, "login/Password prompt");
+    check("未发送任何串口命令", written.length, 0);
+    check("标记保持置位（login 拦截不动标记）", isUbootSession(sessionId), true);
   }
 
   console.log(

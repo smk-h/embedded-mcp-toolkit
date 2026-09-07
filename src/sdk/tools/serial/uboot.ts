@@ -68,9 +68,11 @@ export const serialEnterUbootConfig: SdkToolConfig = {
     "Detection rules (autoboot prompts, command prompt, verify env keys) " +
     "are configurable via device config serial.uboot; built-in defaults already cover " +
     "Hit/Press x any-key/key/SPACE/Ctrl+C/Ctrl+u x stop/interrupt/abort wordings. " +
-    "Pre-check before rebooting (buffer tail, zero side effects): already at a U-Boot " +
-    "prompt returns success without rebooting; at a login/Password prompt fails fast " +
-    "('reboot' would be consumed as input). " +
+    "Pre-check before rebooting (zero side effects): already in U-Boot — by buffer-tail " +
+    "evidence, or by the session's U-Boot mark when the buffer is inconclusive (e.g. the " +
+    "tail was consumed by the previous successful entry) — returns success without " +
+    "rebooting; at a login/Password prompt fails fast " +
+    "('reboot' would be consumed as input; fresh buffer evidence beats a stale mark). " +
     "restart=true forces a reboot cycle even when already at a U-Boot prompt: sends " +
     "the U-Boot 'reset' command and re-intercepts autoboot to land back in U-Boot " +
     "(Linux is never involved; the Linux-side path keeps using 'reboot'). " +
@@ -112,7 +114,8 @@ export const serialEnterUbootConfig: SdkToolConfig = {
  *
  * 流程（预检 + 两层检测，对应 spec F3）：
  *   1. 从设备配置读 serial.uboot 构造 UbootDetector；配置非法立即返回错误
- *   2. 预检（发重启命令前）：缓冲区尾部锚点分类——
+ *   2. 预检（发重启命令前）：缓冲区尾部锚点分类，缓冲无结论时用会话
+ *      U-Boot 标记兜底（双事实源，证据优先、标记补充）——
  *      - 已在 U-Boot：restart=false 直接置标记返回成功（免重启）；
  *        restart=true 置标记后改发 reset，走"重启再进 U-Boot"完整周期
  *        （U-Boot → reset → U-Boot，Linux 全程不参与）
@@ -176,25 +179,37 @@ export async function serialEnterUbootHandler(args: {
     // 其余形态（booting/autoboot 过渡态、无结论的 shell 停靠）不拦：
     // reboot 对它们仍然有效或无法更快判定，按原流程走
     const preCheck = classifyUbootEnv(detector, shell.read(0));
-    // 重启命令按当前环境选择：Linux 侧用 reboot；U-Boot 侧用 reset（U-Boot
+    // 在场判定双事实源：缓冲区新鲜证据优先；缓冲无结论时用会话标记兜底。
+    // 缓冲无结论恰是最高频路径——上次成功进入的出口 read(1) 已把 "U-Boot>"
+    // 尾锚随响应清走，而 U-Boot 之后没有新输出（2026-09-07 board-f3：标记
+    // 已置位却因空缓冲回退发 reboot，仅因该 BSP 恰好把 reboot 做成 reset
+    // 别名才成功）。login/内核等新鲜反证（preCheck 非 null）天然赢过可能
+    // 过期的标记，优先级无须显式处理
+    const ubootEvidence =
+      preCheck?.kind === "uboot"
+        ? preCheck.evidence
+        : preCheck === null && isUbootSession(args.session_id)
+          ? "session mark (buffer inconclusive)"
+          : null;
+    // 重启命令按在场判定选择：Linux 侧用 reboot；U-Boot 侧用 reset（U-Boot
     // 标准命令，reboot 在 hush 下只会 Unknown command）
     let rebootCommand = "reboot";
-    if (preCheck?.kind === "uboot") {
+    if (ubootEvidence) {
       if (!restart) {
         markUbootSession(args.session_id);
         const tail = bufferTail(shell.read(1));
         logger.info(
-          `[serial_enter_uboot] pre-check: already in U-Boot (${preCheck.evidence}), skip reboot`
+          `[serial_enter_uboot] pre-check: already in U-Boot (${ubootEvidence}), skip reboot`
         );
-        return `Already in U-Boot (via pre-check, ${preCheck.evidence}) — no reboot needed.\n\n${tail || "(no buffered output)"}`;
+        return `Already in U-Boot (via pre-check, ${ubootEvidence}) — no reboot needed.\n\n${tail || "(no buffered output)"}`;
       }
-      // restart=true：尾部锚点是几秒内的新鲜正证据，入口先置标记（顺带
+      // restart=true：尾部锚点或标记是当场正证据，入口先置标记（顺带
       // 覆盖"新会话标记为空但设备停在 =>"的边角情形）。周期全程持会话锁，
       // 中途标记不可被其他工具观察，出口策略见各失败/成功分支
       markUbootSession(args.session_id);
       rebootCommand = "reset";
       logger.info(
-        `[serial_enter_uboot] restart: already in U-Boot (${preCheck.evidence}), sending 'reset' to reboot back into U-Boot`
+        `[serial_enter_uboot] restart: already in U-Boot (${ubootEvidence}), sending 'reset' to reboot back into U-Boot`
       );
     }
     if (preCheck?.kind === "login") {
