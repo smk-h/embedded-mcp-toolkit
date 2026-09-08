@@ -16,6 +16,7 @@ import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../shared/logger.js";
 import { sshStore } from "./sessions.js";
 import { formatTransferSummary } from "../../shared/transfer-result.js";
+import { defaultDownloadLocalPath } from "../../shared/data-dir.js";
 
 // ── ssh_sftp_upload ─────────────────────────────────────────
 
@@ -91,14 +92,17 @@ export async function sshSftpUploadHandler(args: {
  * @brief ssh_sftp_download 工具配置
  *
  * 将远端板卡文件下载到本地，复用已有 SSH 会话的连接。
+ * local_path 可选：缺省落数据目录 .embedded/tmp 下、文件名取远端 basename。
  *
  * @param session_id  由 ssh_shell_open / ssh_shell_login 返回的会话 ID
  * @param remote_path 远端源文件路径
- * @param local_path  本地目标文件路径
+ * @param local_path  本地目标文件路径（可选，缺省落数据目录 tmp）
  */
 export const sshSftpDownloadConfig: SdkToolConfig = {
   description:
-    "Download a remote file from the board to local over SFTP, reusing an existing SSH session.",
+    "Download a remote file from the board to local over SFTP, reusing an existing SSH session. " +
+    "local_path is optional: when omitted, the file lands in the MCP data dir .embedded/tmp " +
+    "(named after the remote basename; the summary reports the exact path).",
   inputSchema: {
     type: "object",
     properties: {
@@ -113,10 +117,13 @@ export const sshSftpDownloadConfig: SdkToolConfig = {
       },
       local_path: {
         type: "string",
-        description: "Local destination file path",
+        description:
+          "Local destination file path (optional). When omitted, the file is saved into the " +
+          "MCP data dir .embedded/tmp, named after the remote basename; the returned summary " +
+          "shows the exact local path. Prefer the default when you have no specific target dir.",
       },
     },
-    required: ["session_id", "remote_path", "local_path"],
+    required: ["session_id", "remote_path"],
   },
 };
 
@@ -125,19 +132,23 @@ export const sshSftpDownloadConfig: SdkToolConfig = {
  *
  * 流程：
  *   1. 查找指定 session_id 的会话
- *   2. 调用 SSHShell.downloadFile 流式下载
- *   3. 格式化传输摘要并返回
+ *   2. local_path 缺省时解析到数据目录 tmp 下（并确保目录存在）
+ *   3. 调用 SSHShell.downloadFile 流式下载
+ *   4. 格式化传输摘要并返回
  *
- * @param args 工具参数，包含 session_id、remote_path、local_path
+ * @param args 工具参数，包含 session_id、remote_path、可选 local_path
  * @return 响应文本，包含传输摘要文本
  */
 export async function sshSftpDownloadHandler(args: {
   session_id: string;
   remote_path: string;
-  local_path: string;
+  local_path?: string;
 }) {
+  // 缺省本地路径：数据目录 tmp 下、文件名取远端 basename
+  const localPath =
+    args.local_path ?? defaultDownloadLocalPath(args.remote_path);
   logger.info(
-    `[ssh_sftp_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path}`
+    `[ssh_sftp_download] session_id=${args.session_id} remote=${args.remote_path} local=${localPath}${args.local_path ? "" : " (default tmp dir)"}`
   );
   const shell = sshStore.get(args.session_id);
   if (!shell) {
@@ -145,7 +156,7 @@ export async function sshSftpDownloadHandler(args: {
   }
 
   return sshStore.withLock(args.session_id, async () => {
-    const result = await shell.downloadFile(args.remote_path, args.local_path);
+    const result = await shell.downloadFile(args.remote_path, localPath);
     logger.info(
       `[ssh_sftp_download] ${result.success ? "ok" : "fail"} bytes=${result.bytes} ms=${result.durationMs}`
     );

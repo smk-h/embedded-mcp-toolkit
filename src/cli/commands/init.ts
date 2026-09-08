@@ -364,6 +364,10 @@ function writeEmbeddedTemplates(
   // 日志目录（磁盘模式由模板携带 config 目录结构，这里显式确保）
   ensureDir(join(target, ".embedded", "log"));
   console.log(`  ✅ 创建: .embedded/log/`);
+  // 传输暂存目录：ZMODEM/SFTP 下载缺省落盘与 scp 推送的统一落点
+  // （运行期 MCP 启动也会幂等确保，这里让脚手架出来的目录结构一步到位）
+  ensureDir(join(target, ".embedded", "tmp"));
+  console.log(`  ✅ 创建: .embedded/tmp/`);
 
   console.log(
     `\n✅ 初始化完成！共写出 ${count} 个文件（MCP 入口已适配为单文件 exe）`
@@ -615,9 +619,12 @@ export function runInit(opts: InitOptions): void {
     }
   }
 
-  // ---- log/ ----
+  // ---- log/ + tmp/ ----
   ensureDir(join(target, ".embedded/log"));
   console.log(`  ✅ 创建: ${join(target, ".embedded/log")}/`);
+  // 传输暂存目录：ZMODEM/SFTP 下载缺省落盘与 scp 推送的统一落点
+  ensureDir(join(target, ".embedded/tmp"));
+  console.log(`  ✅ 创建: ${join(target, ".embedded/tmp")}/`);
 
   // ---- 收尾 ----
   const lines: string[] = [];
@@ -631,6 +638,7 @@ export function runInit(opts: InitOptions): void {
   lines.push("  📁 .embedded/configs/");
   lines.push("  📁 .embedded/configs/devices/ (示例设备文件)");
   lines.push("  📁 .embedded/log/");
+  lines.push("  📁 .embedded/tmp/ (传输暂存目录)");
   lines.push(
     "  📄 remote-start-mcp.bat (MCP server 启动脚本，锁定 cwd 与环境变量)"
   );

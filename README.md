@@ -116,7 +116,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `version_tool` | 获取 MCP 服务器版本和工具包信息 | `当前MCP版本是什么` |
 | `device_info_tool` | 获取设备配置；不传 `device` 用默认设备，传 `all` 列出全部设备 | `当前设备信息是什么` / `列出所有可用设备` |
 | `session_info` | 查询活跃会话元数据（串口/SSH/ADB 通用）：按 `session_id`、按 `device` 或全部，返回连接信息与原始日志路径 | `当前有哪些会话` / `列出 board-a 的会话` |
-| `host_info` | 查询 MCP 宿主端点（username@ip）与日志保存目录；跨机部署下供构造 scp 命令，并暴露业务日志 / 原始数据日志的绝对路径供 AI 清理；本地启动返回 local | `宿主端点是什么` / `日志保存在哪里` |
+| `host_info` | 查询 MCP 宿主端点（username@ip）与日志保存目录；跨机部署下供构造 scp 命令，并暴露业务日志 / 原始数据日志 / 传输暂存目录（`.embedded/tmp`）的绝对路径供 AI 清理与定位传输文件；本地启动返回 local | `宿主端点是什么` / `日志保存在哪里` |
 | `greet_tool` | 演示用打招呼工具 | — |
 
 #### 4.2 串口工具
@@ -133,7 +133,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `serial_uboot_state` | 查询/检测/强制设置串口会话的 U-Boot 标记（detect/set/clear/status），标记决定 exec 的 marker 包装风格 | `检测当前是否在 U-Boot` / `标记为 U-Boot 会话` |
 | `serial_send_ctrl` | 向串口会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `串口发 Ctrl+C` / `中断串口命令` |
 | `serial_upload` | 经 ZMODEM 上传二进制文件到设备（复用串口会话，不释放端口；设备需有 lrzsz） | `串口上传固件` / `把 update.bin 传到设备` |
-| `serial_download` | 经 ZMODEM 从设备下载二进制文件（复用串口会话，不释放端口；设备需有 lrzsz） | `串口拉取日志` / `下载 /tmp/dmesg.log` |
+| `serial_download` | 经 ZMODEM 从设备下载二进制文件（复用串口会话，不释放端口；设备需有 lrzsz；`local_path` 可选，缺省落到 `.embedded/tmp` 下、文件名取远端 basename，摘要回显实际落盘路径） | `串口拉取日志` / `下载 /tmp/dmesg.log` |
 
 > [!WARNING]
 > **串口持续输出的设备慎用 ZMODEM 下载**：ZMODEM 是带内协议，设备持续打印（内核日志、常驻诊断输出等）会与协议帧物理交织。同等洪水强度下，下载方向（设备 `sz` → MCP）受污染双重命中（设备侧发送被打断 + MCP 接收侧污染）、恢复链路更脆、且受 `MAX_CRC_RETRIES=10` 重试上限约束，很容易传输失败；上传方向（MCP → 设备 `rz`）靠本地缓存可无限重传，相对能扛（仅吞吐滑坡）。若设备有持续打印，建议优先用上传；确需下载时，先停掉可控输出源（`dmesg -D`、kill 常驻打印任务）再传。完整分析见 [docs/MCP串口ZMODEM文件传输.md](./docs/MCP串口ZMODEM文件传输.md#四-串口持续输出对传输的影响)。
@@ -165,7 +165,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `ssh_shell_send_ctrl` | 向 SSH 会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `SSH 发 Ctrl+C` / `中断 SSH 命令` |
 | `ssh_build` | 在远端执行编译命令，等待完成并结构化分类错误/警告/信息（每个会话同一时刻只跑一个编译） | `远程编译内核` / `make -j8 编译并分析结果` |
 | `ssh_sftp_upload` | 复用 SSH 会话经 SFTP 上传本地文件到远端（流式传输，适合大文件） | `上传文件到板卡` / `把 build.sh 传到 /tmp` |
-| `ssh_sftp_download` | 复用 SSH 会话经 SFTP 从远端下载文件到本地 | `从板卡下载文件` / `拉取 /var/log/dmesg` |
+| `ssh_sftp_download` | 复用 SSH 会话经 SFTP 从远端下载文件到本地（`local_path` 可选，缺省落到 `.embedded/tmp` 下、文件名取远端 basename，摘要回显实际落盘路径） | `从板卡下载文件` / `拉取 /var/log/dmesg` |
 
 #### 4.5 Windows 工具
 
@@ -353,6 +353,17 @@ execTimeout:
 ```
 
 每行记录工具名称、调用参数、会话生命周期等。首行的 `cwd` 可用于排查[相对路径问题](#2-环境变量未生效)；`SAVE2FILE_PATH` 写的是另一份原始字节流日志（transport 接收到的设备原始返回），与这份业务日志相互独立。
+
+`.embedded` 数据目录（相对 MCP 进程 cwd，启动脚本已锚定到项目根）的子目录约定：
+
+| 子目录 | 用途 |
+|---|---|
+| `configs/` | 设备配置（`config.yaml` + `devices/` 分文件） |
+| `log/` | 业务日志 + 原始字节流日志 |
+| `ssh/` | 跨机部署的密钥与模板（`sshd-config` 生成） |
+| `tmp/` | **传输暂存目录**：`serial_download` / `ssh_sftp_download` 未指定 `local_path` 时的缺省落盘位置，也是跨机部署下 Linux 端 `scp` 推文件到 Windows 的推荐落点（MCP 启动时自动创建并写入日志，`host_info` 可查询绝对路径）。属缓存性质，打包/发布不依赖，可随时清空 |
+
+> `EMBEDDED_DATA_DIR` 环境变量可整体覆盖数据目录根（非标准部署时的逃生口，默认 `cwd/.embedded`）。传输相关的三条链路都收敛到同一落点后，典型流转是：Linux 端 `scp` 推到 `.embedded/tmp/` → 经 `serial_upload` / `ssh_sftp_upload` 上载到设备；或反向下载后从该目录 `scp` 拉走。
 
 ### 3. `configs`配置
 

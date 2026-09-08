@@ -16,6 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as os from "os";
 import { resolveHostEndpoint } from "../sdk/host/host-endpoint.js";
 import { buildRoutingInstructions } from "../sdk/host/build-routing.js";
+import { ensureTransferTmpDir } from "../sdk/shared/data-dir.js";
 
 import { logger } from "../sdk/shared/logger.js";
 import { pkg } from "../sdk/shared/package-info.js";
@@ -38,6 +39,28 @@ import {
 
 // ── server 实例 ────────────────────────────────────────────
 
+// ── 传输暂存目录预检 ──────────────────────────────
+
+// MCP 被拉起时即确保 .embedded/tmp 存在（幂等）：它是三类文件通道
+// （ZMODEM 下载 / SFTP 下载缺省落盘、scp 跨机推送推荐目录）的统一落点，
+// 提前建好可让 AI 客户端不经任何下载工具直接 scp push 也不缺目录。
+// 路径写入启动日志，便于跨机部署下排查"文件推到哪了"。
+let transferTmpDir: string;
+try {
+  transferTmpDir = ensureTransferTmpDir();
+} catch (err) {
+  // 目录创建失败不阻断启动（下载工具缺省路径会再尝试并报错），仅告警
+  transferTmpDir = "";
+  logger.warn(
+    `[mcp] failed to ensure transfer tmp dir: ${err instanceof Error ? err.message : String(err)}`
+  );
+}
+// scp 推送目标给 AI 的展示形态：正斜杠（Windows OpenSSH scp 接受），
+// 结尾补 / 使 scp 保留源文件名推入目录
+const transferTmpDirForScp = transferTmpDir
+  ? `${transferTmpDir.replace(/\\/g, "/")}/`
+  : "";
+
 // ── 远程 SSH 启动时的宿主端点提示 ────────────────────
 
 // 解析宿主端点(username@ip)。仅远程 SSH 启动(存在 SSH_CONNECTION)时产出端点;
@@ -53,7 +76,9 @@ const instructions =
         "To transfer files between your Linux machine and the Windows MCP host, run scp in your own Linux shell always passing the passwordless key -i ~/.ssh/id_mcp_server",
         "(NOT via the power_shell_* tools, which execute on the Windows host and would only scp Windows to itself).",
         `To pull a file from Windows: scp -i ~/.ssh/id_mcp_server ${hostEndpoint.endpoint}:"E:/path" ~/local/.`,
-        `To push to Windows: scp -i ~/.ssh/id_mcp_server ~/local/file ${hostEndpoint.endpoint}:"E:/path/".`,
+        transferTmpDirForScp
+          ? `To push to Windows: scp -i ~/.ssh/id_mcp_server ~/local/file ${hostEndpoint.endpoint}:"${transferTmpDirForScp}" — the .embedded/tmp dir is the default landing spot for transfers; files pushed there can be picked up by serial_upload / ssh_sftp_upload or downloaded back over SFTP/ZMODEM.`
+          : `To push to Windows: scp -i ~/.ssh/id_mcp_server ~/local/file ${hostEndpoint.endpoint}:"E:/path/".`,
         buildRoutingInstructions(),
       ].join(" ")
     : undefined;
@@ -222,6 +247,9 @@ export async function startMcpServer() {
   };
   logger.info(`[mcp] MCP server starting... cwd: ${process.cwd()}`);
   logger.info(`[mcp] MCP server env: ${JSON.stringify(envVars)}`);
+  logger.info(
+    `[mcp] transfer tmp dir: ${transferTmpDir || "(unavailable — creation failed)"}`
+  );
 
   // SSH 会话环境变量（仅当本进程经由 ssh 远程启动时由 sshd 注入）。
   // 字段语义（OpenSSH 约定，空格分隔）：

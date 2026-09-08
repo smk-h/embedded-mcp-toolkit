@@ -21,6 +21,7 @@ import { pkg } from "../../shared/package-info.js";
 import { resolveHostEndpoint } from "../../host/host-endpoint.js";
 import { resolveLogPaths, type LogPaths } from "../../host/log-paths.js";
 import { buildRoutingHint } from "../../host/build-routing.js";
+import { resolveTransferTmpDir } from "../../shared/data-dir.js";
 
 // ── 声明 ────────────────────────────────────────────────────
 
@@ -44,22 +45,26 @@ export const hostInfoConfig: SdkToolConfig = {
 // ── 辅助函数 ────────────────────────────────────────────────
 
 /**
- * @brief 将日志目录解析结果格式化为多行文本
+ * @brief 将日志/传输目录解析结果格式化为多行文本
  * @details 输出 cwd 与两条日志通道（业务日志 / 原始数据日志）的绝对路径及启用状态，
- *          供 AI 客户端拿到绝对路径后用 power_shell（Windows 本机）或 scp（跨机）
- *          自行清理日志。两种部署方式（本地 / Linux→Windows 桥接）下 MCP 工具都
- *          运行在 MCP 所在主机，返回的绝对路径即该主机上的真实保存位置。
+ *          以及传输暂存目录（.embedded/tmp）。供 AI 客户端拿到绝对路径后用
+ *          power_shell（Windows 本机）或 scp（跨机）自行清理日志/定位传输文件。
+ *          两种部署方式（本地 / Linux→Windows 桥接）下 MCP 工具都运行在 MCP
+ *          所在主机，返回的绝对路径即该主机上的真实保存位置。
  * @param lp 日志目录解析结果
  * @returns 文本行数组
  */
 function formatLogDirectories(lp: LogPaths): string[] {
   const businessState = lp.business.enabled ? "enabled" : "disabled";
   const rawDataState = lp.rawData.enabled ? "enabled" : "disabled";
+  // scp 展示形态：正斜杠 + 结尾斜杠（推入目录时保留源文件名）
+  const tmpDirForScp = `${resolveTransferTmpDir().replace(/\\/g, "/")}/`;
   return [
     `Log directories (${pkg.name} MCP server):`,
     `  server cwd:       ${lp.cwd}`,
     `  business log:     ${lp.business.dir}  (${businessState})`,
     `  raw data log:     ${lp.rawData.dir}  (${rawDataState})`,
+    `  transfer tmp:     ${resolveTransferTmpDir()}  (default landing dir for ZMODEM/SFTP downloads and scp pushes)`,
     "",
     "Notes:",
     "  - business log (LOG_SAVE + LOG_DIR): whole-process diagnostic info, one file per run (YYYY-MM-DD_HHMMSS.log).",
@@ -106,6 +111,7 @@ function formatHostEndpoint(
   }
 
   // 远程 SSH 启动且端点解析成功
+  const tmpDirForScp = `${resolveTransferTmpDir().replace(/\\/g, "/")}/`;
   return [
     "Host:       remote-ssh started",
     `Endpoint:   ${ep.endpoint}`,
@@ -115,7 +121,8 @@ function formatHostEndpoint(
     "",
     `Usage: You (the AI client) are running on Linux; the ${pkg.name} MCP server runs on Windows (the endpoint above). To transfer files between your Linux machine and Windows, run scp in YOUR OWN shell (not via the power_shell tool, which only operates on the Windows host itself). Always pass the passwordless key -i ~/.ssh/id_mcp_server:`,
     `  - Linux <- Windows (pull):  scp -i ~/.ssh/id_mcp_server ${ep.endpoint}:"E:/path/to/file" ~/local/path`,
-    `  - Linux -> Windows (push):  scp -i ~/.ssh/id_mcp_server ~/local/file ${ep.endpoint}:"E:/path/"`,
+    `  - Linux -> Windows (push):  scp -i ~/.ssh/id_mcp_server ~/local/file ${ep.endpoint}:"${tmpDirForScp}"`,
+    "The push target above is the transfer tmp dir (.embedded/tmp) — the default landing spot on this MCP host. Files pushed there can be picked up by serial_upload / ssh_sftp_upload, or pulled back over SFTP/ZMODEM downloads.",
     "Do NOT use power_shell_* tools for cross-machine transfers — those run on Windows and would scp Windows to itself.",
     "",
     buildRoutingHint(),

@@ -55,6 +55,15 @@
       <td><a href="ssh/shell-demo.mjs">shell-demo.mjs</a></td>
       <td>SSH 交互式 shell 演示：建立连接、打开交互 shell 并读写</td>
     </tr>
+    <tr>
+      <td rowspan="2">根目录</td>
+      <td><a href="exec-runner-smoke.mjs">exec-runner-smoke.mjs</a></td>
+      <td>runExec 离线冒烟验证（marker 检测 / 双超时 / 旧参数兼容，无需真实设备）</td>
+    </tr>
+    <tr>
+      <td><a href="data-dir-smoke.mjs">data-dir-smoke.mjs</a></td>
+      <td>数据目录与传输暂存目录（.embedded/tmp）解析的离线验证：env 覆盖、缺省下载路径、幂等创建</td>
+    </tr>
   </tbody>
 </table>
 

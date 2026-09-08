@@ -22,6 +22,7 @@ import { stat } from "node:fs/promises";
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../shared/logger.js";
 import { formatTransferSummary } from "../../shared/transfer-result.js";
+import { defaultDownloadLocalPath } from "../../shared/data-dir.js";
 import { serialStore } from "./sessions.js";
 import { zmodemSend, zmodemReceive } from "../../zmodem/index.js";
 
@@ -513,7 +514,8 @@ export async function serialUploadHandler(args: {
  *
  * @param session_id    由 serial_open 返回的会话 ID
  * @param remote_path   远端源文件路径
- * @param local_path    本地目标文件路径
+ * @param local_path    本地目标文件路径（可选，缺省落数据目录 tmp 下、
+ *                      文件名取 remote_path basename）
  * @param send_cmd      设备端发送命令模板（默认 "sz {remote}"，{remote} 替换为 remote_path）
  * @param idle_timeout  空闲超时秒数：无数据流动超过此值判真故障并终止（默认 15）
  * @param timeout       总时长超时秒数，兜底防无限挂起（默认 300）
@@ -531,6 +533,8 @@ export const serialDownloadConfig: SdkToolConfig = {
     "prefer an absolute path, or combine send_cmd with a cd to pin the directory. " +
     "If the remote file does not exist or is unreadable, sz errors out and the transfer fails " +
     "(a partial local file, if any, is removed on failure). " +
+    "local_path is optional: when omitted, the file lands in the MCP data dir under .embedded/tmp " +
+    "(named after the remote basename; the summary reports the exact path). " +
     "Blocks until transfer completes, fails, or times out; progress is logged to stderr. " +
     "Two timeouts: idle_timeout aborts on stalled transfer (real failure); " +
     "timeout caps total duration and reports a suggested value if still progressing.",
@@ -551,7 +555,10 @@ export const serialDownloadConfig: SdkToolConfig = {
       },
       local_path: {
         type: "string",
-        description: "Local destination file path",
+        description:
+          "Local destination file path (optional). When omitted, the file is saved into the " +
+          "MCP data dir .embedded/tmp, named after the remote basename; the returned summary " +
+          "shows the exact local path. Prefer the default when you have no specific target dir.",
       },
       send_cmd: {
         type: "string",
@@ -574,7 +581,7 @@ export const serialDownloadConfig: SdkToolConfig = {
           "with a suggested value instead of silently truncating.",
       },
     },
-    required: ["session_id", "remote_path", "local_path"],
+    required: ["session_id", "remote_path"],
   },
 };
 
@@ -593,15 +600,18 @@ export const serialDownloadConfig: SdkToolConfig = {
 export async function serialDownloadHandler(args: {
   session_id: string;
   remote_path: string;
-  local_path: string;
+  local_path?: string;
   send_cmd?: string;
   idle_timeout?: number;
   timeout?: number;
 }): Promise<string> {
   const timeoutSec = args.timeout ?? DEFAULT_TIMEOUT_SEC;
   const idleTimeoutSec = resolveIdleTimeoutSec(args.idle_timeout);
+  // 缺省本地路径：数据目录 tmp 下、文件名取远端 basename
+  const localPath =
+    args.local_path ?? defaultDownloadLocalPath(args.remote_path);
   logger.info(
-    `[serial_download] session_id=${args.session_id} remote=${args.remote_path} local=${args.local_path} send_cmd=${args.send_cmd ?? "(default sz)"} timeout=${timeoutSec} idle_timeout=${idleTimeoutSec}`
+    `[serial_download] session_id=${args.session_id} remote=${args.remote_path} local=${localPath}${args.local_path ? "" : " (default tmp dir)"} send_cmd=${args.send_cmd ?? "(default sz)"} timeout=${timeoutSec} idle_timeout=${idleTimeoutSec}`
   );
 
   const shell = serialStore.get(args.session_id);
@@ -636,7 +646,7 @@ export async function serialDownloadHandler(args: {
       // sendCmd 由 zmodemReceive→establishSession 挂完字节旁路后发出
       const result = await zmodemReceive(
         shell,
-        args.local_path,
+        localPath,
         {
           onProgress: (p) => {
             if (typeof p.total === "number" && p.total > 0) {
@@ -670,7 +680,7 @@ export async function serialDownloadHandler(args: {
         return formatAbortedSummary(
           reason,
           "Download",
-          args.local_path,
+          localPath,
           args.remote_path,
           { bytes: result.bytes, durationMs: result.durationMs },
           timeoutSec,
