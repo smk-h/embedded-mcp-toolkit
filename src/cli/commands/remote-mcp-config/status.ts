@@ -54,9 +54,11 @@ export function buildBridgeServer(
  * @details 收敛各客户端的写法差异：
  *          - claude（split，无 serverType）：{ command, args } 分体
  *          - zcode（split，serverType:"stdio"）：分体 + type:"stdio" / enabled:true
+ *          - dsh（split，serverType:"stdio"，serverEnabled:false）：分体 + type:"stdio"，
+ *            不写 enabled，另带按约定置空的 cwd
  *          - opencode（array）：command 为数组（合并 command+args），
  *            type:"local" / enabled:true / timeout:600000
- * @param file   落点描述符（serverStyle / serverType 决定形态）
+ * @param file   落点描述符（serverStyle / serverType / serverEnabled / cwd 决定形态）
  * @param bridge 逻辑桥接定义
  * @returns 写入目标文件的 server 对象
  */
@@ -73,14 +75,21 @@ export function renderServerObject(
       timeout: 600000,
     };
   }
-  // claude/zcode 风格：command + args 分体
+  // claude/zcode/dsh 风格：command + args 分体
   const server: Record<string, unknown> = {
     command: bridge.command,
     args: bridge.args,
   };
   if (file.serverType) {
     server.type = file.serverType;
-    server.enabled = true;
+    // 除显式抑制（dsh）外，带 type 的落点默认写 enabled:true
+    if (file.serverEnabled !== false) {
+      server.enabled = true;
+    }
+  }
+  // dsh：cwd 字段按约定保留并置空（该参数非必需），字段不存在时不写
+  if (file.cwd !== undefined) {
+    server.cwd = file.cwd;
   }
   return server;
 }

@@ -43,8 +43,8 @@ export type MenuChoice =
   | typeof MENU_REMOVE
   | typeof MENU_EXIT;
 
-/** @brief 客户端类型 */
-export type McpClient = "claude" | "zcode" | "opencode";
+/** @brief 客户端类型（dsh = DeepSeek Harness，本期仅项目级落点） */
+export type McpClient = "claude" | "zcode" | "opencode" | "dsh";
 
 /** @brief Claude 配置范围 */
 export type ClaudeScope = "global" | "project";
@@ -71,10 +71,14 @@ export interface BridgeServer {
  * @param serverPath       server 容器的 JSON 路径（claude:["mcpServers"]，
  *                         zcode:["mcp","servers"]，opencode:["mcp"]）；
  *                         无 server 定义时留空（仅做使能数组操作的文件）
- * @param serverStyle      server 对象写法：split=command+args 分体（claude/zcode），
+ * @param serverStyle      server 对象写法：split=command+args 分体（claude/zcode/dsh），
  *                         array=command 为数组（opencode）
- * @param serverType       带 type/enabled 时的 type 值（zcode:"stdio"，opencode:"local"）；
- *                         无则不写 type/enabled（claude）
+ * @param serverType       带 type 时的 type 值（zcode/dsh:"stdio"，opencode:"local"）；
+ *                         无则不写 type（claude）
+ * @param serverEnabled    是否随 type 一并写 enabled:true（zcode/opencode 需要；dsh 不需要，
+ *                         显式传 false 抑制）
+ * @param cwd              server 的工作目录（仅 dsh）；该字段非必需，故按约定保留并置空
+ *                         字符串，仅在字段存在时写入
  * @param rootSchema       顶层固定字段值（仅 opencode："$schema"）；写入时若缺失则补齐
  * @param enableArrayPath  使能数组的 JSON 路径（仅 claude 项目 settings.local.json）
  * @param enableValue      使能数组中追加/移除的值（"embedded-board"）
@@ -85,6 +89,8 @@ export interface TargetFile {
   serverPath: string[];
   serverStyle: "split" | "array";
   serverType?: string;
+  serverEnabled?: boolean;
+  cwd?: string;
   rootSchema?: string;
   enableArrayPath?: string[];
   enableValue?: string;

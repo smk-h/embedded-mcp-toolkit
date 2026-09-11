@@ -77,12 +77,15 @@ async function askProjectPath(): Promise<string | null> {
  * @details 落点路由（F3）：
  *          - claude   → select(全局/项目)；项目则 text(项目绝对路径)
  *          - zcode    → 直接 text(项目绝对路径)（本期 zcode 仅项目级）
+ *          - dsh      → 直接 text(项目绝对路径)（本期 dsh 仅项目级）
  *          - opencode → select(全局/项目)；项目则 text(项目绝对路径)
  *          按选择组装 Target：
  *            Claude  全局  → 1 文件：~/.claude.json（serverPath:["mcpServers"]）
  *            Claude  项目  → 2 文件：.mcp.json（serverPath）+ settings.local.json（enableArray）
  *            ZCode   项目  → 1 文件：.zcode/config.json（serverPath:["mcp","servers"]，
  *                             serverType:"stdio"）
+ *            DSH     项目  → 1 文件：.dsh/dshmm/mcp.json（serverPath:["mcpServers"]，
+ *                             serverType:"stdio" 且不写 enabled，另带置空的 cwd）
  *            opencode 全局  → 1 文件：~/.config/opencode/opencode.json（serverPath:["mcp"]，
  *                             serverStyle:"array"，serverType:"local"）
  *            opencode 项目  → 1 文件：.opencode/opencode.json（serverPath:["mcp"]，
@@ -100,6 +103,7 @@ export async function askTarget(client: Client): Promise<Target | null> {
       { value: "claude", label: "Claude Code" },
       { value: "zcode", label: "ZCode" },
       { value: "opencode", label: "opencode" },
+      { value: "dsh", label: "DSH (DeepSeek Harness)" },
     ],
   });
   if (isCancel(clientChoice)) {
@@ -107,10 +111,30 @@ export async function askTarget(client: Client): Promise<Target | null> {
     return null;
   }
 
-  // zcode：仅项目级
-  if (clientChoice === "zcode") {
+  // zcode / dsh：仅项目级
+  if (clientChoice === "zcode" || clientChoice === "dsh") {
     const projectPath = await askProjectPath();
     if (!projectPath) return null;
+
+    if (clientChoice === "dsh") {
+      return {
+        client: "dsh",
+        files: [
+          {
+            remotePath: joinRemotePath(projectPath, ".dsh/dshmm/mcp.json"),
+            label: "DSH 项目（.dsh/dshmm/mcp.json）",
+            serverPath: ["mcpServers"],
+            serverStyle: "split",
+            serverType: "stdio",
+            // dsh 的 server 对象不含 enabled 字段
+            serverEnabled: false,
+            // cwd 非必需，按约定保留字段并置空
+            cwd: "",
+          },
+        ],
+      };
+    }
+
     return {
       client: "zcode",
       files: [

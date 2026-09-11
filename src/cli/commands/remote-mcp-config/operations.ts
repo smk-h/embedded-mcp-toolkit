@@ -284,7 +284,7 @@ export async function doConfigure(
   const finalObj = renderServerObject(target.files[0], finalBridge);
   log.message(`    ${JSON.stringify(finalObj)}`);
   log.success("配置完成");
-  log.message("    需重启对应 client（claude/zcode/opencode）使配置生效");
+  log.message("    需重启对应 client（claude/zcode/opencode/dsh）使配置生效");
 }
 
 /**
