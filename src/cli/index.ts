@@ -17,6 +17,10 @@ import { runInit, runUninstall } from "./commands/init.js";
 import { runSplit } from "./commands/split.js";
 import { registerDevCommand } from "./commands/dev/index.js";
 import { runSshdConfig } from "./commands/sshd-config/index.js";
+import {
+  runCloudflared,
+  runCloudflaredAction,
+} from "./commands/cloudflared/index.js";
 import { runRemoteMcpConfig } from "./commands/remote-mcp-config/index.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
 
@@ -33,6 +37,12 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * │   └── list                   ←   列出全部设备（含模板）及三通道状态
  * ├── regex-verify               ← 自测设备 yaml 的 U-Boot 正则配置（.action()）
  * ├── sshd-config                ← 配置 Windows OpenSSH 免密登录环境（.action()）
+ * ├── cloudflared                ← 启动和管理 cloudflared Quick Tunnel(父命令,无参数进菜单)
+ * │   ├── start                  ←   后台启动隧道并从日志提取域名
+ * │   ├── stop                   ←   停止隧道并清理状态文件
+ * │   ├── status                 ←   查看隧道状态与域名
+ * │   ├── log                    ←   查看隧道日志尾部
+ * │   └── install                ←   安装 cloudflared(winget / 便携版)
  * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode/dsh 的 MCP 桥接（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
@@ -261,6 +271,82 @@ program
   .action(() => {
     runSshdConfig({});
   });
+
+// =============================================================================
+// cloudflared 命令 —— 启动和管理 Windows 下的 cloudflared Quick Tunnel
+// =============================================================================
+
+/**
+ * @brief cloudflared Quick Tunnel 管理命令
+ * @details 把"暴露本机 sshd 给公网侧 AI 客户端"固化为单命令（方案背景见
+ *          docs/MCP-CNB云环境访问Windows本地MCP方案.md 三、四、五章）。
+ *          无参数进交互式菜单；子命令直达：
+ *            start   后台启动隧道(spawn detached 常驻)并从日志提取域名
+ *            stop    杀进程树并清理状态文件
+ *            status  进程存活探测 + 域名展示(可从日志补录)
+ *            log     查看隧道日志尾部
+ *            install 安装 cloudflared(winget / 便携版)
+ *          状态持久化于 .embedded/cloudflared/state.json,隧道目标默认
+ *          ssh://127.0.0.1:22(--url 仅 start 提供;勿用 localhost,IPv6
+ *          回环会导致 sshd 侧端点解析失败)。
+ *
+ * @par 子命令类型 父命令聚合 —— 仿 dev 命令：父命令自身带 .action()（无参数
+ *          进交互菜单），子命令通过 .command() 挂载直达对应操作。
+ *
+ * @example
+ * embedded-mcp-toolkit cloudflared            无参数进交互菜单
+ * embedded-mcp-toolkit cloudflared start      后台启动隧道并提取域名
+ * embedded-mcp-toolkit cloudflared status     查看状态与域名
+ */
+const cloudflaredCmd = program
+  .command("cloudflared")
+  .description(
+    "启动和管理 Windows 下的 cloudflared Quick Tunnel(无参数进交互菜单)"
+  );
+
+cloudflaredCmd
+  .command("start")
+  .description("后台启动隧道(进程常驻,与 CLI 生命周期解耦)并从日志提取域名")
+  .option(
+    "-u, --url <url>",
+    "隧道目标 URL,默认 ssh://127.0.0.1:22(勿用 localhost)",
+    "ssh://127.0.0.1:22"
+  )
+  .action((opts) => {
+    runCloudflaredAction("start", { url: opts.url });
+  });
+
+cloudflaredCmd
+  .command("stop")
+  .description("停止隧道(杀整棵进程树)并清理状态文件")
+  .action(() => {
+    runCloudflaredAction("stop", {});
+  });
+
+cloudflaredCmd
+  .command("status")
+  .description("查看隧道状态与域名(域名缺失时自动从日志补录)")
+  .action(() => {
+    runCloudflaredAction("status", {});
+  });
+
+cloudflaredCmd
+  .command("log")
+  .description("查看隧道日志尾部(排查域名未分配/进程退出)")
+  .action(() => {
+    runCloudflaredAction("log", {});
+  });
+
+cloudflaredCmd
+  .command("install")
+  .description("安装 cloudflared(winget / 便携版到 .embedded/bin)")
+  .action(() => {
+    runCloudflaredAction("install", {});
+  });
+
+cloudflaredCmd.action(() => {
+  runCloudflared({});
+});
 
 // =============================================================================
 // remote-mcp-config 命令 —— 登录远程 Linux 配置 claude/zcode/opencode/dsh 的 MCP 桥接

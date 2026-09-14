@@ -61,3 +61,4 @@ psh
 ppt/.tmp
 ppt/~$*.pptx
 
+.embedded/cloudflared
