@@ -129,6 +129,8 @@ SYN 包本身**不携带任何业务数据**，只带一个初始序列号作为
 
 另有两个变体在此一并交代：**frp** 是方案 A 的工业化替代（架构完全同构，自带断线重连、token 认证、dashboard，若打算上常驻运维服务可选）；**Tailscale/ZeroTier** 是方案 B 的零配置变体（基于 WireGuard + 自动打洞，但国内环境下控制面在国外、公共 DERP 中继在境外，打洞不稳时时延高——若用需自建 DERP 或 headscale，那又回到了自建的复杂度，往往不如直接自建 WireGuard 干净）。
 
+【**远端前提**】两条路线还共享一个选型表中未显式列出的前提：**远端必须是一台自己管理的常规服务器**——方案 A 要求远端 sshd 允许 `-R` 注册端口，方案 B 要求远端可放行 UDP 入站并具备内核与 `tun` 能力。受管云开发环境的公网 SSH 入口（如 CNB 的 `cnb.space:22`）会在**网关层**直接拒绝 `-R` 的端口注册（容器内 sshd 配置再正确也无济于事），方案 A 在其上整体不可用。该环境的完整能力画像与替代路线见 [MCP-CNB云环境访问Windows本地MCP方案](./MCP-CNB云环境访问Windows本地MCP方案.md)，两篇文档结论的实测复核见[六、](#六-实测验证记录)。
+
 ## 二、 方案 A：SSH -R 双反向隧道
 
 ### 1. 反向转发（ssh -R）的工作原理
@@ -448,7 +450,7 @@ VPN 建立后：形态二的全部前提原样成立
 
 ### 1. 误判面：SSH_CONNECTION 二值判定的影响
 
-现有场景判定在 [`src/sdk/host/host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L129-L169)：存在 `SSH_CONNECTION`（由 sshd 注入）→ `remote-ssh`，否则 → `local`。supergateway 是在 Win 本地 spawn MCP 的，`SSH_CONNECTION` 必然不存在 → 误判为 `local`。连锁反应波及四件事，不只是 `host_info`：
+现有场景判定在 [`src/sdk/host/host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L129-L169)：存在 `SSH_CONNECTION`（由 sshd 注入）→ `remote-ssh`，否则 → `local`。supergateway 是在 Win 本地 spawn MCP 的，`SSH_CONNECTION` 必然不存在 → 误判为 `local`（2026-09-15 已实测确认：经隧道调 `host_info` 返回 `local started`，见[六、](#六-实测验证记录)）。连锁反应波及四件事，不只是 `host_info`：
 
 | 依赖场景判定的行为 | 代码位置 | local 误判的后果 | 隧道拓扑下应有的行为 |
 | --- | --- | --- | --- |
@@ -583,6 +585,46 @@ Always pass the passwordless key -i ~/.ssh/id_mcp_server:
 ### 5. 时延预算
 
 每次工具调用多一个公网 RTT（几十 ms 级）：`serial_exec` / `serial_enter_uboot` 这类带 `timeoutMs` 的交互式调用要把网络往返算进余量，适当上调超时参数；长会话（`serial_open` 后的持续 read）与流式传输（ZMODEM）不受单次调用 RTT 影响。
+
+## 六、 实测验证记录
+
+> 本章为 2026-09-15 对方案 A 双反向隧道的端到端实测记录，使用本仓库真实设备即可复现，验证结论已回填正文相应章节。
+
+### 1. 验证环境
+
+- **Win 工位机**：Windows 11，OpenSSH Server 运行中，node v24；MCP 由 supergateway 经 `remote-start-mcp.bat` 拉起（`--outputTransport streamableHttp`，监听 8000）；
+- **远端正例**：LubanCat 开发板（Debian 12 + OpenSSH 9.2p1）——一台自己管理的常规 Linux sshd，按[一、3 节](#3-方案-a-与方案-b的选型对比)的远端前提扮演"云服务器"；服务端实测 `allowtcpforwarding yes`、`permitlisten any`、`gatewayports no`；
+- **远端反例**：CNB 容器经 `cnb.space:22` 受管 SSH 网关，见[3.](#3-反例cnb-受管网关)。
+
+免密体系按部署流程现配：Win 出站密钥的公钥写入远端 `authorized_keys`（隧道自身认证）；反向把远端公钥写回 Win 的 `authorized_keys`（7000 通道 scp 认证）。
+
+### 2. 正例：标准 sshd 上双通道全通
+
+按[二、5 节](#5-拓扑总览与启动命令)原样执行"一条连接挂双 `-R`"，两条转发均注册成功：
+
+```text
+debug1: remote forward success for: listen 8000, connect 127.0.0.1:8000
+debug1: remote forward success for: listen 7000, connect 127.0.0.1:22
+```
+
+| 验证项 | 在远端执行的命令 | 实测结果 |
+| --- | --- | --- |
+| 通道一·握手 | `curl -X POST http://127.0.0.1:8000/mcp`（initialize） | 返回 `@smai-kit/embedded-mcp-toolkit 2.1.0` 的 JSON-RPC 响应 |
+| 通道一·工具列表 | 再次 POST `tools/list` | 返回完整工具列表 |
+| 通道一·工具调用 | 再次 POST `tools/call`（`host_info`） | 正常返回宿主信息 |
+| 通道二·登录 | `ssh -p 7000 <win_user>@127.0.0.1 whoami` | 免密登录，返回 Windows 用户名 |
+| 通道二·推文件 | `scp -P 7000 <文件> <win_user>@127.0.0.1:"E:/.../.embedded/tmp/"` | 文件落地 Win 磁盘且内容一致 |
+
+同时印证了正文三处论断：[五、3 节](#3-隧道保活与重连)的"失败即退"——远端端口被占时，`ExitOnForwardFailure=yes` 使连接立即以 `remote port forwarding failed` 退出而非挂着一条空连接；[四、](#四-方案-a-的配套改造remote-tunnel-场景)的场景误判——经隧道调 `host_info` 确实返回 `local started`；supergateway 常驻拉起后 MCP 会话在多次工具调用间保持稳定。
+
+### 3. 反例：CNB 受管网关
+
+同一台 Win 对 `cnb.space:22`（`none` 认证直入的受管 SSH 网关）执行同样的双 `-R`，两条转发全部被拒：`remote forward failure for: listen port 8000`（7000 同）。排查定位：
+
+- 容器内 sshd 实际监听 36000（由网关路由），`sshd -T` 显示 `allowtcpforwarding yes` 且端口空闲——配置层面找不到任何拒绝理由；
+- 对照实验：容器内直连 `127.0.0.1:36000`（绕过网关）发起 `-R`，注册成功。
+
+即**拒绝发生在网关协议层，容器内配置无从干预**。结论：[一、3 节](#3-方案-a-与方案-b的选型对比)的远端前提不可省——受管云开发环境不能充当方案 A 的隧道服务端；该场景下 MCP 通道的替代载体（Cloudflare Quick Tunnel）见 [MCP-CNB云环境访问Windows本地MCP方案](./MCP-CNB云环境访问Windows本地MCP方案.md)。
 
 ---
 *本文档由 markdowncli 技能辅助生成*

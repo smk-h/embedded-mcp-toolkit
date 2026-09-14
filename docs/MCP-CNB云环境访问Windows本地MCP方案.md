@@ -108,7 +108,9 @@ vscode://vscode-remote/ssh-remote+cnb-p0r-<...>.<uuid>-<后缀>@cnb.space/worksp
 | **`-L` 本地转发** | ✅ 可用（实测 `18888` 端口转发后 HTTP 返回 200） |
 | **`-R` 远程转发** | ❌ **被拒绝**：`Error: remote port forwarding failed for listen port <端口>`（换端口、仅绑回环均失败） |
 
-容器内对应的服务端是平台拉起的 `sshd`（见 3.3 节，监听 `0.0.0.0:36000`，且命令行显式带了 `-o AllowTcpForwarding=yes`）。也就是说，**`-R` 的拒绝发生在网关层**，而不是容器内 sshd 的配置问题——改容器内配置无法绕过。
+容器内对应的服务端是平台拉起的 `sshd`（见 3.3 节，监听 `0.0.0.0:36000`，且命令行显式带了 `-o AllowTcpForwarding=yes`）。做一组对照实验即可把拒绝点钉死在网关层：同一容器内，向 `cnb.space:22` 发起 `-R` 被拒；绕开网关直连本容器的 `127.0.0.1:36000` 发起 `-R 19999:127.0.0.1:22`，则注册成功（`remote forward success for: listen 19999`，2026-09-15 实测）——同一个 sshd、同一份配置，唯一变量是流量是否经过网关。因此**`-R` 的拒绝发生在网关层**，而不是容器内 sshd 的配置问题——改容器内配置无法绕过。
+
+【**补充**】`none` 之外，写入容器内 `~/.ssh/authorized_keys` 的公钥同样可经该入口完成 publickey 登录（2026-09-15 实测通过）——说明认证链路最终落到容器内 sshd，而非网关单方放行。
 
 这条入口直接决定了两件事：**为什么 `ssh -R` 隧道方案依然走不通**（见二、3 节），以及**它能为 Cloudflare 方案补上什么**（见五、1 节）。
 
@@ -155,7 +157,7 @@ CNB 恰好满足了前半条，卡死在**后半条**：
 
 【**注意**】`-L` 可用但帮不上忙：`-L` 的语义是"**客户端侧**监听、转发到服务端"，而方案 A 需要的是"**服务端侧**监听、转发回 Windows"——方向恰好相反。
 
-【**待确认**】上述 `-R` 拒绝是在容器内向该入口发起时观测到的。若要排除"网关对来自本环境内部的连接限制更严"的可能，可在 Windows 上用同一地址执行一次 `ssh -R` 复核。但从该网关的定位（Remote-SSH 接入）看，禁掉远程转发属于常规加固。
+【**已复核**】2026-09-15 已从 Windows 直连 `cnb.space:22` 复核（另一环境实例，同样 `none` 认证）：对该入口发起 `ssh -N -R 8000:127.0.0.1:8000 -R 7000:127.0.0.1:22`，两条转发同样全部被拒（`remote forward failure for: listen port 8000`、`...7000`）。`-R` 被拒与发起方在容器内还是 Windows 上无关，系网关的统一策略；从该网关的定位（Remote-SSH 接入）看，禁掉远程转发属于常规加固。
 
 因此方案 A 的修复路径只剩两条：
 
@@ -168,7 +170,7 @@ CNB 恰好满足了前半条，卡死在**后半条**：
 
 ### 4. CNB 端口预览：HTTP 专用，无法替代
 
-CNB 为开发环境提供了端口预览：容器内监听某端口后，可通过 `https://<前缀>-<端口>.cnb.run/` 从公网访问。环境变量 `VSCODE_PROXY_URI` 即其地址模板。它的存在容易让人产生"CNB 有公网入站能力"的错觉，实测结论如下：
+CNB 为开发环境提供了端口预览：容器内监听某端口后，可通过 `https://<前缀>-<端口>.cnb.run/` 从公网访问。环境变量 `CNB_VSCODE_PROXY_URI` 即其地址模板（实测值形如 `https://<前缀>-{{port}}.cnb.run`）。它的存在容易让人产生"CNB 有公网入站能力"的错觉，实测结论如下：
 
 | 实验 | 结果 |
 | --- | --- |
@@ -258,8 +260,11 @@ embedded-mcp-toolkit sshd-config
 
 ```powershell
 # 把本机 22 端口通过 Quick Tunnel 暴露出去
-cloudflared tunnel --url ssh://localhost:22
+# 注意写显式 IPv4 127.0.0.1，不要写 localhost —— 见下方【实测】
+cloudflared tunnel --url ssh://127.0.0.1:22
 ```
+
+【**实测**】2026-09-15 对比过两种写法：URL 写 `localhost` 时，cloudflared 在 Windows 上把回环解析成 **IPv6 的 `::1`**，Windows sshd 眼中连接来自 `::1`，MCP 拿到的 `SSH_CONNECTION` 为 `::1 <port> ::1 22`——而 [`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 的端点解析只认 IPv4，最终 `host_info` 输出 `Endpoint: (unavailable)`。改写 `ssh://127.0.0.1:22` 后，`SSH_CONNECTION` 变为 `127.0.0.1 <port> 127.0.0.1 22`，端点正确解析为 `<win_user>@127.0.0.1`（见六、3）。隧道 URL 的这一写法直接决定第四章的场景判定能否完整生效，部署时务必用显式 IPv4。
 
 启动后日志会输出连通性预检结果与分配到的随机域名：
 
@@ -388,12 +393,12 @@ MCP Server 启动时会依据环境变量判定"本地 / 远程"并决定注入�
 | 公网隧道篇方案 A（supergateway） | Windows 本地 supergateway | **无** | `local` ❌ 误判 |
 | **本文（Cloudflare + ProxyCommand）** | **Windows sshd（经 ssh）** | **有** | `remote-ssh` ✅ |
 
-因此公网隧道篇第四章为方案 A 设计的 `remote-tunnel` 场景改造（涉及 [`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts)、[`host-info.ts`](../src/sdk/tools/basic/host-info.ts)、[`server.ts`](../src/mcp/server.ts)、[`pshell-policy.ts`](../src/mcp/pshell-policy.ts) 四处）**在本方案下整个不需要做**。配套行为也全部天然正确：
+因此公网隧道篇第四章为方案 A 设计的 `remote-tunnel` 场景改造（涉及 [`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts)、[`host-info.ts`](../src/sdk/tools/basic/host-info.ts)、[`server.ts`](../src/mcp/server.ts)、[`pshell-policy.ts`](../src/mcp/pshell-policy.ts) 四处）**在本方案下整个不需要做**。配套行为也全部天然正确（2026-09-15 端到端实测确认，见六、3）：
 
-- `instructions` 正常注入 scp 引导；
+- `instructions` 正常注入 scp 引导（实测输出完整 `scp -i ~/.ssh/id_mcp_server ... 20380@127.0.0.1` 骨架）；
 - `host_info` 返回 `remote-ssh started` 而非 `local started`；
 - `power_shell_*` 正常注册（AI 在云端，这是它唯一的 Windows 执行通道）；
-- `ssh_build` 不注册（AI 就在云端编译机上，注册反而诱导绕行）。
+- `ssh_build` 不注册（实测启动日志明确输出 `ssh_build tool not registered (remote-ssh launch)`）。
 
 ### 2. 端点会被解析成 127.0.0.1
 
@@ -401,7 +406,7 @@ MCP Server 启动时会依据环境变量判定"本地 / 远程"并决定注入�
 
 [`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 解析 `SSH_CONNECTION`（格式为 `<client-ip> <client-port> <server-ip> <server-port>`）时，取的是**第 3 字段 `server-ip`**（即 sshd 实际监听并被连入的本地地址）作为宿主 IP。
 
-在隧道拓扑下，连接到 Windows sshd 的那一跳是 **Windows 本机的 cloudflared 从 `127.0.0.1:22` 发起的**，因此 `server-ip` 就是 `127.0.0.1`，解析结果是：
+在隧道拓扑下，连接到 Windows sshd 的那一跳是 **Windows 本机的 cloudflared 从回环发起到 sshd 的**，`server-ip` 就是那个回环地址。实测发现它**取决于 2.4 节隧道 URL 的写法**：写 `localhost` 时 cloudflared 走 IPv6 回环，`server-ip` 为 `::1`，解析不出 IPv4 端点（`Endpoint: (unavailable)`）；写 `127.0.0.1` 时 `server-ip` 为 `127.0.0.1`，解析结果是：
 
 ```text
 Endpoint:   <win_user>@127.0.0.1
@@ -514,6 +519,32 @@ ssh -i ~/.ssh/id_mcp_server -o ProxyCommand="cloudflared access ssh --hostname <
 
 CNB 容器是临时环境，重建后：出口 IP 变化、容器内 `~/.ssh/id_mcp_server` 与 `~/.ssh/config` 丢失。需要重新执行三、3 节的密钥生成与 config 写入，并把新公钥同步到 Windows。若 Windows 侧把公钥与隧道做成了开机常驻，则 Windows 端无需改动。
 
+
+## 六、 实测验证记录
+
+> 本章为 2026-09-15 对本文 Cloudflare Quick Tunnel 方案的端到端实测记录，全程零新增代码，验证结论已回填正文相应章节。
+
+### 1. 验证环境
+
+- **Win 工位机**：Windows 11，OpenSSH Server 运行中，cloudflared 2026.9.1，项目根 `E:/AI/embedded-mcp-toolkit`；
+- **CNB 容器**：与一、3 节画像同源（Ubuntu 22.04 / 宿主内核 5.4.241-tlinux4），cloudflared 2026.9.1 预装，node v24；
+- **免密体系**：按三、2.3 节流程现配——CNB 内生成 `id_mcp_server`（rsa 4096），公钥取回写入 Win 的 `authorized_keys`。
+
+### 2. 端到端验证结果
+
+| 验证项 | 命令（在 CNB 容器内执行） | 实测结果 |
+| --- | --- | --- |
+| Quick Tunnel 建立 | `cloudflared tunnel --url ssh://127.0.0.1:22`（Win 侧） | 预检 6 项全 PASS，分配随机 trycloudflare 域名 |
+| 经隧道免密登录 | `ssh -i ~/.ssh/id_mcp_server -o ProxyCommand="cloudflared access ssh --hostname <域名>" <win_user>@<域名> whoami` | 返回 Windows 用户名；含隧道握手全程约 4.6 s |
+| 同一隧道推文件 | 同参数 `scp` 至 `.embedded/tmp/` | 文件落地 Win 磁盘且内容一致——一条隧道同时承载命令与文件，无需第二条通道 |
+| stdio 桥接调 MCP | 三条 JSON-RPC 报文经 ssh stdin 喂给 `remote-start-mcp.bat` | `initialize` 与 `tools/call host_info` 均正常返回 |
+| 场景判定与端点 | 同上，检查 `host_info` 输出与启动日志 | `remote-ssh started`、`Endpoint: <win_user>@127.0.0.1`、启动日志明确 `ssh_build tool not registered` |
+
+### 3. 两个实测新发现（已回填正文）
+
+（1）**隧道 URL 必须写 `ssh://127.0.0.1:22`，不要写 `localhost`**。`localhost` 在 Windows 上被 cloudflared 解析为 IPv6 回环 `::1`，`SSH_CONNECTION` 变为 `::1 <port> ::1 22`，[`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 解析不出 IPv4 端点，`host_info` 输出 `Endpoint: (unavailable)`；改用显式 IPv4 后端点正确解析为 `<win_user>@127.0.0.1`（见 2.4 节与四、2 节）。
+
+（2）**Quick Tunnel 新域名的 DNS 传播有约 1 分钟延迟**。隧道建立成功并输出域名后，立即从 CNB 侧连接会报 `no such host`，等待约 1 分钟后域名方可解析。五、1 节的域名漂移应对（自动同步 / 手工更换）需要把这段延迟计入。
 
 ---
 *本文档由 markdowncli 技能辅助生成*
