@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step1: 安装 Windows SSH 服务
+ * Description: 菜单 [2]: 安装 Windows SSH 服务
  * ======================================================
  */
 
@@ -17,42 +17,39 @@ import {
   OPENSSH_CAPABILITY_NAME,
   OPENSSH_MSI_URL,
   LOCAL_MSI_REL,
-} from "../types.js";
-import { runPowerShell, runCmd } from "../exec.js";
-import { downloadFile } from "../download.js";
-import { isSshdServiceRegistered, ensureSshdService } from "../sshd-service.js";
+} from "../constants.js";
+import { runPowerShell, runCmd } from "../../../shared/exec.js";
+import { downloadFile } from "../../../shared/download.js";
+import { detectOpenSshInstallMethod } from "../sshd-detect.js";
+import { ensureSshdService } from "../sshd-service.js";
 
 // ============================================================
-// step1: 安装 Windows SSH 服务
+// 菜单 [2]: 安装 Windows SSH 服务
 // ============================================================
 
 /**
  * @brief 安装 Windows OpenSSH Server
- * @details 先检测是否已安装（Get-Service sshd / Get-WindowsCapability），
- *          已安装则跳过。未安装时让用户选择安装方式（默认 MSI）：
+ * @details 先用 detectOpenSshInstallMethod（服务 / exe 文件 / Capability 三信号交叉
+ *          判定）探测是否已安装，已安装则跳过安装步骤。未安装时让用户选择安装方式
+ *          （默认 MSI）：
  *          - MSI 分支（默认）：本地已存在 MSI 包则跳过下载，否则从 GitHub
  *            下载后调用 msiexec 静默安装。
  *          - 在线分支：调用 Add-WindowsCapability 安装（依赖 Windows Update，
  *            国内网络易卡，故不作为默认）。
- *          安装后启动 sshd 并设为开机自启。每步失败均打印中文提示并 return，
- *          不抛异常。
+ *          两条路径最终统一走 ensureSshdReady（注册 → 启动 → 开机自启）。
+ *          每步失败均打印中文提示并 return，不抛异常。
+ * @returns 安装并启动成功返回 true
  */
 export async function doInstallSsh(): Promise<boolean> {
   log.info("开始安装 Windows SSH ...");
 
-  // 检测 sshd 服务是否已存在
-  if (await isSshdServiceRegistered()) {
-    log.message("    OpenSSH Server 已安装，跳过");
-    return true;
-  }
-
-  // 检测 Windows Capability 状态
-  const checkCap = await runPowerShell(
-    `Get-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME} | Select-Object -ExpandProperty State`
-  );
-  if (checkCap.success && checkCap.stdout.includes("Installed")) {
-    log.message("    OpenSSH Server 已安装(Capability)，跳过");
-    return true;
+  // 安装检测：服务注册 / exe 文件 / Capability 三信号交叉判定（统一探测入口）
+  const installInfo = await detectOpenSshInstallMethod();
+  if (installInfo.method !== "unknown") {
+    log.message(
+      `    OpenSSH Server 已安装(${installInfo.methodLabel})，跳过安装`
+    );
+    return ensureSshdReady();
   }
 
   // 让用户选择安装方式（默认 MSI）
@@ -80,7 +77,7 @@ export async function doInstallSsh(): Promise<boolean> {
   }
   const methodChoice = methodChoiceRaw;
 
-  // MSI 缓存路径（与 step2 拉取的公钥同目录，使用模块常量便于 step5 卸载复用）
+  // MSI 缓存路径（与拉取公钥同目录，使用模块常量便于卸载步骤复用）
   const msiPath = resolve(process.cwd(), LOCAL_MSI_REL);
   const msiDir = dirname(msiPath);
 
@@ -134,6 +131,15 @@ export async function doInstallSsh(): Promise<boolean> {
     }
   }
 
+  return ensureSshdReady();
+}
+
+/**
+ * @brief 确保 sshd 服务就绪：注册 → 启动 → 开机自启
+ * @details 「服务已安装」与「本次刚装完」两条路径共用，避免已安装路径跳过启动步骤。
+ * @returns 全部就绪返回 true
+ */
+async function ensureSshdReady(): Promise<boolean> {
   log.info("启动 sshd 服务 ...");
   // 确保 sshd 服务已注册（MSI 静默安装有时不注册服务，需用 sshd.exe install 补注册）
   const serviceReady = await ensureSshdService();

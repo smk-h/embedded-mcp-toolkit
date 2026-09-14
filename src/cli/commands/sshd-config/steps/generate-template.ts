@@ -1,11 +1,11 @@
 /**
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
- * File name  : gen-template.ts
+ * File name  : generate-template.ts
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step7: 生成 Linux 端 MCP 配置模板
+ * Description: 菜单 [8]: 生成 Linux 端 MCP 配置模板
  * ======================================================
  */
 
@@ -18,11 +18,11 @@ import {
   MENU_INSTALL_SSH,
   MENU_GENERATE_KEY,
   MENU_CONFIG_SSHD,
-} from "../types.js";
+} from "../constants.js";
 import { collectConnectionInfo } from "../../../shared/cli-helpers.js";
 
 // ============================================================
-// step7: 生成 Linux 端 MCP 配置模板
+// 菜单 [8]: 生成 Linux 端 MCP 配置模板
 // ============================================================
 
 /**
@@ -34,6 +34,7 @@ import { collectConnectionInfo } from "../../../shared/cli-helpers.js";
  *          生成后打印模板路径与内容摘要，提示用户复制到 Linux 端项目根目录
  *          并按需修改 IP / 脚本路径。多网卡时取首个 IP 作为示例，同时在模板
  *          注释中列出其它候选 IP。
+ * @returns 生成成功返回 true
  */
 export async function doGenerateTemplate(): Promise<boolean> {
   log.info("开始生成 Linux 端 MCP 配置模板");

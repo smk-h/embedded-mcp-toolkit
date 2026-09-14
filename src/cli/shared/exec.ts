@@ -5,16 +5,31 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: 命令执行封装
+ * Description: 外部命令执行封装（CLI 共享模块）
  *
- * 执行外部命令并统一封装结果：execToResult（公共核心）、runPowerShell、runCmd。
+ * 对外仅暴露 runPowerShell / runCmd 两个入口，公共核心 execToResult 为模块私有。
+ * 供需要在 Windows 上调用 PowerShell / msiexec / sc.exe 的交互式命令复用
+ * （如 sshd-config 的安装、卸载、服务管理）。
  * ======================================================
  */
 
 import { execFile } from "child_process";
 import { promisify } from "util";
 
-import { type CommandResult } from "./types.js";
+// ============================================================
+// 类型
+// ============================================================
+
+/**
+ * @brief 外部命令执行结果
+ * @details 统一封装 PowerShell / msiexec 等外部命令的退出码与输出。
+ */
+export interface CommandResult {
+  success: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
 
 // ============================================================
 // 命令执行封装
@@ -32,7 +47,7 @@ const execFileAsync = promisify(execFile);
  * @param timeoutMs 超时毫秒数，默认 300000（5 分钟）
  * @returns 封装的执行结果
  */
-export async function execToResult(
+async function execToResult(
   cmd: string,
   args: string[],
   timeoutMs = 300000
@@ -92,7 +107,7 @@ export async function runPowerShell(
 
 /**
  * @brief 执行通用外部命令
- * @details 用于 msiexec、sshd.exe install 等非 PowerShell 命令。
+ * @details 用于 msiexec、sshd.exe install、sc.exe 等非 PowerShell 命令。
  * @param cmd       命令名（如 "msiexec"）
  * @param args      参数数组
  * @param timeoutMs 超时毫秒数，默认 300000

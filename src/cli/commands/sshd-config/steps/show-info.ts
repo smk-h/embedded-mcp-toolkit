@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step6: 查看本机连接信息
+ * Description: 菜单 [7]: 查看本机连接信息
  * ======================================================
  */
 
@@ -15,11 +15,11 @@ import {
   MENU_INSTALL_SSH,
   MENU_GENERATE_KEY,
   MENU_CONFIG_SSHD,
-} from "../types.js";
+} from "../constants.js";
 import { collectConnectionInfo } from "../../../shared/cli-helpers.js";
 
 // ============================================================
-// step6: 查看本机连接信息
+// 菜单 [7]: 查看本机连接信息
 // ============================================================
 
 // 本机连接信息采集（用户名 + IPv4 列表）已迁至 src/cli/shared/cli-helpers.ts，

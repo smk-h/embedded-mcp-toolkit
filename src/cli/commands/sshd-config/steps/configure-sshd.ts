@@ -1,23 +1,16 @@
 /**
  * =====================================================
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
- * File name  : config-sshd.ts
+ * File name  : configure-sshd.ts
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step3: 配置 Windows sshd
+ * Description: 菜单 [4]: 配置 Windows sshd
  * ======================================================
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  copyFileSync,
-} from "fs";
-import { resolve, join } from "path";
-import { homedir } from "os";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import { log } from "@clack/prompts";
 
 import {
@@ -25,13 +18,20 @@ import {
   LOCAL_PUBKEY_REL,
   MENU_GENERATE_KEY,
   MENU_INSTALL_SSH,
-} from "../types.js";
-import { runPowerShell } from "../exec.js";
-import { isSshdServiceRegistered } from "../sshd-service.js";
-import { findActiveConfigLine, modifySshdConfig } from "../sshd-config-edit.js";
+} from "../constants.js";
+import { runPowerShell } from "../../../shared/exec.js";
+import { isSshdServiceRegistered } from "../sshd-detect.js";
+import { appendAuthorizedKey } from "../authorized-keys.js";
+import {
+  findActiveConfigLine,
+  modifySshdConfig,
+  backupSshdConfig,
+  readSshdConfig,
+  writeSshdConfig,
+} from "../sshd-config.js";
 
 // ============================================================
-// step3: 配置 Windows sshd
+// 菜单 [4]: 配置 Windows sshd
 // ============================================================
 
 /**
@@ -42,8 +42,11 @@ import { findActiveConfigLine, modifySshdConfig } from "../sshd-config-edit.js";
  *             Match Group administrators 分组规则
  *          4. 重启 sshd 使配置生效（先检查服务是否注册；未注册则跳过重启不回滚，仅提示）
  *          5. 回显最终关键配置项供用户核对
+ *          文件读写与文本处理全部委托 sshd-config.ts / authorized-keys.ts，
+ *          本文件只负责流程编排与交互提示。
+ * @returns 配置成功返回 true
  */
-export async function doConfigSshd(): Promise<boolean> {
+export async function doConfigureSshd(): Promise<boolean> {
   log.info("开始配置 Windows sshd 服务 ...");
 
   // 1. 读取本地公钥
@@ -53,59 +56,28 @@ export async function doConfigSshd(): Promise<boolean> {
     log.message(`    未找到公钥文件: ${pubKeyPath}`);
     log.message(`    请先执行 [${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
     return false;
-  } else {
-    log.message(`    已找到公钥文件: ${pubKeyPath}`);
   }
+  log.message(`    已找到公钥文件: ${pubKeyPath}`);
   const pubKey = readFileSync(pubKeyPath, "utf8").trim();
 
   // 2. 写入 authorized_keys（去重）
   log.info("写入 authorized_keys ...");
-  const sshDir = resolve(homedir(), ".ssh");
-  if (!existsSync(sshDir)) {
-    mkdirSync(sshDir, { recursive: true });
-    log.message(`    创建目录: ${sshDir}`);
-  }
-  const akPath = join(sshDir, "authorized_keys");
-  const existingContent = existsSync(akPath)
-    ? readFileSync(akPath, "utf8")
-    : "";
-  const existingLines = existingContent
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l);
+  appendAuthorizedKey(pubKey);
 
-  if (existingLines.includes(pubKey)) {
-    log.message("    公钥已存在于 authorized_keys, 跳过");
-  } else {
-    // 确保末尾有换行再追加
-    const prefix =
-      existingContent === "" || existingContent.endsWith("\n")
-        ? existingContent
-        : existingContent + "\n";
-    writeFileSync(akPath, prefix + pubKey + "\n", "utf8");
-    log.message(`    公钥已写入: ${akPath}`);
-  }
   log.info("配置 sshd_config ...");
-  // 3. 检查 sshd_config 是否存在
-  if (!existsSync(SSHD_CONFIG_PATH)) {
+  // 3. 读取 sshd_config 原始内容（不存在则提示先安装）
+  const originalConfig = readSshdConfig();
+  if (originalConfig === null) {
     log.message(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
     log.message(`    请先执行 [${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
     return false;
   }
 
   // 4. 备份 sshd_config（已存在 .bak 不覆盖，保留首次备份）
-  const bakPath = SSHD_CONFIG_PATH + ".bak";
-  if (!existsSync(bakPath)) {
-    copyFileSync(SSHD_CONFIG_PATH, bakPath);
-    log.message(`    已备份: ${bakPath}`);
-  } else {
-    log.message(`    备份已存在，保留首次备份: ${bakPath}`);
-  }
+  backupSshdConfig();
 
-  // 5. 修改 sshd_config
-  const originalConfig = readFileSync(SSHD_CONFIG_PATH, "utf8");
-  const modifiedConfig = modifySshdConfig(originalConfig);
-  writeFileSync(SSHD_CONFIG_PATH, modifiedConfig, "utf8");
+  // 5. 修改并写回 sshd_config
+  writeSshdConfig(modifySshdConfig(originalConfig));
   log.message(
     "    sshd_config 已修改(PubkeyAuthentication yes / AuthorizedKeysFile / 禁用 administrators 分组)"
   );
@@ -131,7 +103,7 @@ export async function doConfigSshd(): Promise<boolean> {
       log.message(`    重启 sshd 失败: ${restartResult.stderr || "未知错误"}`);
       log.message("    正在回滚 sshd_config ...");
       try {
-        writeFileSync(SSHD_CONFIG_PATH, originalConfig, "utf8");
+        writeSshdConfig(originalConfig);
         log.message("    sshd_config 已回滚");
       } catch (err) {
         log.message(
@@ -145,7 +117,7 @@ export async function doConfigSshd(): Promise<boolean> {
 
   // 7. 回显最终关键配置项
   log.info("最终关键配置");
-  const finalConfig = readFileSync(SSHD_CONFIG_PATH, "utf8");
+  const finalConfig = readSshdConfig() ?? "";
   const finalLines = finalConfig.split(/\r?\n/);
 
   const pubKeyLine = findActiveConfigLine(

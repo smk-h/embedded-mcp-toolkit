@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: HTTP 下载（MSI 离线安装包）
+ * Description: HTTPS 文件下载（CLI 共享模块）
  *
  * 下载文件到本地，支持 HTTPS 重定向（GitHub releases 会 301/302 重定向到 CDN）。
  * ======================================================
@@ -15,7 +15,7 @@ import { createWriteStream, unlinkSync } from "fs";
 import { get as httpsGet } from "https";
 
 // ============================================================
-// HTTP 下载（MSI 离线安装包）
+// HTTPS 文件下载
 // ============================================================
 
 /**

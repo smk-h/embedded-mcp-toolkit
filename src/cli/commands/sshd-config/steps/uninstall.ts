@@ -5,41 +5,35 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step5: 卸载 Windows SSH 服务（含卸载流程专用工具函数）
+ * Description: 菜单 [6]: 卸载 Windows SSH 服务
  * ======================================================
  */
 
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  copyFileSync,
-  unlinkSync,
-} from "fs";
-import { resolve, join } from "path";
-import { homedir } from "os";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import { log } from "@clack/prompts";
 
 import {
-  SSHD_CONFIG_PATH,
   LOCAL_PUBKEY_REL,
   LOCAL_MSI_REL,
   OPENSSH_CAPABILITY_NAME,
-} from "../types.js";
-import { runPowerShell, runCmd } from "../exec.js";
+} from "../constants.js";
+import { runPowerShell, runCmd } from "../../../shared/exec.js";
 import {
   isSshdServiceRegistered,
   detectOpenSshInstallMethod,
-} from "../sshd-service.js";
+} from "../sshd-detect.js";
+import { removeAuthorizedKey } from "../authorized-keys.js";
+import { restoreSshdConfigFromBackup } from "../sshd-config.js";
 import { prompt } from "../../../shared/cli-helpers.js";
 
 // ============================================================
-// step5 辅助：卸载流程专用工具函数
+// 菜单 [6] 辅助：卸载流程专用工具函数
 // ============================================================
 
 /**
  * @brief 打开"程序和功能"并等待用户手动卸载后按回车继续
- * @details 封装 step5 中三处相同的"开 appwiz.cpl + 等待回车"逻辑。
+ * @details 封装三处相同的"开 appwiz.cpl + 等待回车"逻辑。
  *          手动卸载是异步过程，程序无法感知结束时机，故用 prompt 阻塞等待。
  *
  *          实现说明：.cpl 不能直接 spawn（报 EFTYPE），也不能用 control.exe
@@ -62,83 +56,8 @@ async function openAppwizAndAwait(): Promise<boolean> {
   return true;
 }
 
-/**
- * @brief 从 authorized_keys 移除 MCP 专用公钥
- * @details 读取 .embedded/ssh/id_mcp_server.pub 的公钥内容，在 ~/.ssh/authorized_keys
- *          中按整行精确匹配删除对应行。保留其它公钥不受影响。公钥文件不存在或
- *          authorized_keys 不存在时静默跳过（非错误，可能未执行过 step2/step3）。
- */
-async function removeMcpPubKeyFromAuthorizedKeys(): Promise<void> {
-  const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
-  if (!existsSync(pubKeyPath)) {
-    log.message("    未找到本地公钥文件，跳过 authorized_keys 清理");
-    return;
-  }
-  const pubKey = readFileSync(pubKeyPath, "utf8").trim();
-  if (!pubKey) {
-    log.message("    本地公钥文件为空，跳过 authorized_keys 清理");
-    return;
-  }
-
-  const akPath = join(homedir(), ".ssh", "authorized_keys");
-  if (!existsSync(akPath)) {
-    log.message("    authorized_keys 不存在，无需清理");
-    return;
-  }
-
-  const akContent = readFileSync(akPath, "utf8");
-  const lines = akContent.split(/\r?\n/);
-  // 精确匹配：整行 trim 后等于公钥的行视为需删除
-  const before = lines.length;
-  const filtered = lines.filter((l) => l.trim() !== pubKey);
-  const removed = before - filtered.length;
-
-  if (removed === 0) {
-    log.message("    authorized_keys 中未找到 MCP 公钥，无需清理");
-    return;
-  }
-
-  // 重写文件（过滤掉空行尾部的多余换行）
-  const newContent = filtered.filter((l) => l.trim() !== "").join("\n");
-  if (newContent) {
-    writeFileSync(akPath, newContent + "\n", "utf8");
-  } else {
-    // 所有公钥都被移除，文件变空——保留空文件而非删除（避免权限丢失）
-    writeFileSync(akPath, "", "utf8");
-  }
-  log.message(`    已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
-}
-
-/**
- * @brief 从 .bak 备份恢复 sshd_config
- * @details step3 修改 sshd_config 前备份为 .bak（首次备份不覆盖）。卸载时若 .bak
- *          存在，则用它覆盖回 sshd_config，恢复 step3 修改前的原始配置。恢复后
- *          删除 .bak（已完成使命）。sshd_config 不存在或 .bak 不存在时静默跳过。
- */
-function restoreSshdConfigFromBackup(): void {
-  if (!existsSync(SSHD_CONFIG_PATH)) {
-    log.message("    sshd_config 不存在，跳过恢复");
-    return;
-  }
-  const bakPath = SSHD_CONFIG_PATH + ".bak";
-  if (!existsSync(bakPath)) {
-    log.message("    未找到 sshd_config.bak 备份，跳过恢复");
-    return;
-  }
-  try {
-    copyFileSync(bakPath, SSHD_CONFIG_PATH);
-    unlinkSync(bakPath);
-    log.message("    sshd_config 已从备份恢复（.bak 已删除）");
-  } catch (err) {
-    log.message(
-      `    [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
-    );
-    log.message("    [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
-  }
-}
-
 // ============================================================
-// step5: 卸载 Windows SSH 服务
+// 菜单 [6]: 卸载 Windows SSH 服务
 // ============================================================
 
 /**
@@ -152,9 +71,10 @@ function restoreSshdConfigFromBackup(): void {
  *          0. 停止 sshd 服务（Stop-Service sshd -Force）
  *          1. 按安装方式卸载 OpenSSH（msiexec / Remove-WindowsCapability / appwiz.cpl）
  *          2. 删除 sshd 服务残留（卸载有时不删服务，sc.exe delete 补删）
- *          3. 从 authorized_keys 移除 MCP 专用公钥（按 .embedded/ssh/id_mcp_server.pub
- *             内容精确匹配删除对应行，保留其它公钥）
- *          4. 从 .bak 备份恢复 sshd_config（step3 修改前的原始配置）
+ *          3. 从 authorized_keys 移除 MCP 专用公钥（对应配置步骤的写入）
+ *          4. 从 .bak 备份恢复 sshd_config（对应配置步骤的修改）
+ *          authorized_keys 与 sshd_config 的增删/备份恢复分别委托
+ *          authorized-keys.ts / sshd-config.ts，与写入侧保持对称。
  *
  *          不自动删除 C:\ProgramData\ssh 与 C:\Program Files\OpenSSH 目录：
  *          前者可能含用户自定义配置，避免误删；仅在末尾提示可手动删除。
@@ -251,11 +171,21 @@ export async function doUninstallSsh(): Promise<void> {
     log.message("    sshd 服务已不存在");
   }
 
-  // ===== 步骤 3：从 authorized_keys 移除 MCP 专用公钥（对应 step3 的写入） =====
+  // ===== 步骤 3：从 authorized_keys 移除 MCP 专用公钥（对应配置步骤的写入） =====
   log.info("从 authorized_keys 移除 MCP 专用公钥 ...");
-  await removeMcpPubKeyFromAuthorizedKeys();
+  const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
+  if (!existsSync(pubKeyPath)) {
+    log.message("    未找到本地公钥文件，跳过 authorized_keys 清理");
+  } else {
+    const pubKey = readFileSync(pubKeyPath, "utf8").trim();
+    if (!pubKey) {
+      log.message("    本地公钥文件为空，跳过 authorized_keys 清理");
+    } else {
+      removeAuthorizedKey(pubKey);
+    }
+  }
 
-  // ===== 步骤 4：从 .bak 备份恢复 sshd_config（对应 step3 的修改） =====
+  // ===== 步骤 4：从 .bak 备份恢复 sshd_config（对应配置步骤的修改） =====
   log.info("从 .bak 备份恢复 sshd_config ...");
   restoreSshdConfigFromBackup();
 

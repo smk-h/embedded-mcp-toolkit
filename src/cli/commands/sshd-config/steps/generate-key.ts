@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step2: 编译服务器生成密钥对
+ * Description: 菜单 [3]: 编译服务器生成密钥对
  * ======================================================
  */
 
@@ -14,7 +14,7 @@ import { resolve, dirname } from "path";
 import { Client } from "ssh2";
 import { text, password, confirm, isCancel, log } from "@clack/prompts";
 
-import { LOCAL_PUBKEY_REL } from "../types.js";
+import { LOCAL_PUBKEY_REL } from "../constants.js";
 import {
   parseServerAddress,
   sshConnect,
@@ -25,7 +25,7 @@ import {
 } from "../../../shared/ssh.js";
 
 // ============================================================
-// step2: 编译服务器生成密钥对
+// 菜单 [3]: 编译服务器生成密钥对
 // ============================================================
 
 /**

@@ -16,22 +16,28 @@
  * [3] 登录 Linux 编译服务器，生成密钥对，SFTP 拉取公钥到本地
  * [4] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
  * [5] 检查 sshd 配置状态（只读诊断）
+ * [6] 卸载 Windows OpenSSH Server（按安装方式卸载 + 清理公钥 + 还原配置）
+ * [7] 查看本机连接信息（用户名 / IP）
+ * [8] 生成 Linux 端 MCP 配置模板
  *
- * SSH 操作基于 ssh2 库实现，传输层（sshConnect / sshExec / sshDownload /
- * sshUpload / sshDisconnect）与终端交互辅助（prompt / clearScreen / askPassword 等）
- * 已抽取至 src/cli/shared/ssh.ts 与 src/cli/shared/cli-helpers.ts，本目录直接 import
- * 复用，不复用 src/sdk/transports/ssh.ts 的 SSHShell（后者绑定 MCP 会话注册、
- * PSH 解锁等业务机制，不适合一次性运维命令）。
+ * 通用能力（命令执行封装 runPowerShell / runCmd、平台与提权 isWindows / isAdmin /
+ * relaunchAsAdmin、HTTPS 下载 downloadFile）已抽取至 src/cli/shared/ 供各命令复用；
+ * SSH 传输层（sshConnect / sshExec / sshDownload / sshDisconnect）与终端交互辅助
+ * （prompt / clearScreen / askPassword 等）同样位于 src/cli/shared/ssh.ts 与
+ * src/cli/shared/cli-helpers.ts。不复用 src/sdk/transports/ssh.ts 的 SSHShell
+ * （后者绑定 MCP 会话注册、PSH 解锁等业务机制，不适合一次性运维命令）。
  *
  * 目录结构：
- *   - types.ts             类型/接口/常量/菜单枚举
- *   - platform.ts          平台与管理员权限
- *   - exec.ts              命令执行封装
- *   - download.ts          HTTP 下载
- *   - sshd-service.ts      sshd 服务辅助
- *   - sshd-config-edit.ts  sshd_config 文本处理
- *   - steps/               8 个菜单 step（install/generate-key/config-sshd/
- *                           check-status/uninstall/show-info/gen-template/one-click）
+ *   - types.ts             类型与接口
+ *   - constants.ts         菜单枚举、路径、下载地址、正则等运行时常量
+ *   - sshd-detect.ts       OpenSSH 安装与服务探测（只读）
+ *   - sshd-service.ts      sshd 服务注册（变更操作）
+ *   - sshd-config.ts       sshd_config 查找 / 修改 / 备份 / 恢复
+ *   - authorized-keys.ts   authorized_keys 公钥写入 / 移除
+ *   - steps/               8 个菜单 step，与菜单编号一一对应：
+ *                          one-click [1] / install [2] / generate-key [3] /
+ *                          configure-sshd [4] / check-status [5] / uninstall [6] /
+ *                          show-info [7] / generate-template [8]
  *   - run.ts               主菜单 + 主入口
  * ======================================================
  */

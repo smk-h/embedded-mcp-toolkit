@@ -250,7 +250,7 @@ embedded-mcp-toolkit sshd-config
 <Windows 项目根>/.embedded/ssh/id_mcp_server.pub
 ```
 
-这个路径不是随手定的——`sshd-config` 的配置步骤正是从**当前工作目录下的 `.embedded/ssh/id_mcp_server.pub`** 读取公钥内容（见 [`types.ts`](../src/cli/commands/sshd-config/types.ts#L107) 与 [`config-sshd.ts`](../src/cli/commands/sshd-config/steps/config-sshd.ts#L39-L59)），再追加进 `~/.ssh/authorized_keys`（自动去重）。
+这个路径不是随手定的——`sshd-config` 的配置步骤正是从**当前工作目录下的 `.embedded/ssh/id_mcp_server.pub`** 读取公钥内容（路径常量见 [`constants.ts`](../src/cli/commands/sshd-config/constants.ts)，读取见 [`configure-sshd.ts`](../src/cli/commands/sshd-config/steps/configure-sshd.ts)，写入逻辑见 [`authorized-keys.ts`](../src/cli/commands/sshd-config/authorized-keys.ts)），再追加进 `~/.ssh/authorized_keys`（自动去重）。
 
 放好文件后，**再次执行菜单 `[4]`**，即可复用项目既有的免密配置流程，无需手工编辑 `authorized_keys`。若目标是 Windows 管理员账户，公钥应落到 `C:\ProgramData\ssh\administrators_authorized_keys`（菜单 `[4]` 会一并处理分组规则）。
 

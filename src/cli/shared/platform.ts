@@ -5,9 +5,10 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: 平台与管理员权限
+ * Description: 平台与管理员权限（CLI 共享模块）
  *
  * 判断 Windows 平台、检测管理员权限、自动 UAC 提权重启当前命令。
+ * 供需要在 Windows 上以管理员身份运行的交互式命令复用。
  * ======================================================
  */
 
@@ -60,23 +61,24 @@ export function isAdmin(): boolean {
 /**
  * @brief 自动 UAC 提权重启当前命令
  * @details 用 PowerShell `Start-Process -Verb RunAs` 启动一个新的管理员权限进程
- *          来重新执行 sshd-config 子命令（弹 UAC 确认），本进程随即退出。
+ *          来重新执行当前命令（弹 UAC 确认），本进程随即退出。
  *          - UAC 确认（用户点"是"）：新管理员窗口启动，本进程 exit(0)
  *          - UAC 拒绝或提权失败：提示需要管理员权限并 exit(1)
  *
  *          Windows 无纯原生原地提权（Linux sudo 式）；此方案零依赖、对所有
- *          Windows 可用，代价是开新窗口。本命令为交互式菜单，新窗口从头开始可接受。
+ *          Windows 可用，代价是开新窗口。交互式菜单命令从新窗口从头开始可接受。
  *
+ * @param subCommand 需要提权重执行的子命令名（如 "sshd-config"）
  * @throws 不会抛出——内部捕获所有异常，失败时直接 process.exit(1)
  */
-export function relaunchAsAdmin(): void {
+export function relaunchAsAdmin(subCommand: string): void {
   console.log("[run] 当前非管理员权限，正在请求提权（将弹出 UAC 确认窗口）...");
 
   // process.execPath = node.exe 全路径；process.argv[1] = cli.js 路径
   const nodeExe = process.execPath;
   const cliScript = process.argv[1];
   // Start-Process 的 -ArgumentList 用空格分隔，路径含空格需加引号
-  const argsList = `"${cliScript}" sshd-config`;
+  const argsList = `"${cliScript}" ${subCommand}`;
 
   try {
     // Start-Process -Verb RunAs 触发 UAC；用户点"是"后返回，点"否"抛异常

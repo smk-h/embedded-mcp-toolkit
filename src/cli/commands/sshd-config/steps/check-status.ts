@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: step4: 检查 sshd 配置状态（只读诊断）
+ * Description: 菜单 [5]: 检查 sshd 配置状态（只读诊断）
  * ======================================================
  */
 
@@ -21,13 +21,13 @@ import {
   MENU_INSTALL_SSH,
   MENU_CONFIG_SSHD,
   MENU_GENERATE_KEY,
-} from "../types.js";
-import { runPowerShell } from "../exec.js";
-import { detectOpenSshInstallMethod } from "../sshd-service.js";
-import { findActiveConfigLine } from "../sshd-config-edit.js";
+} from "../constants.js";
+import { runPowerShell } from "../../../shared/exec.js";
+import { detectOpenSshInstallMethod } from "../sshd-detect.js";
+import { findActiveConfigLine } from "../sshd-config.js";
 
 // ============================================================
-// step4: 检查 sshd 配置状态（只读诊断）
+// 菜单 [5]: 检查 sshd 配置状态（只读诊断）
 // ============================================================
 
 /**

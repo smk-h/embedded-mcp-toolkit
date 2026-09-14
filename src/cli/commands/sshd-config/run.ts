@@ -25,17 +25,17 @@ import {
   MENU_SHOW_INFO,
   MENU_GEN_TEMPLATE,
   MENU_EXIT,
-  type SshdConfigOptions,
-} from "./types.js";
-import { isWindows, isAdmin, relaunchAsAdmin } from "./platform.js";
+} from "./constants.js";
+import { type SshdConfigOptions } from "./types.js";
+import { isWindows, isAdmin, relaunchAsAdmin } from "../../shared/platform.js";
 import { doOneClickFlow } from "./steps/one-click.js";
 import { doInstallSsh } from "./steps/install.js";
 import { doGenerateKey } from "./steps/generate-key.js";
-import { doConfigSshd } from "./steps/config-sshd.js";
+import { doConfigureSshd } from "./steps/configure-sshd.js";
 import { doCheckStatus } from "./steps/check-status.js";
 import { doUninstallSsh } from "./steps/uninstall.js";
 import { doShowConnectionInfo } from "./steps/show-info.js";
-import { doGenerateTemplate } from "./steps/gen-template.js";
+import { doGenerateTemplate } from "./steps/generate-template.js";
 import { clearScreen, pauseForMenu } from "../../shared/cli-helpers.js";
 
 // ============================================================
@@ -124,7 +124,7 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
 
   // 管理员权限检查：非管理员时自动 UAC 提权重启（本进程退出）
   if (!isAdmin()) {
-    relaunchAsAdmin();
+    relaunchAsAdmin("sshd-config");
     return; // relaunchAsAdmin 内部会 exit，此行仅作类型安全兜底
   }
 
@@ -151,7 +151,7 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
         await doGenerateKey();
         break;
       case MENU_CONFIG_SSHD:
-        await doConfigSshd();
+        await doConfigureSshd();
         break;
       case MENU_CHECK_STATUS:
         await doCheckStatus();
