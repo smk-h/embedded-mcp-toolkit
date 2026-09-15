@@ -348,7 +348,7 @@ ssh -i ~/.ssh/id_mcp_server \
 
 ### 4. MCP 落点配置
 
-在 CNB 容器内写入**用户级** `~/.codebuddy/.mcp.json`，把 MCP Server 定义为一条经隧道启动的 `ssh` 命令：
+在 CNB 容器内写入**用户级** `~/.codebuddy/mcp.json`（**不带点**，见下方要点 4），把 MCP Server 定义为一条经隧道启动的 `ssh` 命令：
 
 ```json
 {
@@ -378,7 +378,10 @@ ssh -i ~/.ssh/id_mcp_server \
 
 （3）**不需要 supergateway**。公网隧道篇方案 A 引入 supergateway 是因为 `ssh -R` 只能提供"端口"，服务器侧需要一个懂 TCP 的服务；而本文方案提供的是**完整 SSH 会话**，stdio 桥接直接成立。
 
-（4）**落点选用户级而非项目级**。CNB 容器里"项目根"取决于用户实际打开哪个目录（`/workspace` 与 `/workspace/<repo>` 可能并存），写死在某一层极易打偏，客户端读不到配置；用户级 `~/.codebuddy/.mcp.json` 与打开哪个项目无关，容器重建后重跑一次即对整个开发环境生效。注意该文件是 CodeBuddy 的**用户级**配置，与项目级 `<项目根>/.mcp.json` 是两个不同作用域，同名 server 会按 `local > project > user` 覆盖。
+（4）**落点选用户级而非项目级，且文件名必须不带点**。两点说明：
+
+- **作用域**：CNB 容器里"项目根"取决于用户实际打开哪个目录（`/workspace` 与 `/workspace/<repo>` 可能并存），写死在某一层极易打偏，客户端读不到配置；用户级配置与打开哪个项目无关，容器重建后重跑一次即对整个开发环境生效。它与项目级 `<项目根>/.mcp.json` 是两个不同作用域，同名 server 会按 `local > project > user` 覆盖。
+- **文件名**：CodeBuddy 的用户级落点固定为 `~/.codebuddy/mcp.json`（**不带点**），IDE 启动时读取该文件，缺失则自动生成 `{"mcpServers": {}}` 并对其挂文件 watcher；带点的 `.mcp.json` 只在**项目级**（`<项目根>/.mcp.json`，需在 IDE 内通过项目审批）与**插件级**（插件根 `.mcp.json`）被识别。把 `.mcp.json` 放进 `~/.codebuddy/` 属于 Claude Code 的路径约定，CodeBuddy 不会读取——该目录下的 server 不会出现在 MCP 加载日志中。
 
 ## 四、 端点解析与场景判定
 
@@ -434,7 +437,7 @@ Host 127.0.0.1
 加上之后：
 
 - AI 照常执行指引里的 `scp ... <win_user>@127.0.0.1:...`，`ssh`/`scp` 会读取本段配置，通过 `cloudflared` 把连接送入隧道，**指令零改动、行为正确**；
-- 三、4 节的 `~/.codebuddy/.mcp.json` 也只需写 `127.0.0.1`，不必重复声明 `ProxyCommand`；
+- 三、4 节的 `~/.codebuddy/mcp.json` 也只需写 `127.0.0.1`，不必重复声明 `ProxyCommand`；
 - 随机域名**只出现在这一个文件里**，域名变化时改一处即可。
 
 【**权衡**】`Host 127.0.0.1` 会接管容器内所有指向回环的 SSH 连接。CNB 开发容器里一般没有别的 SSH 用途，可以接受；若确有其它回环 SSH 需求，可改用显式的 `-o ProxyCommand` 写法（三、4 节），代价是域名要在多个地方维护。
