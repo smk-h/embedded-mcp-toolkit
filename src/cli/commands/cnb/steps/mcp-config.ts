@@ -43,7 +43,7 @@ import { type LocalEndpoint } from "../types.js";
  *          2. 模板落盘到本地 .embedded/cnb/codebuddy-mcp.json 供复核；
  *          3. 探测容器项目根是否存在，不存在则回退容器家目录；
  *          4. 读取容器内 .mcp.json（缺失当作空对象），只覆盖 mcpServers 下的
- *             embedded-board 一项，其它 server 定义原样保留，再整体写回。
+ *             win-embedded-board 一项，其它 server 定义原样保留，再整体写回。
  * @param client     已连接的 CNB 环境 ssh2 Client
  * @param endpoint   Windows 侧本地端点（ssh 用户名 + bat 绝对路径）
  * @param projectDir 容器内期望的项目根目录

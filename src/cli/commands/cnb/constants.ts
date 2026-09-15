@@ -69,8 +69,13 @@ export const TUNNEL_ENDPOINT = "127.0.0.1";
 // MCP 桥接
 // ============================================================
 
-/** @brief MCP server 固定 key 名（与项目 .mcp.json 及各客户端落点一致） */
-export const SERVER_KEY = "embedded-board";
+/**
+ * @brief MCP server 固定 key 名（Windows 侧桥接专用）
+ * @details 刻意与项目 .mcp.json 中的本地 `embedded-board` 区分：CodeBuddy 同名
+ *          server 的作用域优先级为 local > project > user，若沿用同名会被项目级
+ *          配置覆盖，导致本命令写入的桥接定义不生效。
+ */
+export const SERVER_KEY = "win-embedded-board";
 
 /** @brief Windows 侧 MCP 启动脚本名（位于项目根） */
 export const START_SCRIPT_NAME = "remote-start-mcp.bat";
