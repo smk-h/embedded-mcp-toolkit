@@ -98,6 +98,21 @@ export async function pauseForMenu(): Promise<boolean> {
 }
 
 /**
+ * @brief 阻塞等待用户按 q 退出（无菜单场景的收尾交互）
+ * @details 供"一次性线性流程"命令使用：流程执行完毕后提示用户按 q 退出，
+ *          非 q 输入一律忽略并重新提示，避免误触导致信息未看清即退出。
+ * @returns 用户按下 q / Q 后 resolve
+ */
+export async function waitForQuit(): Promise<void> {
+  while (true) {
+    const input = await prompt("按 q 退出: ");
+    if (input.toLowerCase() === "q") {
+      return;
+    }
+  }
+}
+
+/**
  * @brief 安全地读取密码（不回显明文）
  * @details 通过 stdin raw mode 逐字符读取，终端显示 `*` 占位。
  *          非 TTY 环境（如管道输入）回退为 readline 直接读取，此时密码可见，

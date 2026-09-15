@@ -22,6 +22,7 @@ import {
   runCloudflaredAction,
 } from "./commands/cloudflared/index.js";
 import { runRemoteMcpConfig } from "./commands/remote-mcp-config/index.js";
+import { runCnb } from "./commands/cnb/index.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
 
 /**
@@ -44,6 +45,7 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * │   ├── log                    ←   查看隧道日志尾部
  * │   └── install                ←   安装 cloudflared(winget / 便携版)
  * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode/dsh 的 MCP 桥接（.action()）
+ * ├── cnb                        ← 一键打通 CNB 云环境与 Windows 本地 MCP（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
  * │   ├── ssh                    ←   SSH 演示二级父命令
@@ -380,6 +382,39 @@ program
   )
   .action(() => {
     runRemoteMcpConfig({});
+  });
+
+// =============================================================================
+// cnb 命令 —— 一键打通 CNB 云开发环境与 Windows 本地 MCP
+// =============================================================================
+
+/**
+ * @brief CNB 云环境免密通道配置命令
+ * @details 把"CNB 容器 ssh 到 Windows 本地 MCP"的部署流程固化为单命令
+ *          （方案背景见 docs/MCP-CNB云环境访问Windows本地MCP方案.md）：
+ *          交互输入 CNB 环境标识 → 确保 Cloudflare Quick Tunnel → 本地生成
+ *          id_mcp_cnb_server 密钥对并写入本机 authorized_keys → 免密登录容器、
+ *          推送私钥并写入隧道 ssh config → 生成 CodeBuddy MCP 配置写入容器项目根
+ *          → 展示容器侧 ssh 命令，按 q 退出。
+ *          命令可重复执行：CNB 容器每次重建后重跑即可恢复免密通道。
+ *
+ * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit cnb
+ * embedded-mcp-toolkit cnb --dir /workspace/my-project
+ */
+program
+  .command("cnb")
+  .description(
+    "一键打通 CNB 云开发环境与 Windows 本地 MCP（免密 + 隧道 + MCP 配置）"
+  )
+  .option(
+    "-d, --dir <path>",
+    "CNB 容器内项目根目录（写入 <dir>/.mcp.json，默认 /workspace）"
+  )
+  .action((opts) => {
+    runCnb({ dir: opts.dir });
   });
 
 /**

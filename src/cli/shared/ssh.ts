@@ -185,6 +185,72 @@ export function sshUpload(
 }
 
 // ============================================================
+// 远端文本文件读写
+// ============================================================
+
+/**
+ * @brief 读取远端文本文件（不存在时为正常结果，不抛异常）
+ * @details 先以 SFTP stat 探测存在性（ENOENT 等一律视为不存在），存在则读全文并
+ *          按 UTF-8 解码。调用方据此实现"缺失即当作空内容"的幂等写入。
+ * @param client     已连接的 ssh2 Client
+ * @param remotePath 远端文件绝对路径（SFTP 不识别 ~，需先展开）
+ * @returns 读取结果；exists=false 表示文件不存在
+ * @throws SFTP 不可用或读取已存在文件失败时抛出
+ */
+export function sshReadText(
+  client: Client,
+  remotePath: string
+): Promise<{ exists: boolean; content?: string }> {
+  return new Promise((resolve, reject) => {
+    client.sftp((err, sftp) => {
+      if (err) return reject(err);
+      sftp.stat(remotePath, (statErr) => {
+        if (statErr) {
+          sftp.end();
+          resolve({ exists: false });
+          return;
+        }
+        sftp.readFile(remotePath, (readErr, data) => {
+          sftp.end();
+          if (readErr) return reject(readErr);
+          resolve({ exists: true, content: data.toString("utf8") });
+        });
+      });
+    });
+  });
+}
+
+/**
+ * @brief 写入远端文本文件（父目录不存在时自动创建）
+ * @details SFTP 的 mkdir 不递归，故先执行 `mkdir -p` 保证父目录存在（幂等），
+ *          再以 UTF-8 写入全文。路径加引号避免含空格时被拆成多个参数。
+ * @param client     已连接的 ssh2 Client
+ * @param remotePath 远端目标文件绝对路径（SFTP 不识别 ~，需先展开）
+ * @param content    要写入的文本内容
+ * @throws 目录创建或写入失败时抛出
+ */
+export async function sshWriteText(
+  client: Client,
+  remotePath: string,
+  content: string
+): Promise<void> {
+  const dirPath = remotePath.substring(0, remotePath.lastIndexOf("/"));
+  if (dirPath) {
+    await sshExec(client, `mkdir -p "${dirPath}"`);
+  }
+  return new Promise<void>((resolve, reject) => {
+    client.sftp((err, sftp) => {
+      if (err) return reject(err);
+      sftp.writeFile(remotePath, content, "utf8", (writeErr) => {
+        sftp.end();
+        if (writeErr) return reject(writeErr);
+        resolve();
+      });
+    });
+  });
+}
+
+// ============================================================
 // 连接关闭
 // ============================================================
 
