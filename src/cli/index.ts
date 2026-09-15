@@ -255,10 +255,16 @@ program
  * @brief Windows SSH 免密登录配置命令
  * @details 交互式菜单引导完成"Linux 编译服务器 → Windows 免密登录"环境搭建。
  *          执行后先做管理员权限检查与平台校验，通过后展示菜单：
- *          [1] 安装 Windows SSH 服务（在线/MSI 双途径）
- *          [2] 登录 Linux 编译服务器生成密钥对并拉取公钥
- *          [3] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
- *          三项可独立重复执行，适用于"远程 Agent + 本地 MCP"部署场景。
+ *          [1] 一键完成全流程（安装→密钥→配置→模板）
+ *          [2] 安装 Windows SSH 服务（在线/MSI 双途径）
+ *          [3] 编译服务器生成密钥对（SFTP 拉取公钥到本地）
+ *          [4] 配置 Windows sshd（写 authorized_keys、改 sshd_config、禁用 administrators 分组）
+ *          [5] 检查 sshd 配置状态（只读诊断）
+ *          [6] 卸载 Windows SSH 服务
+ *          [7] 查看本机连接信息（用户名/IP）
+ *          [8] 生成 Linux 端 MCP 配置模板
+ *          [9] 清理 authorized_keys 失效公钥（CNB 等临时环境重建后残留公钥的批量清理）
+ *          各项可独立重复执行，适用于"远程 Agent + 本地 MCP"部署场景。
  *
  * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
  *

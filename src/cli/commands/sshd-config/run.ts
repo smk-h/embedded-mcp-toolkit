@@ -24,6 +24,7 @@ import {
   MENU_UNINSTALL_SSH,
   MENU_SHOW_INFO,
   MENU_GEN_TEMPLATE,
+  MENU_CLEAN_KEYS,
   MENU_EXIT,
 } from "./constants.js";
 import { type SshdConfigOptions } from "./types.js";
@@ -36,6 +37,7 @@ import { doCheckStatus } from "./steps/check-status.js";
 import { doUninstallSsh } from "./steps/uninstall.js";
 import { doShowConnectionInfo } from "./steps/show-info.js";
 import { doGenerateTemplate } from "./steps/generate-template.js";
+import { doCleanKeys } from "./steps/clean-keys.js";
 import { clearScreen, pauseForMenu } from "../../shared/cli-helpers.js";
 
 // ============================================================
@@ -83,6 +85,10 @@ async function mainMenu(): Promise<MenuChoice | null> {
       {
         value: MENU_GEN_TEMPLATE,
         label: `[${MENU_GEN_TEMPLATE}] 生成 Linux 端 MCP 配置模板`,
+      },
+      {
+        value: MENU_CLEAN_KEYS,
+        label: `[${MENU_CLEAN_KEYS}] 清理 authorized_keys 失效公钥`,
       },
       { value: MENU_EXIT, label: `[${MENU_EXIT}] 退出` },
     ],
@@ -164,6 +170,9 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
         break;
       case MENU_GEN_TEMPLATE:
         await doGenerateTemplate();
+        break;
+      case MENU_CLEAN_KEYS:
+        await doCleanKeys();
         break;
       default:
         // clack select 只会返回已定义的 value，理论上不会进入 default；

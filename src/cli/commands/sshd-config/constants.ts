@@ -32,6 +32,8 @@ export const MENU_UNINSTALL_SSH = "6";
 export const MENU_SHOW_INFO = "7";
 /** @brief 菜单选项：生成 Linux 端 MCP 配置模板 */
 export const MENU_GEN_TEMPLATE = "8";
+/** @brief 菜单选项：清理 authorized_keys 失效公钥 */
+export const MENU_CLEAN_KEYS = "9";
 /** @brief 菜单选项：退出 */
 export const MENU_EXIT = "0";
 
@@ -48,6 +50,7 @@ export type MenuChoice =
   | typeof MENU_UNINSTALL_SSH
   | typeof MENU_SHOW_INFO
   | typeof MENU_GEN_TEMPLATE
+  | typeof MENU_CLEAN_KEYS
   | typeof MENU_EXIT;
 
 // ============================================================

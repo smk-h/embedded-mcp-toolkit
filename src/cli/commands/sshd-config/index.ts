@@ -19,6 +19,7 @@
  * [6] 卸载 Windows OpenSSH Server（按安装方式卸载 + 清理公钥 + 还原配置）
  * [7] 查看本机连接信息（用户名 / IP）
  * [8] 生成 Linux 端 MCP 配置模板
+ * [9] 清理 authorized_keys 失效公钥（列出条目，勾选批量删除）
  *
  * 通用能力（命令执行封装 runPowerShell / runCmd、平台与提权 isWindows / isAdmin /
  * relaunchAsAdmin、HTTPS 下载 downloadFile）已抽取至 src/cli/shared/ 供各命令复用；
@@ -33,11 +34,11 @@
  *   - sshd-detect.ts       OpenSSH 安装与服务探测（只读）
  *   - sshd-service.ts      sshd 服务注册（变更操作）
  *   - sshd-config.ts       sshd_config 查找 / 修改 / 备份 / 恢复
- *   - authorized-keys.ts   authorized_keys 公钥写入 / 移除
- *   - steps/               8 个菜单 step，与菜单编号一一对应：
+ *   - authorized-keys.ts   authorized_keys 公钥写入 / 移除 / 条目解析 / 批量清理
+ *   - steps/               9 个菜单 step，与菜单编号一一对应：
  *                          one-click [1] / install [2] / generate-key [3] /
  *                          configure-sshd [4] / check-status [5] / uninstall [6] /
- *                          show-info [7] / generate-template [8]
+ *                          show-info [7] / generate-template [8] / clean-keys [9]
  *   - run.ts               主菜单 + 主入口
  * ======================================================
  */
