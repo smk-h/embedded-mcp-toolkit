@@ -112,6 +112,51 @@ export async function waitForQuit(): Promise<void> {
   }
 }
 
+// ============================================================
+// 重试倒计时
+// ============================================================
+
+/**
+ * @brief 同一行倒计时显示重试进度
+ * @details 输出形如 `正在重试...(1/3) 5s`：剩余秒数递减、重试次数递增，每秒
+ *          用 `\r` 回到行首原地覆盖重写同一行（不换行、不清屏），倒计时结束
+ *          补一个换行，避免后续日志与倒计时残影粘连。
+ *          非 TTY 环境（管道/重定向）无法原地刷新，退化为只打印一次起始状态
+ *          后静默等待，避免向日志写入大量控制字符。
+ * @param attempt     当前第几次重试（从 1 开始递增）
+ * @param maxAttempts 最多重试次数
+ * @param waitSeconds 本次重试前的等待秒数
+ */
+export async function showRetryCountdown(
+  attempt: number,
+  maxAttempts: number,
+  waitSeconds: number
+): Promise<void> {
+  const line = (remain: number): string =>
+    `正在重试...(${attempt}/${maxAttempts}) ${remain}s`;
+
+  if (!process.stdout.isTTY) {
+    process.stdout.write(line(waitSeconds) + "\n");
+    await sleep(waitSeconds * 1000);
+    return;
+  }
+
+  for (let remain = waitSeconds; remain > 0; remain--) {
+    // 行尾补空格：剩余秒数位数变少时覆盖上一帧的残留字符
+    process.stdout.write(`\r${line(remain)} `);
+    await sleep(1000);
+  }
+  process.stdout.write("\n");
+}
+
+/**
+ * @brief 睡眠指定毫秒
+ * @param ms 毫秒数
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
 /**
  * @brief 安全地读取密码（不回显明文）
  * @details 通过 stdin raw mode 逐字符读取，终端显示 `*` 占位。

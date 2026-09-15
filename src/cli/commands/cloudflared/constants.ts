@@ -51,7 +51,13 @@ export type MenuChoice =
  *          与菜单项一一对应；便于脚本与 AI 客户端调用。
  *          install 内部含安装途径的交互选择，非交互环境下取消即返回。
  */
-export const DIRECT_ACTIONS = ["start", "stop", "status", "log", "install"] as const;
+export const DIRECT_ACTIONS = [
+  "start",
+  "stop",
+  "status",
+  "log",
+  "install",
+] as const;
 
 /** @brief 子命令直达的 action 联合类型 */
 export type DirectAction = (typeof DIRECT_ACTIONS)[number];
@@ -95,9 +101,34 @@ export const DOMAIN_POLL_MS = 500;
 /**
  * @brief 域名轮询超时（毫秒）
  * @details 实测 cloudflared 启动预检（DNS/UDP/TCP/API 六项）约 10 秒，
- *          20 秒覆盖冷启动余量；超时但进程存活时提示稍后用 status 重查。
+ *          20 秒覆盖冷启动余量。
  */
 export const DOMAIN_TIMEOUT_MS = 20000;
+
+// ============================================================
+// 域名解析就绪等待与重试
+// ============================================================
+
+/**
+ * @brief 域名未解析时的最大重试次数
+ * @details 面向 Quick Tunnel 域名的 DNS 传播窗口（实测约 1 分钟）：
+ *          每次重试前等待 DOMAIN_RETRY_WAIT_S 秒，12 次 × 5s ≈ 1 分钟，
+ *          覆盖传播期而不至于把刚拉起、域名尚在生效中的健康隧道误判失败。
+ */
+export const DOMAIN_RETRY_MAX = 12;
+
+/** @brief 每次重试前的等待秒数（倒计时在同一行内递减显示） */
+export const DOMAIN_RETRY_WAIT_S = 5;
+
+/**
+ * @brief 域名解析优选的公共 DNS 服务器（国内可达）
+ * @details 优先直查公共 DNS、失败回落系统解析器（见 tunnel-health.ts）：
+ *          - 系统解析器（多为路由器 DNS）抖动或对首次未传播记录缓存了
+ *            NXDOMAIN 时，公共 DNS 直查是绕开负缓存、拿到新鲜结果的途径；
+ *          - 服务器必须是本机网络实际可达的节点：实测 1.1.1.1 / 8.8.8.8
+ *            在国内网络常被拦截（UDP 53 超时），故选阿里 / 腾讯公共 DNS。
+ */
+export const DNS_PUBLIC_SERVERS = ["223.5.5.5", "119.29.29.29"];
 
 // ============================================================
 // 本地落盘路径（相对 cwd）
