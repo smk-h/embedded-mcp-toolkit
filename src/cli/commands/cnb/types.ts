@@ -16,15 +16,6 @@
 // ============================================================
 
 /**
- * @brief cnb 命令的选项
- * @details 由 Commander 在 src/cli/index.ts 中解析命令行参数后传入。
- */
-export interface CnbOptions {
-  /** CNB 容器内项目根目录（落点：<dir>/.mcp.json），缺省使用 CNB_DEFAULT_PROJECT_DIR */
-  dir?: string;
-}
-
-/**
  * @brief CNB 云开发环境连接信息
  * @details 由用户输入的紧凑地址 `<环境标识>@cnb.space` 解析而来；该入口为 none
  *          认证，无需密码或密钥。

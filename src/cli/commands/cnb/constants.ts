@@ -27,9 +27,6 @@ export const CNB_SSH_HOST = "cnb.space";
 /** @brief CNB 公网 SSH 入口端口（实测仅 22 开放） */
 export const CNB_SSH_PORT = 22;
 
-/** @brief CNB 容器内默认项目根（VS Code Remote 的挂载点，实测 /workspace） */
-export const CNB_DEFAULT_PROJECT_DIR = "/workspace";
-
 // ============================================================
 // 本地落盘路径（相对 cwd，位于 .gitignore 忽略的 .embedded 下）
 // ============================================================
@@ -59,7 +56,15 @@ export const REMOTE_KEY_NAME = LOCAL_KEY_NAME;
 /** @brief 容器内 ssh config 相对家目录的路径 */
 export const REMOTE_SSH_CONFIG = ".ssh/config";
 
-/** @brief 容器内 MCP 配置文件名（项目根，CodeBuddy 项目级 MCP 配置） */
+/**
+ * @brief 容器内 CodeBuddy 配置目录名（相对家目录）
+ * @details MCP 配置落点的父目录。选用户级而非项目级：容器内"项目根"随用户实际
+ *          打开的目录而变（/workspace 与 /workspace/<repo> 可能并存），写死在某一
+ *          层极易打偏导致配置读不到；用户级与打开哪个项目无关。
+ */
+export const REMOTE_CONFIG_DIR_REL = ".codebuddy";
+
+/** @brief 容器内 MCP 配置文件名（用户级落点：<home>/.codebuddy/.mcp.json） */
 export const REMOTE_MCP_FILE_NAME = ".mcp.json";
 
 /** @brief 隧道代理指向的容器内端点（ssh config 的 Host 匹配项） */

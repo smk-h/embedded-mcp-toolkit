@@ -31,12 +31,8 @@ import {
   waitForQuit,
 } from "../../shared/cli-helpers.js";
 import { isWindows } from "../../shared/platform.js";
-import {
-  CNB_DEFAULT_PROJECT_DIR,
-  MCP_TEMPLATE_REL,
-  START_SCRIPT_NAME,
-} from "./constants.js";
-import { type CnbOptions, type LocalEndpoint } from "./types.js";
+import { MCP_TEMPLATE_REL, START_SCRIPT_NAME } from "./constants.js";
+import { type LocalEndpoint } from "./types.js";
 import { connectCnbEnv, parseCnbAddress } from "./connect.js";
 import { doLocalKey } from "./steps/local-key.js";
 import { ensureTunnelDomain } from "./steps/tunnel.js";
@@ -63,9 +59,8 @@ function printBanner(): void {
  *          均以日志提示并在流程内消化，不向调用方抛异常。用户在步骤 1 取消输入
  *          （Ctrl+C）时视为主动放弃，直接退出；其余情况（含中途失败）保留终端，
  *          让用户看清结果提示后再按 q 退出。
- * @param opts 命令选项（dir 指定容器内项目根目录）
  */
-export async function runCnb(opts: CnbOptions): Promise<void> {
+export async function runCnb(): Promise<void> {
   if (!isWindows()) {
     console.error("[err] 本命令仅支持 Windows");
     return;
@@ -73,7 +68,7 @@ export async function runCnb(opts: CnbOptions): Promise<void> {
 
   clearScreen();
   printBanner();
-  const shouldWait = await executeFlow(opts);
+  const shouldWait = await executeFlow();
   if (!shouldWait) {
     return;
   }
@@ -95,12 +90,11 @@ export async function runCnb(opts: CnbOptions): Promise<void> {
  *          3. 确保 Quick Tunnel 就绪并取得域名，失败即中止；
  *          4. 本地生成密钥对并写入 authorized_keys，失败即中止；
  *          5. 连接 CNB 环境（none 认证），失败即中止；
- *          6. 推送私钥 + 写隧道 config → 写 MCP 配置 → 展示结果，
+ *          6. 推送私钥 + 写隧道 config → 写用户级 MCP 配置 → 展示结果，
  *             连接在 finally 中统一关闭。
- * @param opts 命令选项
  * @returns 是否需要在流程结束后等待用户按 q 退出（用户主动取消返回 false）
  */
-async function executeFlow(opts: CnbOptions): Promise<boolean> {
+async function executeFlow(): Promise<boolean> {
   // 1. 输入 CNB 环境标识
   log.info("连接目标");
   const addressRaw = await text({
@@ -163,9 +157,8 @@ async function executeFlow(opts: CnbOptions): Promise<boolean> {
       return true;
     }
 
-    // 7. 写 CodeBuddy MCP 配置（容器内项目根）
-    const projectDir = opts.dir ?? CNB_DEFAULT_PROJECT_DIR;
-    const remoteMcpPath = await doMcpConfig(client, endpoint, projectDir);
+    // 7. 写 CodeBuddy 用户级 MCP 配置（<容器家目录>/.codebuddy/.mcp.json）
+    const remoteMcpPath = await doMcpConfig(client, endpoint, pushed.home);
     if (!remoteMcpPath) {
       return true;
     }

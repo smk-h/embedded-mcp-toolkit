@@ -17,11 +17,11 @@
  *   [2] 确保 Cloudflare Quick Tunnel 就绪，取得随机域名
  *   [3] Windows 本地生成 CNB 专用密钥对 id_mcp_cnb_server，公钥写入 authorized_keys
  *   [4] 以 none 认证登录容器（免密），推送私钥并写入隧道 ssh config
- *   [5] 生成 CodeBuddy MCP 配置模板并写入容器项目根 .mcp.json
+ *   [5] 生成 CodeBuddy MCP 配置并写入容器用户级 ~/.codebuddy/.mcp.json
  *   [6] 展示容器侧 ssh 命令（免密登录到 Windows）→ 按 q 退出
  *
  * 目录结构：
- *   - types.ts         类型与接口（CnbOptions / CnbEnvInfo / LocalEndpoint 等）
+ *   - types.ts         类型与接口（CnbEnvInfo / LocalEndpoint / PushKeyResult 等）
  *   - constants.ts     入口、路径、密钥名、隧道标记等运行时常量
  *   - connect.ts       CNB 地址解析与 none 认证连接
  *   - steps/           线性流程的四个步骤：
@@ -33,4 +33,3 @@
  */
 
 export { runCnb } from "./run.js";
-export type { CnbOptions } from "./types.js";
