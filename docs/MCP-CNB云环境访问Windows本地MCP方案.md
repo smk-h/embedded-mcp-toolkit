@@ -353,7 +353,7 @@ ssh -i ~/.ssh/id_mcp_server \
 ```json
 {
   "mcpServers": {
-    "embedded-board": {
+    "win-embedded-board": {
       "command": "ssh",
       "args": [
         "-i", "~/.ssh/id_mcp_server",
