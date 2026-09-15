@@ -80,8 +80,12 @@ export const DEFAULT_TUNNEL_URL = "ssh://127.0.0.1:22";
  * @details 捕获组 1 为**裸域名**（不含 https:// 前缀）——state.domain 与
  *          连接命令示例统一使用裸域名：cloudflared access 的 --hostname
  *          参数与 ssh 目标端点都要求不带协议前缀。
+ *          负向先行排除 `api.` 子域：注册请求（api.trycloudflare.com）失败
+ *          重试时，错误行会先于隧道域名行打印 `Post "https://api.
+ *          trycloudflare.com/tunnel"`，轮询若命中它就会把 API 端点当成
+ *          隧道域名（实测会命中，见 t4 现场测试）。
  */
-export const DOMAIN_RE = /https:\/\/([a-z0-9-]+\.trycloudflare\.com)/;
+export const DOMAIN_RE = /https:\/\/((?!api\.)[a-z0-9-]+\.trycloudflare\.com)/;
 
 /**
  * @brief Quick Tunnel 僵尸签名（隧道已被 Cloudflare 回收）
