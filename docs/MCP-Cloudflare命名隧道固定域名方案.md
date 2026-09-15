@@ -14,7 +14,7 @@
 
 （3）**目标**：让域名固定下来，把这一整类维护成本归零 —— 要的不是"能访问"，而是"地址不变"。
 
-### 2. 结论
+### 2. 那是否可行呢？
 
 （1）**可行，但必须把整个根域名 `sumumm.top` 的 NS 交给 Cloudflare**。然后在同一个 Zone 里用不同主机名区分两条链路：网页链路（`sumumm.top` / `www.sumumm.top`）继续指向 EdgeOne Pages 且保持仅 DNS，隧道链路（`home.sumumm.top`）指向命名隧道并开启代理。
 
@@ -28,6 +28,8 @@
 
 #### 3.1 域名与用途
 
+我之前申请了一个域名`sumumm.top`：
+
 | 项目 | 内容 |
 | --- | --- |
 | 域名 | `sumumm.top` |
@@ -39,9 +41,7 @@
 
 #### 3.2 已经完成的迁移
 
-NS 已从 DNSPod 迁至 Cloudflare，域名列表状态为 **✓ 活动**，解析权已归 Cloudflare。
-
-当前 Cloudflare 侧 DNS 记录共 2 条，均为「仅 DNS」（灰云）：
+NS 已从 DNSPod 迁至 Cloudflare，域名列表状态为 **✓ 活动**，解析权已归 Cloudflare。当前 Cloudflare 侧 DNS 记录共 2 条，均为「仅 DNS」（灰云）：
 
 | 主机名 | 类型 | 目标 | 代理状态 |
 | --- | --- | --- | --- |
@@ -72,14 +72,14 @@ NS 已从 DNSPod 迁至 Cloudflare，域名列表状态为 **✓ 活动**，解�
 ```text
                     ┌────────────────────────────────────┐
    访问网页 ───────► │  sumumm.top / www.sumumm.top       │  DNS 记录：CNAME → EdgeOne 目标
-                    │  【仅 DNS】灰云，不经过 CF 代理     │  → 回源 EdgeOne Pages
+                    │  【仅 DNS】灰云，不经过 CF 代理        │  → 回源 EdgeOne Pages
                     └────────────────────────────────────┘
        Cloudflare   │
          边缘       │
                     └────────────────────────────────────┐
-   AI 客户端 ─────► │  home.sumumm.top                   │  DNS 记录：CNAME → <UUID>.cfargotunnel.com
-   (CNB / Linux)    │  【已代理】橙云，由 CF 终结 TLS     │  → 隧道 → Windows cloudflared
-                    └────────────────────────────────────┘        → 127.0.0.1:22（Windows sshd）
+   AI 客户端 ─────►  │  home.sumumm.top                   │  DNS 记录：CNAME → <UUID>.cfargotunnel.com
+   (CNB / Linux)    │  【已代理】橙云，由 CF 终结 TLS        │  → 隧道 → Windows cloudflared
+                    └────────────────────────────────────┘         → 127.0.0.1:22（Windows sshd）
                                                                    → remote-start-mcp.bat（MCP Server）
 ```
 
@@ -263,7 +263,7 @@ Cloudflare 会自动扫描根域名并从 DNSPod 拉取现网记录，导入到�
 
 #### 2.3 取得分配的名称服务器
 
-【**Cloudflare 控制台**】→ 站点 `sumumm.top` →【**DNS**】→【**设置**】→ 找到「Cloudflare 名称服务器」区域，记下分配的两台 NS（形如 `xxx.ns.cloudflare.com` 与 `yyy.ns.cloudflare.com`）。
+【**Cloudflare 控制台**】→ 站点 `sumummtop` →【**DNS**】→【**设置**】→ 找到「Cloudflare 名称服务器」区域，记下分配的两台 NS（形如 `xxx.ns.cloudflare.com` 与 `yyy.ns.cloudflare.com`）。
 
 这两台地址下一步要填进腾讯云，务必完整复制，不要漏后缀、不要把两台写重。
 
@@ -271,7 +271,7 @@ Cloudflare 会自动扫描根域名并从 DNSPod 拉取现网记录，导入到�
 
 #### 3.1 修改 DNS 服务器
 
-【**腾讯云控制台**】→【**DNS 解析 DNSPod**】→【**我的域名**】→ 找到 `sumumm.top` → 点击【**DNS 修改**】→ 选择【**自定义 DNS**】→ 依次填入 2.3 记下的两台 Cloudflare NS →【**确定**】保存。
+【**腾讯云控制台**】&rarr;【**我的资源**】&rarr;【**域名注册**】→【**[我的域名](https://console.cloud.tencent.com/domain/all-domain/all)**】→ 找到 `sumumm.top` → 点击【**DNS 修改**】→ 选择【**自定义 DNS**】→ 依次填入 2.3 记下的两台 Cloudflare NS →【**确定**】保存。
 
 若该入口不显示或不可用，改走域名注册侧：【**腾讯云控制台**】→【**域名注册**】→【**我的域名**】→ `sumumm.top` →【**管理**】→【**DNS 服务器**】→【**修改 DNS 服务器**】→ 填入同样的两台 NS。
 
@@ -290,6 +290,8 @@ Cloudflare 会自动扫描根域名并从 DNSPod 拉取现网记录，导入到�
 #### 4.1 面板应有的样子
 
 （1）【**Cloudflare 控制台**】→ 顶部域名列表 → `sumumm.top` 的「状态」列显示 **✓ 活动**。若显示「待更改域名服务器 / Pending Nameserver Update」，说明 NS 尚未生效，回到 3.1 检查。
+
+![image-20260915200637195](./MCP-Cloudflare命名隧道固定域名方案/img/image-20260915200637195.png)
 
 （2）【**Cloudflare 控制台**】→ 站点 →【**DNS**】→【**记录**】→ 与 二、4.3 的记录清单一致：共 2 条，均为「仅 DNS」。
 
@@ -368,7 +370,9 @@ cloudflared tunnel login
 cloudflared tunnel create home
 ```
 
-`tunnel login` 会在 `%USERPROFILE%\.cloudflared\` 下拉取 `cert.pem`；`tunnel create` 在同目录生成 `<隧道 UUID>.json` 凭据文件，同时输出 UUID，下一步要用。
+`tunnel login` 会在 `%USERPROFILE%\.cloudflared\` 下拉取 `cert.pem`；`tunnel create` 在同目录生成 `<隧道 UUID>.json` 凭据文件，同时输出 UUID，下一步要用。创建成功的话，网页上【控制台】&rarr;【联网】&rarr;【Tunnels】会出现home这个Tunnels：
+
+![image-20260915201059519](./MCP-Cloudflare命名隧道固定域名方案/img/image-20260915201059519.png)
 
 【**注意**】`login` 的浏览器授权步骤无法通过命令行代做，必须在有图形界面的 Windows 上手工完成一次。
 
@@ -480,33 +484,6 @@ C:\Cloudflared\bin\cloudflared.exe --config=C:\Windows\System32\config\systempro
 
 【**易错点**】`ImagePath` 中不能有多余空格或字符，否则服务无法启动；改动配置后需 `sc stop cloudflared` 再 `sc start cloudflared` 才会重新加载。
 
-#### 1.7 CLI 封装：把 1.2–1.6 收成两条命令
-
-`cloudflared` 命令已原生支持固定域名（named）模式，把上面各节的官方 CLI 操作与手工核对收敛成两条命令：
-
-```powershell
-# 一次性初始化（幂等：缺则补、已有则跳过，结束时打印三态清单）
-#   ✓ 已存在 / ＋ 已创建 / ↻ 已更新 / ！ 需手工（如 login/create 这类须手工的项）
-embedded-mcp-toolkit cloudflared config init
-
-# 只读诊断：L1–L3 本地硬校验（配置文件、ingress 命中、service、兜底规则、官方 validate）
-#           L4–L5 联网软校验（连接器、DNS 是否橙云、源站端口、是否注册到边缘）
-embedded-mcp-toolkit cloudflared check --mode named
-
-# 启动（启动前跑 L1–L3，任一失败即拒绝启动；--verify 追加 L4–L5 软校验）
-embedded-mcp-toolkit cloudflared start --mode named --verify
-```
-
-（1）**配置落点**：隧道配置 `config.yml` 与用户薄配置 `embedded-mcp-toolkit.yaml` 都在 `%USERPROFILE%\.cloudflared\`；**项目目录内不产生任何配置文件**。状态与日志仍落在项目 `.embedded/cloudflared\`（已被 `.gitignore` 忽略）。
-
-（2）**用户薄配置**只声明"用哪条通道、隧道叫什么、期望哪个域名"，隧道 UUID、凭据路径、ingress 规则一律以 `config.yml` 为唯一真相。
-
-（3）**幂等语义**：`config init` 对 `config.yml` 只做**文本级最小插入**（保留原有注释与其它规则，插入后立即 YAML 校验，不合法则回滚不写盘），因此可以安心重复执行。
-
-（4）**与 `cnb` 的关系**：`cnb --tunnel named` 会复用固定域名（需要时自动以 named 模式拉起），写入容器 ssh config 的就是固定域名段 —— 四、2.2(2) 的覆盖风险随之消失。
-
-（5）**不注册自启**：CLI 不创建计划任务或服务，隧道只在 `start` 或 `cnb` 流程内被拉起（1.6 属可选手工增强）。
-
 ### 2. CNB 侧：接入固定域名
 
 #### 2.1 前置条件
@@ -584,9 +561,7 @@ ssh -o StrictHostKeyChecking=accept-new \
 | `power_shell_*` | 正常注册 |
 | `ssh_build` | 不注册（`remote-ssh launch`） |
 
-唯一前置条件仍是 1.3 的**显式 IPv4 写法** —— 它决定 `server-ip` 是 `127.0.0.1` 还是 `::1`。
-
-本节的命令依赖 2.2 的 `~/.ssh/config` 提供 `ProxyCommand`；完全不动 config 的一次性写法见 2.5。
+唯一前置条件仍是 1.3 的**显式 IPv4 写法** —— 它决定 `server-ip` 是 `127.0.0.1` 还是 `::1`。本节的命令依赖 2.2 的 `~/.ssh/config` 提供 `ProxyCommand`；完全不动 config 的一次性写法见 2.5。
 
 #### 2.5 不写 ssh config 的完整命令
 
