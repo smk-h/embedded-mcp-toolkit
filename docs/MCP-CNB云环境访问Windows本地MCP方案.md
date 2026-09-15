@@ -256,6 +256,8 @@ embedded-mcp-toolkit sshd-config
 
 放好文件后，**再次执行菜单 `[4]`**，即可复用项目既有的免密配置流程，无需手工编辑 `authorized_keys`。若目标是 Windows 管理员账户，公钥应落到 `C:\ProgramData\ssh\administrators_authorized_keys`（菜单 `[4]` 会一并处理分组规则）。
 
+【**残留清理**】容器每重建一次，`authorized_keys` 里就多一条旧公钥。日积月累可用 `sshd-config` 菜单 `[9]`（清理 authorized_keys 失效公钥）批量清理：列出全部条目（类型 + SHA256 指纹 + 行尾注释 `user@host`），勾选删除；与当前 `.embedded/ssh/id_mcp_server.pub` 一致的条目会标记"当前生效"，误勾时会有额外警告。
+
 #### 2.4 启动并确认隧道
 
 ```powershell
@@ -487,7 +489,7 @@ ssh <环境标识>@cnb.space "sed -i 's|--hostname .*|--hostname $domain|' ~/.ss
 
 （2）**优先让 sshd 只监听回环**：`cloudflared` 从本机 `127.0.0.1:22` 连入即可，无需把 Windows sshd 监听在 `0.0.0.0`，这样局域网内也不额外扩大暴露面。
 
-（3）**私钥不入仓库**：`~/.ssh/id_mcp_server` 只存在于 CNB 容器运行时；CNB 容器随开随弃，重建后需重新生成密钥并更新 Windows 侧公钥（见三、3.2 节）。
+（3）**私钥不入仓库**：`~/.ssh/id_mcp_server` 只存在于 CNB 容器运行时；CNB 容器随开随弃，重建后需重新生成密钥并更新 Windows 侧公钥（见三、3.2 节），旧公钥残留可用菜单 `[9]` 清理（见三、2.3 节）。
 
 （4）**本 MCP 暴露了 `power_shell_exec` 这类等同远程 shell 的工具**，访问面等于"持有 Windows SSH 凭证的人"，凭证本身要管好。
 
@@ -517,7 +519,7 @@ ssh -i ~/.ssh/id_mcp_server -o ProxyCommand="cloudflared access ssh --hostname <
 
 （5）**容器重建后一切失效？**
 
-CNB 容器是临时环境，重建后：出口 IP 变化、容器内 `~/.ssh/id_mcp_server` 与 `~/.ssh/config` 丢失。需要重新执行三、3 节的密钥生成与 config 写入，并把新公钥同步到 Windows。若 Windows 侧把公钥与隧道做成了开机常驻，则 Windows 端无需改动。
+CNB 容器是临时环境，重建后：出口 IP 变化、容器内 `~/.ssh/id_mcp_server` 与 `~/.ssh/config` 丢失。需要重新执行三、3 节的密钥生成与 config 写入，并把新公钥同步到 Windows。若 Windows 侧把公钥与隧道做成了开机常驻，则 Windows 端无需改动。多次重建后 Windows 侧 `authorized_keys` 会累积多条失效公钥，可用 `sshd-config` 菜单 `[9]` 批量清理。
 
 
 ## 六、 实测验证记录
