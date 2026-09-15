@@ -157,7 +157,7 @@ async function executeFlow(): Promise<boolean> {
       return true;
     }
 
-    // 7. 写 CodeBuddy 用户级 MCP 配置（<容器家目录>/.codebuddy/.mcp.json）
+    // 7. 写 CodeBuddy 用户级 MCP 配置（<容器家目录>/.codebuddy/mcp.json，不带点）
     const remoteMcpPath = await doMcpConfig(client, endpoint, pushed.home);
     if (!remoteMcpPath) {
       return true;

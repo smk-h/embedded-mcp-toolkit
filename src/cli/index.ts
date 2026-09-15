@@ -395,7 +395,7 @@ program
  *          交互输入 CNB 环境标识 → 确保 Cloudflare Quick Tunnel → 本地生成
  *          id_mcp_cnb_server 密钥对并写入本机 authorized_keys → 免密登录容器、
  *          推送私钥并写入隧道 ssh config → 生成 CodeBuddy MCP 配置写入容器用户级
- *          ~/.codebuddy/.mcp.json → 展示容器侧 ssh 命令，按 q 退出。
+ *          ~/.codebuddy/mcp.json（不带点）→ 展示容器侧 ssh 命令，按 q 退出。
  *          命令可重复执行：CNB 容器每次重建后重跑即可恢复免密通道。
  *
  * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。

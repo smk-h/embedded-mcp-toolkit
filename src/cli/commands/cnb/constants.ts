@@ -64,8 +64,16 @@ export const REMOTE_SSH_CONFIG = ".ssh/config";
  */
 export const REMOTE_CONFIG_DIR_REL = ".codebuddy";
 
-/** @brief 容器内 MCP 配置文件名（用户级落点：<home>/.codebuddy/.mcp.json） */
-export const REMOTE_MCP_FILE_NAME = ".mcp.json";
+/**
+ * @brief 容器内 MCP 配置文件名（用户级落点：<home>/.codebuddy/mcp.json）
+ * @details 必须用**不带点**的 mcp.json。CodeBuddy IDE 的用户级 MCP 落点固定为
+ *          `~/.codebuddy/mcp.json`（启动时读取，缺失则自动生成 `{"mcpServers":{}}`
+ *          并挂上文件 watcher）；带点的 `.mcp.json` 只作**项目级**
+ *          （<项目根>/.mcp.json）与**插件级**（插件根 .mcp.json）识别，
+ *          放在用户级目录下不会被读取（实测：该路径下的 server 从未出现在
+ *          MCP 加载日志中）。
+ */
+export const REMOTE_MCP_FILE_NAME = "mcp.json";
 
 /** @brief 隧道代理指向的容器内端点（ssh config 的 Host 匹配项） */
 export const TUNNEL_ENDPOINT = "127.0.0.1";

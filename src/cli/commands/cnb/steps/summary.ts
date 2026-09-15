@@ -60,7 +60,7 @@ export function printFinalSummary(params: {
 
   log.info("下一步");
   log.message(
-    `    1. 重启 CodeBuddy 使 .mcp.json 生效，即可调用 ${SERVER_KEY} 工具`
+    `    1. 重启 CodeBuddy 使 ~/.codebuddy/mcp.json 生效，即可调用 ${SERVER_KEY} 工具`
   );
   log.message(
     "    2. 若容器刚重建过，重跑本命令即可恢复免密通道（无需改 Windows 侧配置）"

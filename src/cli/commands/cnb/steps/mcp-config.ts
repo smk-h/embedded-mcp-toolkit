@@ -12,7 +12,7 @@
  * push-key 写入的 ssh config 接管，这条 ssh 命令实际经 Cloudflare 隧道落到
  * Windows 的 sshd，与"同网段直连"的配置形态完全一致（见方案文档三、4 节）。
  *
- * 落点取**容器用户级** ~/.codebuddy/.mcp.json，而非项目级 <项目根>/.mcp.json：
+ * 落点取**容器用户级** ~/.codebuddy/mcp.json（不带点），而非项目级 <项目根>/.mcp.json：
  * 容器内"项目根"取决于用户实际打开哪个目录（如 /workspace 与 /workspace/<repo>
  * 可能并存），写死在某一层极易打偏，配置就读不到；用户级配置与打开哪个项目无关，
  * 容器重建后重跑一次即对整个开发环境生效。
@@ -48,7 +48,7 @@ import { type LocalEndpoint } from "../types.js";
  *          1. 按本地端点构造桥接定义（ssh -i 专用私钥 <win_user>@127.0.0.1 + bat 路径）；
  *          2. 模板落盘到本地 .embedded/cnb/codebuddy-mcp.json 供复核；
  *          3. 在容器内创建 ~/.codebuddy 目录（缺失时）；
- *          4. 读取容器内 ~/.codebuddy/.mcp.json（缺失当作空对象），补齐 $schema，
+ *          4. 读取容器内 ~/.codebuddy/mcp.json（缺失当作空对象），补齐 $schema，
  *             只覆盖 mcpServers 下的 win-embedded-board 一项，其它 server 定义
  *             与顶层字段原样保留，再整体写回。
  * @param client   已连接的 CNB 环境 ssh2 Client
@@ -87,7 +87,7 @@ export async function doMcpConfig(
   writeFileSync(templatePath, JSON.stringify(template, null, 2) + "\n", "utf8");
   log.message(`    模板已生成: ${templatePath}`);
 
-  // 3. 容器用户级落点：<home>/.codebuddy/.mcp.json
+  // 3. 容器用户级落点：<home>/.codebuddy/mcp.json（不带点，CodeBuddy IDE 读这个）
   const remoteDir = `${home}/${REMOTE_CONFIG_DIR_REL}`;
   const remotePath = `${remoteDir}/${REMOTE_MCP_FILE_NAME}`;
   await sshExec(client, `mkdir -p "${remoteDir}"`);
