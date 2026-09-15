@@ -13,7 +13,6 @@
  */
 
 import { existsSync } from "fs";
-import { resolve } from "path";
 
 import { runCmd } from "../../shared/exec.js";
 import {
@@ -21,6 +20,7 @@ import {
   PORTABLE_EXE_REL,
 } from "./constants.js";
 import { type CloudflaredDetectResult } from "./types.js";
+import { resolveWorkspacePath } from "./workspace-paths.js";
 
 // ============================================================
 // cloudflared 可执行文件探测
@@ -37,8 +37,8 @@ import { type CloudflaredDetectResult } from "./types.js";
  * @returns 探测结果（exePath + 命中来源）
  */
 export async function findCloudflaredExe(): Promise<CloudflaredDetectResult> {
-  // (a) 项目内便携版
-  const portable = resolve(process.cwd(), PORTABLE_EXE_REL);
+  // (a) 项目内便携版（相对工作区根，不随 cwd 漂移）
+  const portable = resolveWorkspacePath(PORTABLE_EXE_REL);
   if (existsSync(portable)) {
     return { exePath: portable, source: "embedded" };
   }

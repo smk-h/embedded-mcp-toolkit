@@ -7,13 +7,14 @@
  * Version    : x.x.x
  * Description: 菜单 [2]: 查看隧道状态与域名（只读）
  *
- * 进程存活探测 + 状态摘要展示；域名缺失时从日志补录（覆盖 start 时
- * 提取超时的场景）。
+ * 进程存活探测 + 健康校验展示 + 状态摘要；域名缺失时从日志补录（覆盖
+ * start 时提取超时的场景）。健康校验只提示不处置，stop/start 才是动作入口。
  * ======================================================
  */
 
 import { log } from "@clack/prompts";
 
+import { checkTunnelHealth } from "../tunnel-health.js";
 import { extractDomainFromLog, isProcessAlive } from "../tunnel-process.js";
 import { readTunnelState, writeTunnelState } from "../tunnel-state.js";
 import { type TunnelState } from "../types.js";
@@ -61,5 +62,19 @@ export async function doStatus(): Promise<boolean> {
   }
 
   printTunnelSummary(display);
+
+  // 健康提示（只读）：进程存活不代表隧道有效，域名已被回收的僵尸隧道
+  // 在这里显式暴露，处置入口仍是 stop / start
+  if (display.domain) {
+    const health = await checkTunnelHealth(display);
+    if (health.status === "dead") {
+      log.error(`隧道健康异常: ${health.detail}`);
+      log.message(
+        "    处置: cloudflared stop 后重新 start(或重跑 cnb,会自动重启失效隧道)"
+      );
+    } else if (health.status === "pending") {
+      log.warn(health.detail);
+    }
+  }
   return true;
 }

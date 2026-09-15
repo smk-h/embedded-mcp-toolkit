@@ -13,12 +13,12 @@
  */
 
 import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
 
 import { log } from "@clack/prompts";
 
 import { LOG_FILE_REL } from "../constants.js";
 import { readTunnelState } from "../tunnel-state.js";
+import { resolveWorkspacePath } from "../workspace-paths.js";
 
 // ============================================================
 // 菜单 [3]: 查看日志
@@ -34,8 +34,7 @@ import { readTunnelState } from "../tunnel-state.js";
  */
 export async function doLog(lines = 50): Promise<boolean> {
   const state = readTunnelState();
-  const logFile =
-    state?.logFile ?? resolve(process.cwd(), LOG_FILE_REL);
+  const logFile = state?.logFile ?? resolveWorkspacePath(LOG_FILE_REL);
 
   if (!existsSync(logFile)) {
     log.warn(`日志文件不存在: ${logFile}(隧道从未启动)`);

@@ -13,7 +13,7 @@
  */
 
 import { mkdirSync } from "fs";
-import { resolve } from "path";
+import { dirname } from "path";
 
 import { log, select, isCancel } from "@clack/prompts";
 
@@ -25,6 +25,7 @@ import {
   PORTABLE_EXE_REL,
 } from "../constants.js";
 import { findCloudflaredExe } from "../tunnel-detect.js";
+import { resolveWorkspacePath } from "../workspace-paths.js";
 
 // ============================================================
 // 安装途径菜单值
@@ -101,8 +102,8 @@ export async function doInstall(): Promise<boolean> {
 
   // (3b) 便携版下载
   if (choice === INSTALL_PORTABLE) {
-    const dest = resolve(process.cwd(), PORTABLE_EXE_REL);
-    mkdirSync(resolve(dest, ".."), { recursive: true });
+    const dest = resolveWorkspacePath(PORTABLE_EXE_REL);
+    mkdirSync(dirname(dest), { recursive: true });
     log.info(`下载便携版到 ${dest} ...`);
     try {
       await downloadFile(CLOUDFLARED_PORTABLE_URL, dest);

@@ -47,6 +47,24 @@ export interface TunnelState {
 }
 
 /**
+ * @brief 隧道健康状态（进程存活之外的隧道有效性判定，见 tunnel-health.ts）
+ * @details ok=域名可解析可复用；pending=域名暂未解析但无回收签名（DNS 传播
+ *          中/解析器抖动），宽限不判死；dead=解析不到且日志有回收签名，
+ *          进程已僵尸，唯一出路是停止后重新拉起。
+ */
+export type TunnelHealthStatus = "ok" | "pending" | "dead";
+
+/**
+ * @brief 隧道健康判定结果
+ * @param status 三态判定结论
+ * @param detail 判定依据的人类可读描述（用于日志与用户提示）
+ */
+export interface TunnelHealth {
+  status: TunnelHealthStatus;
+  detail: string;
+}
+
+/**
  * @brief cloudflared 可执行文件探测结果
  * @param exePath 命中的可执行文件路径，未找到为 null
  * @param source  命中来源：embedded=项目内便携版 / installed=系统安装路径 / path=PATH 探测 / none=未找到

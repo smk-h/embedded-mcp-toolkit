@@ -77,6 +77,18 @@ export const DEFAULT_TUNNEL_URL = "ssh://127.0.0.1:22";
  */
 export const DOMAIN_RE = /https:\/\/([a-z0-9-]+\.trycloudflare\.com)/;
 
+/**
+ * @brief Quick Tunnel 僵尸签名（隧道已被 Cloudflare 回收）
+ * @details Quick Tunnel 掉线超过宽限期后边缘侧删除其注册；本地进程重连时
+ *          收到 "Unauthorized: Tunnel not found"，此后只会无限重试同一已
+ *          删除的隧道 ID，永不自愈，唯一出路是停止后重新拉起换新域名。
+ *          与域名 DNS 校验组成双信号，见 tunnel-health.ts。
+ */
+export const TUNNEL_DEAD_RE = /Unauthorized: Tunnel not found/;
+
+/** @brief 健康校验中单次 DNS 解析的超时（毫秒），防系统解析器抖动卡死 CLI */
+export const DNS_CHECK_TIMEOUT_MS = 5000;
+
 /** @brief 域名轮询间隔（毫秒） */
 export const DOMAIN_POLL_MS = 500;
 

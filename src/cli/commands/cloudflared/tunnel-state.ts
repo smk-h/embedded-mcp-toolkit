@@ -20,10 +20,11 @@ import {
   rmSync,
   writeFileSync,
 } from "fs";
-import { dirname, resolve } from "path";
+import { dirname } from "path";
 
 import { STATE_FILE_REL } from "./constants.js";
 import { type TunnelState } from "./types.js";
+import { resolveWorkspacePath } from "./workspace-paths.js";
 
 // ============================================================
 // 状态文件读写
@@ -31,10 +32,11 @@ import { type TunnelState } from "./types.js";
 
 /**
  * @brief 解析状态文件绝对路径（不创建）
- * @returns 状态文件绝对路径（相对 cwd 解析，与项目内其余 .embedded 路径约定一致）
+ * @returns 状态文件绝对路径（相对工作区根解析——后台隧道跨 CLI 进程存活，
+ *          路径不得随执行时的 cwd 漂移，否则换目录执行会读不到原状态）
  */
 export function resolveStateFile(): string {
-  return resolve(process.cwd(), STATE_FILE_REL);
+  return resolveWorkspacePath(STATE_FILE_REL);
 }
 
 /**
