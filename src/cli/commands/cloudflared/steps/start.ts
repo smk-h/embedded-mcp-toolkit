@@ -31,10 +31,7 @@ import {
   TUNNEL_DIR_REL,
 } from "../constants.js";
 import { findCloudflaredExe } from "../tunnel-detect.js";
-import {
-  checkTunnelHealth,
-  isDomainResolvable,
-} from "../tunnel-health.js";
+import { checkTunnelHealth, isDomainResolvable } from "../tunnel-health.js";
 import {
   isProcessAlive,
   pollDomainFromLog,
@@ -48,7 +45,10 @@ import {
 } from "../tunnel-state.js";
 import { type TunnelState } from "../types.js";
 import { resolveWorkspacePath } from "../workspace-paths.js";
-import { showRetryCountdown } from "../../../shared/cli-helpers.js";
+import {
+  type RetryLine,
+  createRetryLine,
+} from "../../../shared/cli-helpers.js";
 import { printTunnelSummary } from "./summary.js";
 
 // ============================================================
@@ -122,27 +122,40 @@ export async function doStart(
     clearTunnelState();
   }
 
-  // (3) 域名健康性复验 + 重试（进程启动失败不重试）
+  // (3) 域名解析就绪复验 + 重试（进程启动失败不重试）
+  // 重试过程只占一个物理行：首次进入重试时打一条 clack 告警留档（含域名），
+  // 之后进度原地刷新（第 n 次复验未通过 + 倒计时），成功 / 耗尽时清除过程行，
+  // 卷屏里只留前后的正式日志
   const maxTries = DOMAIN_RETRY_MAX + 1;
+  let retryLine: RetryLine | null = null;
   for (let attempt = 1; attempt <= maxTries; attempt++) {
     const result = await tryEstablish(detected.exePath, url, pending);
     pending = result.pending;
     if (result.state) {
+      retryLine?.finish();
       log.success("Quick Tunnel 已建立且域名已解析生效");
       printTunnelSummary(result.state);
       return true;
     }
     if (result.fatal) {
+      retryLine?.finish();
       log.error(
         "cloudflared 进程未能启动,已中止重试(请先执行菜单 [5] 确认安装)"
       );
       break;
     }
-    // 最后一次尝试失败后不再倒计时，直接进入失败收尾
+    // 最后一次尝试失败后不再等待，直接进入失败收尾
     if (attempt < maxTries) {
-      await showRetryCountdown(attempt, DOMAIN_RETRY_MAX, DOMAIN_RETRY_WAIT_S);
+      if (!retryLine) {
+        log.warn(
+          `域名 ${pending?.domain ?? "(未分配)"} 尚未解析生效(DNS 传播中),进入重试等待`
+        );
+        retryLine = createRetryLine("域名尚未解析生效(DNS 传播中)");
+      }
+      await retryLine.update(attempt, maxTries, DOMAIN_RETRY_WAIT_S);
     }
   }
+  retryLine?.finish();
 
   // 失败收尾：进程仍在运行时保留现场（域名已分配但未联通，多为 DNS 尚未传播），
   // 状态文件落盘后 stop 才能定位到进程，由用户自行决定何时停止并重试；进程已不在
@@ -240,7 +253,7 @@ async function tryEstablish(
 
   if (!(await isDomainResolvable(domain))) {
     // 进程健康、域名已分配，只是 DNS 尚未传播生效 → 保留进程等待复验
-    log.warn(`域名 ${domain} 尚未解析生效(DNS 传播中)`);
+    // （进度展示由调用方的重试行统一负责，这里不逐次打日志）
     return { state: null, pending: current, fatal: false };
   }
 

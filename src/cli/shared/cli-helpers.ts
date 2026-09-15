@@ -113,40 +113,56 @@ export async function waitForQuit(): Promise<void> {
 }
 
 // ============================================================
-// 重试倒计时
+// 重试等待（原地单行刷新）
 // ============================================================
 
 /**
- * @brief 同一行倒计时显示重试进度
- * @details 输出形如 `正在重试...(1/3) 5s`：剩余秒数递减、重试次数递增，每秒
- *          用 `\r` 回到行首原地覆盖重写同一行（不换行、不清屏），倒计时结束
- *          补一个换行，避免后续日志与倒计时残影粘连。
- *          非 TTY 环境（管道/重定向）无法原地刷新，退化为只打印一次起始状态
- *          后静默等待，避免向日志写入大量控制字符。
- * @param attempt     当前第几次重试（从 1 开始递增）
- * @param maxAttempts 最多重试次数
- * @param waitSeconds 本次重试前的等待秒数
+ * @brief 重试进度的原地单行刷新句柄
+ * @param update 刷新一行进度（每次复验失败后调用，同一物理行原地覆盖）
+ * @param finish 结束刷新：TTY 下清除该行（过程行是瞬态的，不留在卷屏里），
+ *               非 TTY 下为空操作（各行已按行落盘）
  */
-export async function showRetryCountdown(
-  attempt: number,
-  maxAttempts: number,
-  waitSeconds: number
-): Promise<void> {
-  const line = (remain: number): string =>
-    `正在重试...(${attempt}/${maxAttempts}) ${remain}s`;
+export interface RetryLine {
+  update(attempt: number, max: number, waitSeconds: number): Promise<void>;
+  finish(): void;
+}
 
+/**
+ * @brief 创建整个重试阶段共用的一行式进度刷新句柄
+ * @details 一次重试流程（N 次复验 + 每次前的倒计时）只占用**一个物理行**：
+ *          每秒用 `\r` + 清行转义（ESC[0K）原地覆盖，重试次数递增、剩余秒数
+ *          递减，跨复验不换行。成功 / 耗尽时由调用方 finish() 清掉过程行，
+ *          只在卷屏里留下前后的正式日志。行首带 `│` 与 clack 的边框对齐。
+ *          非 TTY 环境（管道/重定向）无法原地刷新，退化为每次复验打印一行
+ *          纯文本，保证日志可读、不写控制字符。
+ * @param label 进度行前缀文案（不含 attempt/倒计时等动态部分）
+ * @returns 刷新句柄
+ */
+export function createRetryLine(label: string): RetryLine {
   if (!process.stdout.isTTY) {
-    process.stdout.write(line(waitSeconds) + "\n");
-    await sleep(waitSeconds * 1000);
-    return;
+    return {
+      async update(attempt, max, waitSeconds): Promise<void> {
+        console.log(`│  [${attempt}/${max}] ${label},${waitSeconds}s 后重试`);
+        await sleep(waitSeconds * 1000);
+      },
+      finish(): void {},
+    };
   }
 
-  for (let remain = waitSeconds; remain > 0; remain--) {
-    // 行尾补空格：剩余秒数位数变少时覆盖上一帧的残留字符
-    process.stdout.write(`\r${line(remain)} `);
-    await sleep(1000);
-  }
-  process.stdout.write("\n");
+  return {
+    async update(attempt, max, waitSeconds): Promise<void> {
+      for (let remain = waitSeconds; remain > 0; remain--) {
+        // 行尾留白：剩余秒数位数变少时覆盖上一帧残留
+        process.stdout.write(
+          `\r\x1b[0K│  ▲ ${label} | 第 ${attempt}/${max} 次复验未通过,${remain}s 后重试 `
+        );
+        await sleep(1000);
+      }
+    },
+    finish(): void {
+      process.stdout.write(`\r\x1b[0K`);
+    },
+  };
 }
 
 /**
