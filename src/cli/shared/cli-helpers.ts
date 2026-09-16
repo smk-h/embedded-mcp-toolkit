@@ -118,7 +118,7 @@ export async function waitForQuit(): Promise<void> {
 
 /**
  * @brief 重试进度的原地单行刷新句柄
- * @param update 刷新一行进度（每次复验失败后调用，同一物理行原地覆盖）
+ * @param update 刷新一行进度（每次尝试失败后调用，同一物理行原地覆盖）
  * @param finish 结束刷新：TTY 下清除该行（过程行是瞬态的，不留在卷屏里），
  *               非 TTY 下为空操作（各行已按行落盘）
  */
@@ -129,7 +129,7 @@ export interface RetryLine {
 
 /**
  * @brief 创建整个重试阶段共用的一行式进度刷新句柄
- * @details 一次重试流程（N 次复验 + 每次前的倒计时）只占用**一个物理行**：
+ * @details 一次重试流程（N 次尝试 + 每次前的倒计时）只占用**一个物理行**：
  *          每秒用 `\r` + 清行转义（ESC[0K）原地覆盖，重试次数递增、剩余秒数
  *          递减，跨复验不换行。成功 / 耗尽时由调用方 finish() 清掉过程行，
  *          只在卷屏里留下前后的正式日志。行首带 `│` 与 clack 的边框对齐。
@@ -154,7 +154,7 @@ export function createRetryLine(label: string): RetryLine {
       for (let remain = waitSeconds; remain > 0; remain--) {
         // 行尾留白：剩余秒数位数变少时覆盖上一帧残留
         process.stdout.write(
-          `\r\x1b[0K│  ▲ ${label} | 第 ${attempt}/${max} 次复验未通过,${remain}s 后重试 `
+          `\r\x1b[0K│  ▲ ${label} | 第 ${attempt}/${max} 次尝试未通过,${remain}s 后重试 `
         );
         await sleep(1000);
       }

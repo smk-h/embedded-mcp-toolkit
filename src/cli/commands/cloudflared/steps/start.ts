@@ -73,6 +73,10 @@ import { printTunnelSummary } from "./summary.js";
  *          存活的进程与原域名，不重启隧道——重启会换域名并让传播进度归零，
  *          反而更难成功。
  *
+ *          域名始终分配不出来（如 trycloudflare 注册 API 超时，cloudflared
+ *          零内部重试直接退出）则不存在"等待生效"的对象：重试即重新拉起
+ *          进程重新申请（换新域名），重试文案与 DNS 传播等待相区分。
+ *
  *          重试耗尽后保留现场（进程 + 已分配域名）并落盘，提示用户自行执行
  *          stop 停止隧道后重新启动，何时重试交由用户决定。
  * @param url 隧道目标 URL（菜单/子命令未指定时由调用方传入 DEFAULT_TUNNEL_URL）
@@ -123,9 +127,10 @@ export async function doStart(
   }
 
   // (3) 域名解析就绪复验 + 重试（进程启动失败不重试）
-  // 重试过程只占一个物理行：首次进入重试时打一条 clack 告警留档（含域名），
-  // 之后进度原地刷新（第 n 次复验未通过 + 倒计时），成功 / 耗尽时清除过程行，
-  // 卷屏里只留前后的正式日志
+  // 重试过程只占一个物理行：首次进入重试时打一条 clack 告警留档（按失败
+  // 语义区分文案——有域名未解析 vs 无域名注册失败），之后进度原地刷新
+  // （第 n 次尝试未通过 + 倒计时），成功 / 耗尽时清除过程行，卷屏里只留
+  // 前后的正式日志
   const maxTries = DOMAIN_RETRY_MAX + 1;
   let retryLine: RetryLine | null = null;
   for (let attempt = 1; attempt <= maxTries; attempt++) {
@@ -147,10 +152,21 @@ export async function doStart(
     // 最后一次尝试失败后不再等待，直接进入失败收尾
     if (attempt < maxTries) {
       if (!retryLine) {
-        log.warn(
-          `域名 ${pending?.domain ?? "(未分配)"} 尚未解析生效(DNS 传播中),进入重试等待`
-        );
-        retryLine = createRetryLine("域名尚未解析生效(DNS 传播中)");
+        // 两种重试语义文案必须区分：有域名是"等 DNS 传播"（复验同一进程
+        // 同一域名）；无域名是"注册未成功"（如 trycloudflare 注册 API 超时，
+        // cloudflared 零内部重试直接退出，域名根本没分配出来），重试即重新
+        // 拉起进程换新申请，不存在"稍后生效"
+        if (pending?.domain) {
+          log.warn(
+            `域名 ${pending.domain} 尚未解析生效(DNS 传播中),进入重试等待`
+          );
+          retryLine = createRetryLine("域名尚未解析生效(DNS 传播中)");
+        } else {
+          log.warn(
+            "Quick Tunnel 注册未成功(未取得域名),进入重试等待(将重新拉起进程申请新域名)"
+          );
+          retryLine = createRetryLine("域名注册未成功,重新申请中");
+        }
       }
       await retryLine.update(attempt, maxTries, DOMAIN_RETRY_WAIT_S);
     }
