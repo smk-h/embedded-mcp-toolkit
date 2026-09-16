@@ -33,7 +33,12 @@ import {
 } from "./constants.js";
 import { type CloudflaredOptions } from "./types.js";
 import { isWindows } from "../../shared/platform.js";
-import { clearScreen, pauseForMenu } from "../../shared/cli-helpers.js";
+import {
+  clearScreen,
+  pauseForMenu,
+  lockStdinRaw,
+  unlockStdinRaw,
+} from "../../shared/cli-helpers.js";
 import { doStart } from "./steps/start.js";
 import { doStatus } from "./steps/status.js";
 import { doLog } from "./steps/log.js";
@@ -110,44 +115,52 @@ export async function runCloudflared(opts: CloudflaredOptions): Promise<void> {
     return;
   }
 
-  while (true) {
-    clearScreen();
-    printBanner();
-    const choice = await mainMenu();
+  // 锁定 stdin raw：规避 Windows ConPTY 下 clack 取消/提交后 setRawMode(false)
+  // 破坏后续 raw 读取、导致下一轮菜单吞键卡死的 bug（详见 lockStdinRaw JSDoc）
+  lockStdinRaw();
+  try {
+    while (true) {
+      clearScreen();
+      printBanner();
+      const choice = await mainMenu();
 
-    // 用户在主菜单 Ctrl+C 取消，或选择退出
-    if (choice === null || choice === MENU_EXIT) {
-      console.log("[info] 再见");
-      return;
-    }
+      // 用户在主菜单 Ctrl+C 取消，或选择退出
+      if (choice === null || choice === MENU_EXIT) {
+        console.log("[info] 再见");
+        return;
+      }
 
-    switch (choice) {
-      case MENU_START:
-        await doStart(opts.url ?? DEFAULT_TUNNEL_URL);
-        break;
-      case MENU_STATUS:
-        await doStatus();
-        break;
-      case MENU_LOG:
-        await doLog();
-        break;
-      case MENU_STOP:
-        await doStop();
-        break;
-      case MENU_INSTALL:
-        await doInstall();
-        break;
-      default:
-        // clack select 只会返回已定义的 value，理论上不会进入 default；
-        // 保留兜底分支以防后续扩展遗漏
-        break;
-    }
+      switch (choice) {
+        case MENU_START:
+          await doStart(opts.url ?? DEFAULT_TUNNEL_URL);
+          break;
+        case MENU_STATUS:
+          await doStatus();
+          break;
+        case MENU_LOG:
+          await doLog();
+          break;
+        case MENU_STOP:
+          await doStop();
+          break;
+        case MENU_INSTALL:
+          await doInstall();
+          break;
+        default:
+          // clack select 只会返回已定义的 value，理论上不会进入 default；
+          // 保留兜底分支以防后续扩展遗漏
+          break;
+      }
 
-    // step 执行完毕：按 Enter 回到菜单（清屏），按 q 退出
-    if (await pauseForMenu()) {
-      console.log("[info] 再见");
-      return;
+      // step 执行完毕：按 Enter 回到菜单（清屏），按 q 退出
+      if (await pauseForMenu()) {
+        console.log("[info] 再见");
+        return;
+      }
     }
+  } finally {
+    // 覆盖正常退出与 step 抛异常两条路径，确保终端恢复 cooked 模式
+    unlockStdinRaw();
   }
 }
 

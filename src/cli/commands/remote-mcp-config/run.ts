@@ -31,7 +31,12 @@ import {
   sshDisconnect,
   type LinuxServerInfo,
 } from "../../shared/ssh.js";
-import { clearScreen, pauseForMenu } from "../../shared/cli-helpers.js";
+import {
+  clearScreen,
+  pauseForMenu,
+  lockStdinRaw,
+  unlockStdinRaw,
+} from "../../shared/cli-helpers.js";
 
 // ============================================================
 // C5. 主菜单与主入口
@@ -138,6 +143,9 @@ export async function runRemoteMcpConfig(
   }
 
   // 3. 交互式菜单循环（F2）
+  // 锁定 stdin raw：规避 Windows ConPTY 下 clack 取消/提交后 setRawMode(false)
+  // 破坏后续 raw 读取、导致下一轮菜单吞键卡死的 bug（详见 lockStdinRaw JSDoc）
+  lockStdinRaw();
   try {
     while (true) {
       clearScreen();
@@ -171,7 +179,8 @@ export async function runRemoteMcpConfig(
       }
     }
   } finally {
-    // 先关 SFTP 会话，再断开 SSH 连接
+    // 先恢复终端 cooked 模式，再关 SFTP 会话、断开 SSH 连接
+    unlockStdinRaw();
     closeSftpSession(sftp);
     sshDisconnect(client);
   }

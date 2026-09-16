@@ -7,9 +7,9 @@
  * Version    : x.x.x
  * Description: 终端交互辅助与本机 OS 信息采集共享模块
  *
- * 提供 readline 问答、清屏、暂停、密码安全输入等终端交互能力，以及本机连接信息
- * （用户名 + IPv4 地址）采集。供 sshd-config 与 remote-mcp-config 两个交互式命令共用，
- * 保证两者的交互范式一致（清屏 + 菜单 + clack 组件）。
+ * 提供 readline 问答、清屏、暂停、密码安全输入、stdin raw 模式锁定等终端交互能力，
+ * 以及本机连接信息（用户名 + IPv4 地址）采集。供 sshd-config、cloudflared、
+ * remote-mcp-config 等交互式命令共用，保证交互范式一致（清屏 + 菜单 + clack 组件）。
  *
  * 设计原则：函数实现与从 sshd-config.ts 迁出时保持逐字一致（仅补 export 与 JSDoc）。
  * ======================================================
@@ -47,6 +47,68 @@ export interface ConnectionInfo {
 // ============================================================
 
 /**
+ * @brief stdin 的 TTY 能力断言类型
+ * @details setRawMode / isRaw 仅在 TTY 环境下可用，统一以可选成员描述，
+ *          调用前必须判空；本模块所有终端交互函数共用。
+ */
+type TtyStdin = NodeJS.ReadStream & {
+  isTTY?: boolean; // 是否为终端
+  isRaw?: boolean; // 当前是否处于 raw 模式
+  setRawMode?(mode: boolean): void; // 切换 raw / cooked 模式
+};
+
+/** 包装前的原始 setRawMode 实现（已绑定 stdin；null 表示未安装锁定） */
+let rawModeOrig: ((mode: boolean) => void) | null = null;
+
+/**
+ * @brief 锁定 stdin raw 模式（菜单循环期间禁止任何组件切回 cooked 模式）
+ * @details Windows ConPTY 下存在吞键 bug：clack 提示被 ESC 取消（或提交）后，
+ *          组件 close() 内部 setRawMode(false) 会使后续 raw 读取失效——下一次 raw 读
+ *          会话（再次进入 clack select 时 setRawMode(true)）重挂 libuv tty
+ *          读循环失败，按键静默丢失、终端反而回显转义序列，约 20 秒后才自愈，
+ *          表现为菜单"卡死"。规避方式：菜单循环期间包装 stdin.setRawMode，
+ *          使任何组件（clack / readline / askPassword）切回 cooked 的尝试
+ *          变为无操作，全程保持 raw；unlockStdinRaw 还原并恢复 cooked。
+ *          非 TTY 环境（管道/CI）无 raw 概念，直接跳过。
+ * @returns 是否成功安装锁定（非 TTY / 已处于锁定状态返回 false）
+ */
+export function lockStdinRaw(): boolean {
+  const stdin = process.stdin as TtyStdin;
+  if (!stdin.isTTY || !stdin.setRawMode || rawModeOrig) {
+    return false;
+  }
+
+  rawModeOrig = stdin.setRawMode.bind(stdin) as (mode: boolean) => void;
+
+  // 幂等包装：忽略传入的模式参数，锁定期间一律保持 raw
+  (stdin as { setRawMode: (mode: boolean) => void }).setRawMode = (): void => {
+    rawModeOrig?.(true);
+  };
+  rawModeOrig(true);
+  return true;
+}
+
+/**
+ * @brief 解除 stdin raw 模式锁定（菜单循环收尾时调用，恢复终端常规状态）
+ * @details 还原包装前的原始 setRawMode 并切回 cooked 模式、暂停读取。
+ *          未安装锁定（非 TTY 或未调用 lockStdinRaw）时为无操作；
+ *          与 lockStdinRaw 配对使用，建议放在 try/finally 中保证异常路径也能还原。
+ */
+export function unlockStdinRaw(): void {
+  const stdin = process.stdin as TtyStdin;
+  if (!rawModeOrig || !stdin.setRawMode) {
+    return;
+  }
+
+  (stdin as { setRawMode: (mode: boolean) => void }).setRawMode = rawModeOrig;
+  rawModeOrig = null;
+
+  // 此时 setRawMode 已还原为原始实现，恢复正常 cooked 模式
+  stdin.setRawMode(false);
+  stdin.pause();
+}
+
+/**
  * @brief 同步询问用户输入（明文）
  * @details 基于 readline 的单次问答，问完即关闭 rl。
  * @param questionText 提示文本
@@ -78,23 +140,85 @@ export function clearScreen(): void {
 
 /**
  * @brief step 执行完毕后的暂停等待
- * @details 提示"按 Enter 回到菜单，按 q 退出"，阻塞等待用户按键：
- *          - Enter（空输入）→ 返回 false，调用方清屏并重新显示菜单
+ * @details 提示"按 Enter 回到菜单，按 q 退出"，TTY 下以 raw 模式逐键读取：
+ *          - Enter（CR / LF）→ 返回 false，调用方清屏并重新显示菜单
  *          - q / Q          → 返回 true，调用方退出主循环
- *          - 其它输入       → 继续等待，不响应（避免误触退出）
+ *          - Ctrl+C         → 中止程序（raw 模式下无 SIGINT，需自行处理）
+ *          - 其它输入       → 忽略，继续等待（含方向键等转义序列）
+ *          刻意不走 readline.Interface：其 close() 会 setRawMode(false)，
+ *          是 Windows ConPTY 吞键问题的触发源之一（见 lockStdinRaw）。
+ *          非 TTY 环境（管道/CI）无 raw 概念，回退 readline 逐行读取。
  * @returns 用户是否选择退出（q → true，Enter → false）
  */
 export async function pauseForMenu(): Promise<boolean> {
-  while (true) {
-    const input = await prompt("\n按 Enter 回到菜单，按 q 退出: ");
-    if (input.toLowerCase() === "q") {
-      return true;
+  const stdin = process.stdin as TtyStdin;
+
+  // 非 TTY（管道/CI）回退 readline 读取
+  if (!stdin.isTTY || !stdin.setRawMode) {
+    while (true) {
+      const input = await prompt("\n按 Enter 回到菜单，按 q 退出: ");
+      if (input.toLowerCase() === "q") {
+        return true;
+      }
+      if (input === "") {
+        return false;
+      }
+      // 其它输入忽略，循环重新提示
     }
-    if (input === "") {
-      return false;
-    }
-    // 其它输入忽略，循环重新提示
   }
+
+  // TTY：raw 模式逐键读取（锁定期间 setRawMode(true) 为幂等操作）；
+  // 记录进入前的模式，收尾时恢复，避免独立调用时泄漏 raw 状态
+  const wasRaw = stdin.isRaw === true;
+  stdin.setRawMode(true);
+  stdin.resume();
+  process.stdout.write("\n按 Enter 回到菜单，按 q 退出: ");
+  return new Promise<boolean>((resolve) => {
+    /**
+     * @brief 清理监听器并恢复进入前的输入模式
+     */
+    function cleanup(): void {
+      stdin.removeListener("data", onData);
+      // 锁定期间该调用被包装为恒 raw(true)，不会破坏菜单循环的 raw 环境
+      stdin.setRawMode?.(wasRaw);
+      stdin.pause();
+    }
+
+    /**
+     * @brief 逐键处理回调
+     * @param ch 读到的字节
+     */
+    function onData(ch: Buffer): void {
+      const char = ch.toString("utf8");
+
+      // 回车（CR / LF）— 回到菜单
+      if (char === "\r" || char === "\n") {
+        cleanup();
+        process.stdout.write("\n");
+        resolve(false);
+        return;
+      }
+
+      // q / Q — 退出
+      if (char === "q" || char === "Q") {
+        cleanup();
+        process.stdout.write("\n");
+        resolve(true);
+        return;
+      }
+
+      // Ctrl+C — 中止程序（raw 模式下不会产生 SIGINT）
+      if (char === "\u0003") {
+        cleanup();
+        process.stdout.write("\n");
+        process.exit(0);
+      }
+
+      // 其它键（含方向键转义序列）— 忽略
+    }
+
+    stdin.on("data", onData);
+  });
 }
 
 /**
@@ -184,11 +308,7 @@ function sleep(ms: number): Promise<void> {
 export async function askPassword(questionText: string): Promise<string> {
   process.stdout.write(questionText);
 
-  // stdin 的类型断言：TTY 模式下拥有 setRawMode 方法
-  type TtyStdin = NodeJS.ReadStream & {
-    isTTY?: boolean;
-    setRawMode?(mode: boolean): void;
-  };
+  // 复用模块级 TtyStdin 断言类型
   const stdin = process.stdin as TtyStdin;
   let password = "";
   let rawModeEnabled = false;

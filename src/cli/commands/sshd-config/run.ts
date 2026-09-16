@@ -38,7 +38,12 @@ import { doUninstallSsh } from "./steps/uninstall.js";
 import { doShowConnectionInfo } from "./steps/show-info.js";
 import { doGenerateTemplate } from "./steps/generate-template.js";
 import { doCleanKeys } from "./steps/clean-keys.js";
-import { clearScreen, pauseForMenu } from "../../shared/cli-helpers.js";
+import {
+  clearScreen,
+  pauseForMenu,
+  lockStdinRaw,
+  unlockStdinRaw,
+} from "../../shared/cli-helpers.js";
 
 // ============================================================
 // 主菜单
@@ -135,55 +140,63 @@ export async function runSshdConfig(opts: SshdConfigOptions): Promise<void> {
   }
 
   // 交互式菜单循环（每轮清屏 + 打印 banner，clack select 渲染菜单）
-  while (true) {
-    clearScreen();
-    printBanner();
-    const choice = await mainMenu();
+  // 锁定 stdin raw：规避 Windows ConPTY 下 clack 取消/提交后 setRawMode(false)
+  // 破坏后续 raw 读取、导致下一轮菜单吞键卡死的 bug（详见 lockStdinRaw JSDoc）
+  lockStdinRaw();
+  try {
+    while (true) {
+      clearScreen();
+      printBanner();
+      const choice = await mainMenu();
 
-    // 用户在主菜单 Ctrl+C 取消，或选择退出
-    if (choice === null || choice === MENU_EXIT) {
-      console.log("[info] 再见");
-      return;
-    }
+      // 用户在主菜单 Ctrl+C 取消，或选择退出
+      if (choice === null || choice === MENU_EXIT) {
+        console.log("[info] 再见");
+        return;
+      }
 
-    switch (choice) {
-      case MENU_ONE_CLICK:
-        await doOneClickFlow();
-        break;
-      case MENU_INSTALL_SSH:
-        await doInstallSsh();
-        break;
-      case MENU_GENERATE_KEY:
-        await doGenerateKey();
-        break;
-      case MENU_CONFIG_SSHD:
-        await doConfigureSshd();
-        break;
-      case MENU_CHECK_STATUS:
-        await doCheckStatus();
-        break;
-      case MENU_UNINSTALL_SSH:
-        await doUninstallSsh();
-        break;
-      case MENU_SHOW_INFO:
-        await doShowConnectionInfo();
-        break;
-      case MENU_GEN_TEMPLATE:
-        await doGenerateTemplate();
-        break;
-      case MENU_CLEAN_KEYS:
-        await doCleanKeys();
-        break;
-      default:
-        // clack select 只会返回已定义的 value，理论上不会进入 default；
-        // 保留兜底分支以防后续扩展遗漏
-        break;
-    }
+      switch (choice) {
+        case MENU_ONE_CLICK:
+          await doOneClickFlow();
+          break;
+        case MENU_INSTALL_SSH:
+          await doInstallSsh();
+          break;
+        case MENU_GENERATE_KEY:
+          await doGenerateKey();
+          break;
+        case MENU_CONFIG_SSHD:
+          await doConfigureSshd();
+          break;
+        case MENU_CHECK_STATUS:
+          await doCheckStatus();
+          break;
+        case MENU_UNINSTALL_SSH:
+          await doUninstallSsh();
+          break;
+        case MENU_SHOW_INFO:
+          await doShowConnectionInfo();
+          break;
+        case MENU_GEN_TEMPLATE:
+          await doGenerateTemplate();
+          break;
+        case MENU_CLEAN_KEYS:
+          await doCleanKeys();
+          break;
+        default:
+          // clack select 只会返回已定义的 value，理论上不会进入 default；
+          // 保留兜底分支以防后续扩展遗漏
+          break;
+      }
 
-    // step 执行完毕：按 Enter 回到菜单（清屏），按 q 退出
-    if (await pauseForMenu()) {
-      console.log("[info] 再见");
-      return;
+      // step 执行完毕：按 Enter 回到菜单（清屏），按 q 退出
+      if (await pauseForMenu()) {
+        console.log("[info] 再见");
+        return;
+      }
     }
+  } finally {
+    // 覆盖正常退出与 step 抛异常两条路径，确保终端恢复 cooked 模式
+    unlockStdinRaw();
   }
 }
