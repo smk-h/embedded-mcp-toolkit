@@ -96,6 +96,17 @@ export const DOMAIN_RE = /https:\/\/((?!api\.)[a-z0-9-]+\.trycloudflare\.com)/;
  */
 export const TUNNEL_DEAD_RE = /Unauthorized: Tunnel not found/;
 
+/**
+ * @brief 边缘注册完成签名（DNS 探测的门控信号）
+ * @details Quick Tunnel 拉起后经历两步："API 分配域名（URL 打印）" →
+ *          "QUIC 连上边缘完成注册（本签名出现）"，DNS 记录在注册完成后才
+ *          可查询。T0(打印) 到 T1(注册) 之间探测 DNS 只会得到真实的
+ *          NXDOMAIN，并把负缓存喂进各级递归解析器——TTL 远超重试预算
+ *          （实测：注册拖 14s 时 12 次重试全撞缓存墙，隧道其实随后即健康）。
+ *          日志出现本签名才开始 DNS 探测，从源头避免过早查询。
+ */
+export const TUNNEL_REGISTERED_RE = /Registered tunnel connection/;
+
 /** @brief 健康校验中单次 DNS 解析的超时（毫秒），防系统解析器抖动卡死 CLI */
 export const DNS_CHECK_TIMEOUT_MS = 5000;
 

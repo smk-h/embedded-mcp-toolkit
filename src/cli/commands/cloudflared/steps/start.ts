@@ -9,11 +9,13 @@
  *
  * 流程：探测 cloudflared → 防重复与健康预检（dead 停掉换新；域名可解析则
  * 幂等复用）→ spawn detached 后台进程 → 轮询日志提取 Quick Tunnel 域名 →
- * 域名解析就绪校验（公共 DNS 优先 + 系统解析器兜底）→ 未解析则同屏倒计时
- * 5s 后复验（最多 12 次，约 1 分钟，不重启进程）→ 写状态文件 → 展示摘要
- * 与跨机连接指引。域名可解析才算启动成功——Quick Tunnel 的 DNS 记录与
- * 边缘注册同生共死，可解析即代表远端具备连接条件；刻意不做本机到边缘的
- * TCP 探测（只反映本机路径质量，误判会杀掉远端正常使用中的健康隧道）。
+ * 等边缘注册完成（日志 Registered tunnel connection 门控，注册前禁止 DNS
+ * 探测以避免喂负缓存）→ 域名解析就绪校验（公共 DNS 优先 + 系统解析器兜底）
+ * → 未就绪则同屏倒计时 5s 后复验（最多 12 次，约 1 分钟，不重启进程）→
+ * 写状态文件 → 展示摘要与跨机连接指引。域名可解析才算启动成功——Quick
+ * Tunnel 的 DNS 记录与边缘注册同生共死，可解析即代表远端具备连接条件；
+ * 刻意不做本机到边缘的 TCP 探测（只反映本机路径质量，误判会杀掉远端正常
+ * 使用中的健康隧道）。
  * ======================================================
  */
 
@@ -34,6 +36,7 @@ import { findCloudflaredExe } from "../tunnel-detect.js";
 import { checkTunnelHealth, isDomainResolvable } from "../tunnel-health.js";
 import {
   isProcessAlive,
+  logHasRegistration,
   pollDomainFromLog,
   startDetached,
   stopProcessTree,
@@ -73,12 +76,20 @@ import { printTunnelSummary } from "./summary.js";
  *          存活的进程与原域名，不重启隧道——重启会换域名并让传播进度归零，
  *          反而更难成功。
  *
+ *          DNS 探测以**边缘注册完成**为前置门控（日志 Registered tunnel
+ *          connection 签名，见 tryEstablish）：URL 打印（域名分配）到注册
+ *          完成之间记录不可查，过早探测只会得到 NXDOMAIN 并把负缓存喂进
+ *          各级递归解析器——TTL 远超重试预算，导致隧道随后已健康、重试却
+ *          全败（实测：注册拖 14s 时 12 次全败，缓存过期后重跑即成功）。
+ *          重试语义因此分三阶段：等待边缘注册 / 等 DNS 传播 / 注册未成功
+ *          重新申请，进度行按阶段切换。
+ *
  *          域名始终分配不出来（如 trycloudflare 注册 API 超时，cloudflared
  *          零内部重试直接退出）则不存在"等待生效"的对象：重试即重新拉起
  *          进程重新申请（换新域名），重试文案与 DNS 传播等待相区分。
  *
- *          重试耗尽后保留现场（进程 + 已分配域名）并落盘，提示用户自行执行
- *          stop 停止隧道后重新启动，何时重试交由用户决定。
+ *          重试耗尽后保留现场（进程 + 已分配域名）并落盘，提示用户稍后重跑
+ *          本命令原地复验（无需 stop）；确认要换域名时再执行 stop。
  * @param url 隧道目标 URL（菜单/子命令未指定时由调用方传入 DEFAULT_TUNNEL_URL）
  * @returns 成功（含"已在运行且域名健康"的幂等成功）返回 true
  */
@@ -127,12 +138,13 @@ export async function doStart(
   }
 
   // (3) 域名解析就绪复验 + 重试（进程启动失败不重试）
-  // 重试过程只占一个物理行：首次进入重试时打一条 clack 告警留档（按失败
-  // 语义区分文案——有域名未解析 vs 无域名注册失败），之后进度原地刷新
-  // （第 n 次尝试未通过 + 倒计时），成功 / 耗尽时清除过程行，卷屏里只留
-  // 前后的正式日志
+  // 重试过程按阶段占用物理行：三种阶段语义（等待边缘注册 / 等 DNS 传播 /
+  // 注册未成功重新申请）各自首次进入时打一条 clack 告警留档，阶段内进度
+  // 原地刷新（第 n 次尝试未通过 + 倒计时），阶段切换时清旧行换新行，成功 /
+  // 耗尽时清除过程行——卷屏里只留前后的正式日志
   const maxTries = DOMAIN_RETRY_MAX + 1;
   let retryLine: RetryLine | null = null;
+  let retryPhase: RetryPhase | null = null;
   for (let attempt = 1; attempt <= maxTries; attempt++) {
     const result = await tryEstablish(detected.exePath, url, pending);
     pending = result.pending;
@@ -151,38 +163,37 @@ export async function doStart(
     }
     // 最后一次尝试失败后不再等待，直接进入失败收尾
     if (attempt < maxTries) {
-      if (!retryLine) {
-        // 两种重试语义文案必须区分：有域名是"等 DNS 传播"（复验同一进程
-        // 同一域名）；无域名是"注册未成功"（如 trycloudflare 注册 API 超时，
-        // cloudflared 零内部重试直接退出，域名根本没分配出来），重试即重新
-        // 拉起进程换新申请，不存在"稍后生效"
-        if (pending?.domain) {
-          log.warn(
-            `域名 ${pending.domain} 尚未解析生效(DNS 传播中),进入重试等待`
-          );
-          retryLine = createRetryLine("域名尚未解析生效(DNS 传播中)");
-        } else {
-          log.warn(
-            "Quick Tunnel 注册未成功(未取得域名),进入重试等待(将重新拉起进程申请新域名)"
-          );
-          retryLine = createRetryLine("域名注册未成功,重新申请中");
-        }
+      // 阶段切换（含首次进入重试）：清上一阶段过程行，打本阶段一次性告警。
+      // 三种语义必须区分：registering 是"域名已分配、等边缘注册"（此阶段
+      // 禁止 DNS 探测）；propagating 是"已注册、等 DNS 传播"（复验同一进程
+      // 同一域名）；no-domain 是"注册未成功"（如 trycloudflare 注册 API
+      // 超时，cloudflared 零内部重试直接退出，域名根本没分配出来），重试即
+      // 重新拉起进程换新申请
+      const phase = result.phase;
+      if (retryPhase !== phase || retryLine === null) {
+        retryLine?.finish();
+        const meta = phaseMeta(phase, pending?.domain ?? null);
+        log.warn(meta.warn);
+        retryLine = createRetryLine(meta.label);
+        retryPhase = phase;
       }
       await retryLine.update(attempt, maxTries, DOMAIN_RETRY_WAIT_S);
     }
   }
   retryLine?.finish();
 
-  // 失败收尾：进程仍在运行时保留现场（域名已分配但未联通，多为 DNS 尚未传播），
-  // 状态文件落盘后 stop 才能定位到进程，由用户自行决定何时停止并重试；进程已不在
-  // 则清理残留，避免留下指向已退出进程的状态记录
+  // 失败收尾：进程仍在运行时保留现场（进程与域名就绪判定未通过），状态文件
+  // 落盘后重跑本命令即可原地复验；进程已不在则清理残留，避免留下指向已退出
+  // 进程的状态记录
   if (pending && (await isProcessAlive(pending.pid))) {
     writeTunnelState(pending);
     log.error(
-      `域名 ${pending.domain ?? "(未分配)"} 在 ${DOMAIN_RETRY_MAX} 次重试后仍未解析生效`
+      `隧道在 ${maxTries} 次尝试后仍未就绪(${
+        pending.domain ? "边缘注册未完成或 DNS 未传播" : "域名注册未成功"
+      })`
     );
     log.warn(
-      "请执行 embedded-mcp-toolkit cloudflared stop 停止隧道后重新启动(会重新分配域名)"
+      "稍后重跑本命令复验即可(进程与现场已保留,无需 stop);确认要换域名时再执行 cloudflared stop"
     );
   } else {
     clearTunnelState();
@@ -192,18 +203,63 @@ export async function doStart(
 }
 
 /**
+ * @brief 各重试阶段的告警文案（一次性 clack 输出）与进度行前缀
+ * @param phase  未就绪原因语义
+ * @param domain 已分配的域名（no-domain 阶段为 null）
+ */
+function phaseMeta(
+  phase: RetryPhase,
+  domain: string | null
+): { warn: string; label: string } {
+  switch (phase) {
+    case "no-domain":
+      return {
+        warn: "Quick Tunnel 注册未成功(未取得域名),进入重试等待(将重新拉起进程申请新域名)",
+        label: "域名注册未成功,重新申请中",
+      };
+    case "registering":
+      return {
+        warn: `域名 ${domain ?? "(未分配)"} 已分配,等待边缘注册完成(Registered tunnel connection)`,
+        label: "等待边缘注册",
+      };
+    case "propagating":
+      return {
+        warn: `域名 ${domain ?? "(未分配)"} 尚未解析生效(DNS 传播中),进入重试等待`,
+        label: "域名尚未解析生效(DNS 传播中)",
+      };
+  }
+}
+
+/**
+ * @brief 重试循环里单次尝试未就绪的原因语义（驱动进度行文案与阶段切换）
+ * @details no-domain —— 域名没分配出来（注册 API 失败，cloudflared 零内部
+ *          重试直接退出），重试即重新拉起进程重新申请；
+ *          registering —— 域名已分配但边缘注册未完成，DNS 记录尚不可查，
+ *          此阶段刻意不做 DNS 探测（过早查询只会喂负缓存）；
+ *          propagating —— 注册已完成，等 DNS 记录传播生效。
+ */
+type RetryPhase = "no-domain" | "registering" | "propagating";
+
+/**
  * @brief 单次域名解析就绪复验：确保隧道进程在运行并取得已生效的域名
  * @details 复用优先：进程仍存活时沿用其 pid 与已分配的域名，只重新校验域名
  *          是否已解析生效（DNS 传播需要时间，重启会让域名更换、传播进度
  *          归零）；进程已退出或域名始终分配不出来时才重建进程。域名未生效
  *          但进程健康时不杀进程，把现场交回调用方留给下一轮复验。仅在完全
  *          成功时写入状态文件。
+ *
+ *          DNS 探测以**边缘注册完成**为前置门控（日志 Registered tunnel
+ *          connection 签名）：注册完成前记录本就不存在，此刻查询只会得到
+ *          NXDOMAIN 并把负缓存喂进各级递归解析器，TTL 远超重试预算，导致
+ *          隧道随后变健康了重试也全败（t3 实测：注册拖 14s，12 次全败，
+ *          几分钟后缓存过期重跑即成功）。
  * @param exePath cloudflared 可执行文件绝对路径
  * @param url     隧道目标 URL
  * @param pending 上一轮遗留的现场（进程 + 域名），首轮为 null
  * @returns state：成功时已落盘的状态对象，失败为 null；
  *          pending：供下一轮继续复用的现场，进程已被判定不可用时为 null；
- *          fatal：进程启动这类重试无意义的环境性失败（调用方应直接终止循环）
+ *          fatal：进程启动这类重试无意义的环境性失败（调用方应直接终止循环）；
+ *          phase：未就绪的原因语义（供调用方渲染对应文案）
  */
 async function tryEstablish(
   exePath: string,
@@ -213,6 +269,7 @@ async function tryEstablish(
   state: TunnelState | null;
   pending: TunnelState | null;
   fatal: boolean;
+  phase: RetryPhase;
 }> {
   let current = pending;
 
@@ -233,7 +290,12 @@ async function tryEstablish(
       log.error(
         `cloudflared 启动失败: ${error instanceof Error ? error.message : String(error)}`
       );
-      return { state: null, pending: null, fatal: true };
+      return {
+        state: null,
+        pending: null,
+        fatal: true,
+        phase: "no-domain",
+      };
     }
     current = {
       pid,
@@ -264,16 +326,31 @@ async function tryEstablish(
     }
     clearTunnelState();
     log.warn("未取得 Quick Tunnel 域名(进程可能已异常退出)");
-    return { state: null, pending: null, fatal: false };
+    return { state: null, pending: null, fatal: false, phase: "no-domain" };
+  }
+
+  // 边缘注册门控：注册完成前 DNS 记录不可查，此阶段禁止探测（喂负缓存）
+  if (!(await logHasRegistration(current.logFile))) {
+    return {
+      state: null,
+      pending: current,
+      fatal: false,
+      phase: "registering",
+    };
   }
 
   if (!(await isDomainResolvable(domain))) {
-    // 进程健康、域名已分配，只是 DNS 尚未传播生效 → 保留进程等待复验
+    // 注册已完成、DNS 尚未传播生效 → 保留进程等待复验
     // （进度展示由调用方的重试行统一负责，这里不逐次打日志）
-    return { state: null, pending: current, fatal: false };
+    return {
+      state: null,
+      pending: current,
+      fatal: false,
+      phase: "propagating",
+    };
   }
 
   const state: TunnelState = { ...current, domain };
   writeTunnelState(state);
-  return { state, pending: current, fatal: false };
+  return { state, pending: current, fatal: false, phase: "propagating" };
 }

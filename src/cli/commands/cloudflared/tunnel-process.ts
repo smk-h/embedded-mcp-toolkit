@@ -18,7 +18,11 @@ import { closeSync, existsSync, openSync } from "fs";
 import { readFile } from "fs/promises";
 
 import { runCmd } from "../../shared/exec.js";
-import { DOMAIN_POLL_MS, DOMAIN_RE } from "./constants.js";
+import {
+  DOMAIN_POLL_MS,
+  DOMAIN_RE,
+  TUNNEL_REGISTERED_RE,
+} from "./constants.js";
 
 // ============================================================
 // 后台启动
@@ -127,6 +131,23 @@ export async function extractDomainFromLog(
     return matched ? matched[1] : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * @brief 检测隧道日志中是否出现"边缘注册完成"签名
+ * @details DNS 探测的门控信号（见 constants.ts TUNNEL_REGISTERED_RE）：
+ *          注册完成前 DNS 记录不可查，此刻探测只会喂负缓存。容错口径与
+ *          extractDomainFromLog 一致：文件不存在、被占用读取失败等一律
+ *          返回 false，由调用方的重试循环下一轮再查。
+ * @param logFile 隧道日志文件路径
+ * @returns 出现 TUNNEL_REGISTERED_RE 签名返回 true
+ */
+export async function logHasRegistration(logFile: string): Promise<boolean> {
+  try {
+    return TUNNEL_REGISTERED_RE.test(await readFile(logFile, "utf-8"));
+  } catch {
+    return false;
   }
 }
 
