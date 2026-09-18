@@ -107,5 +107,7 @@ export const TUNNEL_BEGIN = "# >>> embedded-mcp-toolkit cnb tunnel >>>";
 /** @brief 隧道配置段结束标记 */
 export const TUNNEL_END = "# <<< embedded-mcp-toolkit cnb tunnel <<<";
 
-/** @brief 隧道配置段的 ServerAliveInterval 值（秒，长连接保活） */
-export const SSH_KEEPALIVE_SECONDS = 30;
+// 隧道配置段的保活值不在这里：它由 shared/ssh-bridge.ts 统一提供
+// （ServerAliveInterval + ServerAliveCountMax），与桥接 args 用的是同一份。
+// ⚠️ 要改保活值时，看 ssh-bridge.ts 里 SSH_KEEPALIVE_SECONDS 上方的落点清单 ——
+// 除代码落点外还有若干 JSON / Markdown 字面量必须手工同步，别只改常量。

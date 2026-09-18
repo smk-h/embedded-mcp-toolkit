@@ -23,6 +23,7 @@ import {
 } from "./types.js";
 import { sftpReadText } from "./sftp.js";
 import { getAtPath, getValueAtPath } from "./json-mutate.js";
+import { buildSshBridgeArgs } from "../../shared/ssh-bridge.js";
 
 // ============================================================
 // C3. 状态判定与 bridge 构造
@@ -30,7 +31,8 @@ import { getAtPath, getValueAtPath } from "./json-mutate.js";
 
 /**
  * @brief 构造本次的 SSH 桥接 server 对象（逻辑定义，与客户端写法无关）
- * @details server 的 command 固定为 ssh，args 为专用密钥 + <user>@<ip> + bat 路径。
+ * @details server 的 command 固定为 ssh，args 为专用密钥 + 保活选项 + <user>@<ip>
+ *          + bat 路径（保活选项见 shared/ssh-bridge.ts，六个落点共用同一份）。
  *          具体写入文件的形态（command+args 分体 / command 数组、type/enabled）由
  *          TargetFile.serverStyle / serverType 决定，见 renderServerObject。
  * @param sshUser   Windows ssh 用户名（来自 collectConnectionInfo）
@@ -45,7 +47,7 @@ export function buildBridgeServer(
 ): BridgeServer {
   return {
     command: "ssh",
-    args: ["-i", SSH_KEY_PATH, `${sshUser}@${primaryIp}`, batPath],
+    args: buildSshBridgeArgs(SSH_KEY_PATH, `${sshUser}@${primaryIp}`, batPath),
   };
 }
 

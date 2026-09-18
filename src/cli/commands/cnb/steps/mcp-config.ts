@@ -27,6 +27,7 @@ import { Client } from "ssh2";
 import { log } from "@clack/prompts";
 
 import { sshExec, sshReadText, sshWriteText } from "../../../shared/ssh.js";
+import { buildSshBridgeArgs } from "../../../shared/ssh-bridge.js";
 import {
   MCP_SCHEMA,
   MCP_TEMPLATE_REL,
@@ -64,14 +65,15 @@ export async function doMcpConfig(
   log.info("配置 CodeBuddy MCP 桥接 ...");
 
   // 1. 桥接定义（容器侧执行：ssh 到 127.0.0.1，由 ssh config 送入隧道）
+  // 保活选项同时写在 args 与 ssh config 段里：args 排在 ssh config 之前生效（命令行
+  // 优先级更高），容器重建后即使 config 段被覆盖，桥接命令自己仍然带保活。
   const server = {
     command: "ssh",
-    args: [
-      "-i",
+    args: buildSshBridgeArgs(
       `~/.ssh/${REMOTE_KEY_NAME}`,
       `${endpoint.sshUser}@${TUNNEL_ENDPOINT}`,
-      endpoint.batPath,
-    ],
+      endpoint.batPath
+    ),
   };
   const template = {
     $schema: MCP_SCHEMA,

@@ -17,10 +17,10 @@ import { Client } from "ssh2";
 import { log } from "@clack/prompts";
 
 import { sshExec, sshReadText, sshWriteText } from "../../../shared/ssh.js";
+import { sshKeepaliveConfigLines } from "../../../shared/ssh-bridge.js";
 import {
   REMOTE_KEY_NAME,
   REMOTE_SSH_CONFIG,
-  SSH_KEEPALIVE_SECONDS,
   TUNNEL_BEGIN,
   TUNNEL_END,
   TUNNEL_ENDPOINT,
@@ -116,7 +116,7 @@ function upsertTunnelBlock(
     `  IdentityFile ~/.ssh/${REMOTE_KEY_NAME}`,
     `  ProxyCommand cloudflared access ssh --hostname ${domain}`,
     "  StrictHostKeyChecking accept-new",
-    `  ServerAliveInterval ${SSH_KEEPALIVE_SECONDS}`,
+    ...sshKeepaliveConfigLines(),
     TUNNEL_END,
   ].join("\n");
 

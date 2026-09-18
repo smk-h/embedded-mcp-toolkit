@@ -20,6 +20,7 @@ import {
   MENU_CONFIG_SSHD,
 } from "../constants.js";
 import { collectConnectionInfo } from "../../../shared/cli-helpers.js";
+import { buildSshBridgeArgs } from "../../../shared/ssh-bridge.js";
 
 // ============================================================
 // 菜单 [8]: 生成 Linux 端 MCP 配置模板
@@ -66,12 +67,7 @@ export async function doGenerateTemplate(): Promise<boolean> {
     mcpServers: {
       "embedded-board": {
         command: "ssh",
-        args: [
-          "-i",
-          keyPath,
-          `${sshUser}@${primaryIp}`,
-          batPath,
-        ],
+        args: buildSshBridgeArgs(keyPath, `${sshUser}@${primaryIp}`, batPath),
       },
     },
   };
