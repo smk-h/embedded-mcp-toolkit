@@ -188,6 +188,10 @@ embedded-mcp-toolkit sshd-config
       "args": [
         "-i",
         "~/.ssh/id_mcp_server",
+        "-o",
+        "ServerAliveInterval=60",
+        "-o",
+        "ServerAliveCountMax=3",
         "<win_user>@<win_ip>",
         "<path>/remote-start-mcp.bat"
       ]
@@ -258,6 +262,10 @@ opencode 支持全局与项目两级落点：
   "args": [
     "-i",
     "~/.ssh/id_mcp_server",
+    "-o",
+    "ServerAliveInterval=60",
+    "-o",
+    "ServerAliveCountMax=3",
     "<win_user>@<win_ip>",
     "<remote-start-mcp.bat 的绝对路径>"
   ]
@@ -265,6 +273,11 @@ opencode 支持全局与项目两级落点：
 ```
 
 含义：Linux 端用专用密钥 `~/.ssh/id_mcp_server` 免密反向登录 Windows 的 `<win_user>@<win_ip>`，执行 `remote-start-mcp.bat` 拉起 Windows 上的 MCP 服务。ZCode 落点额外带 `type: "stdio"` / `enabled: true`；opencode 落点把 `command`+`args` 合并为 `command` 数组，额外带 `type: "local"` / `enabled: true` / `timeout: 600000`。
+
+`-o ServerAliveInterval=60 -o ServerAliveCountMax=3` 是 ssh 客户端自身的保活选项，与写在哪类客户端（Claude Code / ZCode / opencode / CodeBuddy / dsh）无关，因此六个落点都用同一份参数：
+
+- **断得更少**：每 60 秒一个保活包，让中间的 NAT / 防火墙 / 隧道设备一直看到流量，空闲映射不被回收——这是"长时间不用就断"的主因（绝大多数设备的空闲回收阈值在分钟级，60 秒已足够把连接焐住，又不必每分钟打扰链路）；
+- **发现得更快**：链路真断（黑洞、隧道死掉）时，本地 ssh 得先自己察觉才会退出。不加保活，完全空闲时 Linux 的 TCP keepalive 默认要 2 小时才动手，有数据要写也要等重传耗尽（约 15 分钟），这段时间表现为"工具调用挂住"；加上后最迟 180 秒（3 × 60s）内 ssh 主动退出，客户端的掉线检测与自动重连才有即时、可靠的触发点。
 
 ### 2. 如何运行命令
 

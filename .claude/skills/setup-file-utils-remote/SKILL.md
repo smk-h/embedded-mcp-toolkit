@@ -138,10 +138,17 @@ ssh -i ~/.ssh/id_file_utils_remote -o BatchMode=yes -o ConnectTimeout=10 <USER>@
 |--------|------|
 | `command` | 为 `ssh` |
 | 指定专用密钥 | args 含 `-i ~/.ssh/id_file_utils_remote` |
+| 保活选项 | args 含 `-o ServerAliveInterval=60` 与 `-o ServerAliveCountMax=3`（缺则补上：空闲连接不被 NAT 回收，断链最迟 180 秒内 ssh 自退，客户端才好检测重连） |
 | 连接目标 | 指向 `<USER>@<HOST>` |
 | 内联 PATH | `PATH=$HOME/<BIN_DIR_REL>:$PATH file-utils-mcp-toolkit` |
 | 未用 login shell | 不含 `bash -lc` |
 | `$HOME`/`$PATH` 未转义 | 配置里是 `$HOME`/`$PATH`，不是 `\$HOME` |
+
+> ⚠️ **保活选项为字面量，改值需多处同步**：JSON / Markdown 无法引用代码常量，本文档共出现 4 处
+> （上方校验表 1 处 + 下方 Claude / zcode / opencode 三种客户端示例各 1 处）。改值时须连同
+> `.mcp.json`、`.opencode/opencode.json`、`src/cli/commands/init-templates.ts`（由
+> `npm run gen:init-templates` 重新生成，勿手改）及四篇 docs 一起同步；完整落点清单见
+> `src/cli/shared/ssh-bridge.ts` 中 `SSH_KEEPALIVE_SECONDS` 上方的注释。
 
 报告后，即使配置正确仍执行第七步。
 
@@ -159,6 +166,7 @@ ssh -i ~/.ssh/id_file_utils_remote -o BatchMode=yes -o ConnectTimeout=10 <USER>@
       "args": [
         "-i", "~/.ssh/id_file_utils_remote",
         "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
         "<USER>@<HOST>",
         "PATH=$HOME/<BIN_DIR_REL>:$PATH file-utils-mcp-toolkit"
       ]
@@ -179,6 +187,7 @@ ssh -i ~/.ssh/id_file_utils_remote -o BatchMode=yes -o ConnectTimeout=10 <USER>@
         "args": [
           "-i", "~/.ssh/id_file_utils_remote",
           "-o", "ServerAliveInterval=60",
+          "-o", "ServerAliveCountMax=3",
           "<USER>@<HOST>",
           "PATH=$HOME/<BIN_DIR_REL>:$PATH file-utils-mcp-toolkit"
         ],
@@ -201,6 +210,7 @@ ssh -i ~/.ssh/id_file_utils_remote -o BatchMode=yes -o ConnectTimeout=10 <USER>@
         "ssh",
         "-i", "~/.ssh/id_file_utils_remote",
         "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
         "<USER>@<HOST>",
         "PATH=$HOME/<BIN_DIR_REL>:$PATH file-utils-mcp-toolkit"
       ],

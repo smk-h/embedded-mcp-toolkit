@@ -513,7 +513,8 @@ Host 127.0.0.1 home.sumumm.top
   IdentityFile ~/.ssh/id_mcp_cnb_server
   ProxyCommand cloudflared access ssh --hostname home.sumumm.top
   StrictHostKeyChecking accept-new
-  ServerAliveInterval 30
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
 # <<< embedded-mcp-toolkit cnb tunnel <<<
 ```
 
@@ -533,6 +534,8 @@ Host 127.0.0.1 home.sumumm.top
       "args": [
         "-i", "~/.ssh/id_mcp_cnb_server",
         "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
         "<win_user>@home.sumumm.top",
         "C:/Users/<win_user>/<项目根>/remote-start-mcp.bat"
       ]
@@ -571,7 +574,8 @@ ssh -o StrictHostKeyChecking=accept-new \
 ssh -i ~/.ssh/id_mcp_cnb_server \
     -o ProxyCommand="cloudflared access ssh --hostname home.sumumm.top" \
     -o StrictHostKeyChecking=accept-new \
-    -o ServerAliveInterval=30 \
+    -o ServerAliveInterval=60 \
+    -o ServerAliveCountMax=3 \
     <win_user>@home.sumumm.top
 ```
 
@@ -600,6 +604,8 @@ scp -i ~/.ssh/id_mcp_cnb_server \
         "-i", "~/.ssh/id_mcp_cnb_server",
         "-o", "ProxyCommand=cloudflared access ssh --hostname home.sumumm.top",
         "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
         "<win_user>@home.sumumm.top",
         "C:/Users/<win_user>/<项目根>/remote-start-mcp.bat"
       ]

@@ -358,6 +358,8 @@ ssh -i ~/.ssh/id_mcp_server \
       "args": [
         "-i", "~/.ssh/id_mcp_server",
         "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
         "<win_user>@127.0.0.1",
         "C:/Users/<win_user>/<项目根>/remote-start-mcp.bat"
       ]
@@ -431,7 +433,8 @@ Endpoint:   <win_user>@127.0.0.1
 Host 127.0.0.1
   ProxyCommand cloudflared access ssh --hostname <随机域名>.trycloudflare.com
   StrictHostKeyChecking accept-new
-  ServerAliveInterval 30
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
 ```
 
 加上之后：
