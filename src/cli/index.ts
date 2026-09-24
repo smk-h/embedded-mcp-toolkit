@@ -44,7 +44,7 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * │   ├── status                 ←   查看隧道状态与域名
  * │   ├── log                    ←   查看隧道日志尾部
  * │   └── install                ←   安装 cloudflared(winget / 便携版)
- * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode/dsh 的 MCP 桥接（.action()）
+ * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接（.action()）
  * ├── cnb                        ← 一键打通 CNB 云环境与 Windows 本地 MCP（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
@@ -357,15 +357,16 @@ cloudflaredCmd.action(() => {
 });
 
 // =============================================================================
-// remote-mcp-config 命令 —— 登录远程 Linux 配置 claude/zcode/opencode/dsh 的 MCP 桥接
+// remote-mcp-config 命令 —— 登录远程 Linux 配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接
 // =============================================================================
 
 /**
  * @brief 远程 MCP 桥接配置命令
  * @details 与 sshd-config 对偶：从本机 SSH 登录远程 Linux 服务器，交互式地在远端
- *          配置 claude/zcode/opencode/dsh 的 MCP 桥接 server（ssh 转发到本机的
- *          remote-start-mcp.bat）。覆盖六类落点：Claude 全局（~/.claude.json）、
- *          Claude 项目（.mcp.json + settings.local.json）、ZCode 项目（.zcode/config.json）、
+ *          配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接 server（ssh 转发到本机的
+ *          remote-start-mcp.bat）。覆盖八类落点：Claude 全局（~/.claude.json）、
+ *          Claude 项目（.mcp.json + settings.local.json）、CodeBuddy 全局（~/.codebuddy/mcp.json）、
+ *          CodeBuddy 项目（与 Claude 项目级共用的 .mcp.json）、ZCode 项目（.zcode/config.json）、
  *          DSH 项目（.dsh/dshmm/mcp.json）、opencode 全局（~/.config/opencode/opencode.json）、
  *          opencode 项目（.opencode/opencode.json）。配置前先读取展示
  *          状态，支持配置/查看/删除。所有文件操作通过 SFTP 完成，远端无需预装 node。
@@ -378,7 +379,7 @@ cloudflaredCmd.action(() => {
 program
   .command("remote-mcp-config")
   .description(
-    "登录远程 Linux 配置 claude/zcode/opencode/dsh 的 MCP 桥接（交互式菜单）"
+    "登录远程 Linux 配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接（交互式菜单）"
   )
   .action(() => {
     runRemoteMcpConfig({});

@@ -43,8 +43,13 @@ export type MenuChoice =
   | typeof MENU_REMOVE
   | typeof MENU_EXIT;
 
-/** @brief 客户端类型（dsh = DeepSeek Harness，本期仅项目级落点） */
-export type McpClient = "claude" | "zcode" | "opencode" | "dsh";
+/**
+ * @brief 客户端类型
+ * @details claude / zcode / opencode / dsh / codebuddy。
+ *          claude / opencode / codebuddy 支持全局与项目两级；
+ *          zcode / dsh 本期仅项目级（dsh = DeepSeek Harness）。
+ */
+export type McpClient = "claude" | "zcode" | "opencode" | "dsh" | "codebuddy";
 
 /** @brief Claude 配置范围 */
 export type ClaudeScope = "global" | "project";
@@ -64,19 +69,21 @@ export interface BridgeServer {
 /**
  * @brief 配置落点描述符（配置驱动，核心抽象）
  * @details 一个 TargetFile 完整描述"在远端哪个文件、哪个 JSON 路径下、如何读写
- *          embedded-board"。四类落点的所有差异都收敛为该结构的不同字段取值，
+ *          embedded-board"。各落点的所有差异都收敛为该结构的不同字段取值，
  *          读写逻辑对各落点完全通用。
  * @param remotePath       远端绝对路径
  * @param label            用户可见的落点描述（如 "Claude 全局"）
  * @param serverPath       server 容器的 JSON 路径（claude:["mcpServers"]，
  *                         zcode:["mcp","servers"]，opencode:["mcp"]）；
  *                         无 server 定义时留空（仅做使能数组操作的文件）
- * @param serverStyle      server 对象写法：split=command+args 分体（claude/zcode/dsh），
+ * @param serverStyle      server 对象写法：split=command+args 分体（claude/zcode/dsh/codebuddy），
  *                         array=command 为数组（opencode）
- * @param serverType       带 type 时的 type 值（zcode/dsh:"stdio"，opencode:"local"）；
- *                         无则不写 type（claude）
- * @param serverEnabled    是否随 type 一并写 enabled:true（zcode/opencode 需要；dsh 不需要，
- *                         显式传 false 抑制）
+ * @param serverType       带 type 时的 type 值（zcode/dsh 落点与 codebuddy 全局：
+ *                         "stdio"、opencode:"local"）；无则不写 type——即 claude
+ *                         两个落点，以及 codebuddy 项目级（它与 Claude 项目级共用
+ *                         .mcp.json，形态必须逐字段一致，见 target.ts）
+ * @param serverEnabled    是否随 type 一并写 enabled:true（zcode/opencode 需要；dsh 与
+ *                         codebuddy 全局不需要，显式传 false 抑制）
  * @param cwd              server 的工作目录（仅 dsh）；该字段非必需，故按约定保留并置空
  *                         字符串，仅在字段存在时写入
  * @param rootSchema       顶层固定字段值（仅 opencode："$schema"）；写入时若缺失则补齐

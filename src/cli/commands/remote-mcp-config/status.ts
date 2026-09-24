@@ -54,10 +54,13 @@ export function buildBridgeServer(
 /**
  * @brief 按落点渲染桥接 server 对象（写入目标文件的实际形态）
  * @details 收敛各客户端的写法差异：
- *          - claude（split，无 serverType）：{ command, args } 分体
+ *          - claude / codebuddy 项目级（split，无 serverType）：{ command, args }
+ *            分体——两者读写同一个 <项目根>/.mcp.json，形态刻意保持一致
  *          - zcode（split，serverType:"stdio"）：分体 + type:"stdio" / enabled:true
  *          - dsh（split，serverType:"stdio"，serverEnabled:false）：分体 + type:"stdio"，
  *            不写 enabled，另带按约定置空的 cwd
+ *          - codebuddy 全局（split，serverType:"stdio"，serverEnabled:false）：分体 +
+ *            type:"stdio"，不写 enabled（官方 schema 无该字段）
  *          - opencode（array）：command 为数组（合并 command+args），
  *            type:"local" / enabled:true / timeout:600000
  * @param file   落点描述符（serverStyle / serverType / serverEnabled / cwd 决定形态）

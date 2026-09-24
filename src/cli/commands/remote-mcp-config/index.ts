@@ -7,7 +7,7 @@
  * Version    : x.x.x
  * Description: embedded-mcp-toolkit remote-mcp-config 命令（目录门面）
  *
- * 交互式引导完成"在远程 Linux 服务器上配置 claude/zcode/opencode/dsh 的 MCP 桥接"。
+ * 交互式引导完成"在远程 Linux 服务器上配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接"。
  * 与 sshd-config 命令（ch14 之前，配 Windows 免密登录）形成对偶：
  *   - sshd-config        ：Windows 当 SSH 服务器，让 Linux 免密登录进来
  *   - remote-mcp-config  ：Windows 当 SSH 客户端，登录 Linux 后在其上写 MCP 配置
@@ -16,9 +16,11 @@
  * 不需安装 node、不需本工具包、不需设备配置——MCP 本体始终由 Windows 的
  * remote-start-mcp.bat 启动，Linux 只配一个 SSH 桥接 server（ssh -i ... <user>@<ip> <bat>）。
  *
- * 六类落点（固定 server key 名 "embedded-board"）：
+ * 八类落点（固定 server key 名 "embedded-board"）：
  *   - Claude 全局 ：Linux ~/.claude.json 顶层 mcpServers
  *   - Claude 项目 ：Linux <proj>/.mcp.json（mcpServers）+ .claude/settings.local.json（enabledMcpjsonServers）
+ *   - CodeBuddy 全局：Linux ~/.codebuddy/mcp.json（mcpServers，含 type:"stdio"，无 enabled）
+ *   - CodeBuddy 项目：Linux <proj>/.mcp.json（与 Claude 项目级同文件、同形态，均不写 type）
  *   - ZCode  项目 ：Linux <proj>/.zcode/config.json（mcp.servers，含 type/enabled）
  *   - DSH    项目 ：Linux <proj>/.dsh/dshmm/mcp.json（mcpServers，含 type 与空 cwd，无 enabled）
  *   - opencode 全局：Linux ~/.config/opencode/opencode.json（mcp，command 为数组）

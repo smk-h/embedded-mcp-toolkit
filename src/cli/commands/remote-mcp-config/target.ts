@@ -16,6 +16,7 @@ import { select, isCancel, log, text } from "@clack/prompts";
 
 import {
   type Target,
+  type TargetFile,
   type McpClient,
   type ClaudeScope,
   SERVER_KEY,
@@ -73,24 +74,69 @@ async function askProjectPath(): Promise<string | null> {
 }
 
 /**
+ * @brief 构造项目级 `.mcp.json` 落点描述符（Claude 与 CodeBuddy 共用）
+ * @details 两个客户端读写的是**同一个** `<项目根>/.mcp.json` 的 `mcpServers`，
+ *          写的是**同一个** server key，因此 server 形态必须完全一致，否则同一
+ *          文件会随"最后跑的是哪个落点"而在两种形态间抖动。故两者都**不写**
+ *          `type`：Claude 省略时默认 stdio，CodeBuddy 含 `command` 时自动推断
+ *          为 stdio，功能等价。（CodeBuddy 全局 `mcp.json` 是独占文件，与 Claude
+ *          无交集，仍显式写 `type:"stdio"`。）
+ * @param projectPath 远端项目绝对路径
+ * @param label       用户可见的落点描述（用于区分是哪个客户端发起的配置）
+ * @returns `.mcp.json` 落点描述符
+ */
+function projectMcpJsonFile(projectPath: string, label: string): TargetFile {
+  return {
+    remotePath: joinRemotePath(projectPath, ".mcp.json"),
+    label,
+    serverPath: ["mcpServers"],
+    serverStyle: "split",
+  };
+}
+
+/** @brief 支持「全局」落点的客户端（即 GLOBAL_SCOPE_LABEL 的键集合） */
+type GlobalScopeClient = "claude" | "opencode" | "codebuddy";
+
+/**
+ * @brief 各客户端「全局」落点的选项 label（含落点文件说明）
+ * @details scope 选项的文案随客户端而变（三选一），收敛在此映射，避免在
+ *          askTarget 里堆叠嵌套三元。键集合恰是支持全局落点的三个客户端。
+ */
+const GLOBAL_SCOPE_LABEL: Record<GlobalScopeClient, string> = {
+  claude: "全局（~/.claude.json，所有项目可用）",
+  opencode: "全局（~/.config/opencode/opencode.json，所有项目可用）",
+  codebuddy: "全局（~/.codebuddy/mcp.json，所有项目可用）",
+};
+
+/**
  * @brief 交互式选择客户端类型与配置范围，组装配置目标
  * @details 落点路由（F3）：
- *          - claude   → select(全局/项目)；项目则 text(项目绝对路径)
- *          - zcode    → 直接 text(项目绝对路径)（本期 zcode 仅项目级）
- *          - dsh      → 直接 text(项目绝对路径)（本期 dsh 仅项目级）
- *          - opencode → select(全局/项目)；项目则 text(项目绝对路径)
+ *          - claude    → select(全局/项目)；项目则 text(项目绝对路径)
+ *          - zcode     → 直接 text(项目绝对路径)（本期 zcode 仅项目级）
+ *          - dsh       → 直接 text(项目绝对路径)（本期 dsh 仅项目级）
+ *          - opencode  → select(全局/项目)；项目则 text(项目绝对路径)
+ *          - codebuddy → select(全局/项目)；项目则 text(项目绝对路径)
  *          按选择组装 Target：
- *            Claude  全局  → 1 文件：~/.claude.json（serverPath:["mcpServers"]）
- *            Claude  项目  → 2 文件：.mcp.json（serverPath）+ settings.local.json（enableArray）
- *            ZCode   项目  → 1 文件：.zcode/config.json（serverPath:["mcp","servers"]，
+ *            Claude    全局 → 1 文件：~/.claude.json（serverPath:["mcpServers"]）
+ *            Claude    项目 → 2 文件：.mcp.json（serverPath）+ settings.local.json（enableArray）
+ *            CodeBuddy 全局 → 1 文件：~/.codebuddy/mcp.json（serverPath:["mcpServers"]，
+ *                             serverType:"stdio" 且不写 enabled）
+ *            CodeBuddy 项目 → 1 文件：.mcp.json（与 Claude 项目级**同一个文件、
+ *                             同一种形态**，共用 projectMcpJsonFile 构造）
+ *            ZCode     项目 → 1 文件：.zcode/config.json（serverPath:["mcp","servers"]，
  *                             serverType:"stdio"）
- *            DSH     项目  → 1 文件：.dsh/dshmm/mcp.json（serverPath:["mcpServers"]，
+ *            DSH       项目 → 1 文件：.dsh/dshmm/mcp.json（serverPath:["mcpServers"]，
  *                             serverType:"stdio" 且不写 enabled，另带置空的 cwd）
- *            opencode 全局  → 1 文件：~/.config/opencode/opencode.json（serverPath:["mcp"]，
+ *            opencode  全局 → 1 文件：~/.config/opencode/opencode.json（serverPath:["mcp"]，
  *                             serverStyle:"array"，serverType:"local"）
- *            opencode 项目  → 1 文件：.opencode/opencode.json（serverPath:["mcp"]，
+ *            opencode  项目 → 1 文件：.opencode/opencode.json（serverPath:["mcp"]，
  *                             serverStyle:"array"，serverType:"local"）
  *          全局落点均需展开 ~（SFTP 不识别 ~），故依赖 client 取远端 $HOME。
+ * @note  CodeBuddy 全局固定写**不带点**的 mcp.json。官方 CLI 的用户级优先级为
+ *          ~/.codebuddy/.mcp.json > ~/.codebuddy/mcp.json > ~/.codebuddy.json，
+ *          但 CodeBuddy IDE 只认不带点的 ~/.codebuddy/mcp.json（实测结论见
+ *          src/cli/commands/cnb/constants.ts 的 REMOTE_MCP_FILE_NAME 注释），
+ *          故不带点者是 IDE 与 CLI 两个宿主都生效的唯一路径。
  * @param client     已连接的 ssh2 Client（用于展开 ~）
  * @returns 配置目标；用户取消返回 null
  * @throws 获取远端家目录失败时抛出
@@ -104,6 +150,7 @@ export async function askTarget(client: Client): Promise<Target | null> {
       { value: "zcode", label: "ZCode" },
       { value: "opencode", label: "opencode" },
       { value: "dsh", label: "DSH (DeepSeek Harness)" },
+      { value: "codebuddy", label: "CodeBuddy" },
     ],
   });
   if (isCancel(clientChoice)) {
@@ -149,17 +196,11 @@ export async function askTarget(client: Client): Promise<Target | null> {
     };
   }
 
-  // 2. claude / opencode：选择全局/项目
+  // 2. claude / opencode / codebuddy：选择全局/项目
   const scopeChoice = await select<ClaudeScope>({
     message: "选择配置范围",
     options: [
-      {
-        value: "global",
-        label:
-          clientChoice === "claude"
-            ? "全局（~/.claude.json，所有项目可用）"
-            : "全局（~/.config/opencode/opencode.json，所有项目可用）",
-      },
+      { value: "global", label: GLOBAL_SCOPE_LABEL[clientChoice] },
       { value: "project", label: "项目（指定项目路径）" },
     ],
   });
@@ -168,9 +209,11 @@ export async function askTarget(client: Client): Promise<Target | null> {
     return null;
   }
 
-  // opencode 全局：~/.config/opencode/opencode.json
+  // 全局落点
   if (scopeChoice === "global") {
     const home = await getRemoteHome(client);
+
+    // opencode 全局：~/.config/opencode/opencode.json
     if (clientChoice === "opencode") {
       return {
         client: "opencode",
@@ -186,6 +229,26 @@ export async function askTarget(client: Client): Promise<Target | null> {
         ],
       };
     }
+
+    // CodeBuddy 全局：~/.codebuddy/mcp.json（不带点，IDE 与 CLI 都读这个）
+    if (clientChoice === "codebuddy") {
+      return {
+        client: "codebuddy",
+        files: [
+          {
+            remotePath: `${home}/.codebuddy/mcp.json`,
+            label: "CodeBuddy 全局（~/.codebuddy/mcp.json）",
+            serverPath: ["mcpServers"],
+            serverStyle: "split",
+            serverType: "stdio",
+            // CodeBuddy 的 server 对象不含 enabled 字段
+            serverEnabled: false,
+          },
+        ],
+      };
+    }
+
+    // Claude 全局：~/.claude.json
     return {
       client: "claude",
       files: [
@@ -220,16 +283,24 @@ export async function askTarget(client: Client): Promise<Target | null> {
     };
   }
 
+  // CodeBuddy 项目：.mcp.json（与 Claude 项目级同一个文件，形态必须一致）
+  if (clientChoice === "codebuddy") {
+    return {
+      client: "codebuddy",
+      files: [
+        projectMcpJsonFile(
+          projectPath,
+          "CodeBuddy 项目（.mcp.json，与 Claude 共用）"
+        ),
+      ],
+    };
+  }
+
   // claude 项目
   return {
     client: "claude",
     files: [
-      {
-        remotePath: joinRemotePath(projectPath, ".mcp.json"),
-        label: "Claude 项目（.mcp.json server 定义）",
-        serverPath: ["mcpServers"],
-        serverStyle: "split",
-      },
+      projectMcpJsonFile(projectPath, "Claude 项目（.mcp.json server 定义）"),
       {
         remotePath: joinRemotePath(projectPath, ".claude/settings.local.json"),
         label: "Claude 项目（settings.local.json 使能）",
