@@ -2,7 +2,7 @@
 
 ## 一、 文档说明
 
-本指南用于在「远程 Agent + 本地 MCP」场景下，搭建 **Linux 编译服务器运行 Claude Code / ZCode、并远程连接 Windows 上的 MCP 服务** 的完整环境。
+本指南用于在「远程 Agent + 本地 MCP」场景下，搭建 **Linux 编译服务器运行 Claude Code / ZCode / CodeBuddy、并远程连接 Windows 上的 MCP 服务** 的完整环境。
 
 整体方案由 `embedded-mcp-toolkit` 的两个**对偶命令**配合完成：
 
@@ -13,20 +13,20 @@
 
 ### 1. 整体架构
 
-MCP 本体始终运行在 **Windows 本地**（由 `remote-start-mcp.bat` 拉起 `node` 进程），Linux 编译服务器上的 Claude Code / ZCode 通过 `ssh` 免密**反向登录**到 Windows，把 MCP 作为远程工具来调用。整体环境如下图所示：
+MCP 本体始终运行在 **Windows 本地**（由 `remote-start-mcp.bat` 拉起 `node` 进程），Linux 编译服务器上的 Claude Code / ZCode / CodeBuddy 通过 `ssh` 免密**反向登录**到 Windows，把 MCP 作为远程工具来调用。整体环境如下图所示：
 
 ![Linux 远程连接 Windows MCP 环境架构图](./Linux远程连接Windows%20MCP配置指南/img/architecture.svg)
 
 一次完整的 MCP 环境配置通常分两步（对应架构图中两条链路：① 搭桥 + ② 写入桥接配置）：
 
 1. **先 `sshd-config` 搭桥**：让 Linux 能免密登录进 Windows（反向 SSH 桥）。
-2. **再 `remote-mcp-config` 写桥接配置**：把 `embedded-board` 这个桥接 server 按规范写入 Linux 端 Claude / ZCode / opencode 的配置文件。
+2. **再 `remote-mcp-config` 写桥接配置**：把 `embedded-board` 这个桥接 server 按规范写入 Linux 端 Claude / ZCode / opencode / CodeBuddy 的配置文件。
 
 ### 2. 适用场景
 
 - 需要在多台机器间搭建「远程 Agent + 本地 MCP」的分布式开发环境
 - 需要从 Linux 编译服务器通过 SSH 免密登录 Windows，以调用 Windows 上运行的 MCP 服务
-- 需要为 Linux 端的 Claude / ZCode / opencode 配置 SSH 桥接式 MCP server
+- 需要为 Linux 端的 Claude / ZCode / opencode / CodeBuddy 配置 SSH 桥接式 MCP server
 
 ---
 
@@ -217,11 +217,11 @@ CNB 等临时容器环境每次重建都会生成新密钥对，新公钥经菜�
 
 ## 四、 第二步：用 `remote-mcp-config` 写桥接配置
 
-`remote-mcp-config` 负责把「桥接配置」写到 Linux 端正确的位置：它登录 Linux、通过 SFTP 读写几个 JSON 文件，自动把 `embedded-board` 这个 MCP 桥接 server 写入 Claude 全局 / Claude 项目 / ZCode 项目 / opencode 全局 / opencode 项目。
+`remote-mcp-config` 负责把「桥接配置」写到 Linux 端正确的位置：它登录 Linux、通过 SFTP 读写几个 JSON 文件，自动把 `embedded-board` 这个 MCP 桥接 server 写入 Claude 全局 / Claude 项目 / CodeBuddy 全局 / CodeBuddy 项目 / ZCode 项目 / DSH 项目 / opencode 全局 / opencode 项目。
 
-### 1. 命令能做什么（五类落点）
+### 1. 命令能做什么（八类落点）
 
-`remote-mcp-config` 把 MCP 桥接 server（固定 key 名 `embedded-board`）写入 Linux 端的五类落点之一。**它的本质是「Windows 通过 SSH/SFTP 登录 Linux，读写 Linux 上几个 JSON 文件」**。Linux 端不需要安装 node、不需要本工具包、不需要设备配置——MCP 本体始终由 Windows 的 `remote-start-mcp.bat` 启动。
+`remote-mcp-config` 把 MCP 桥接 server（固定 key 名 `embedded-board`）写入 Linux 端的八类落点之一。**它的本质是「Windows 通过 SSH/SFTP 登录 Linux，读写 Linux 上几个 JSON 文件」**。Linux 端不需要安装 node、不需要本工具包、不需要设备配置——MCP 本体始终由 Windows 的 `remote-start-mcp.bat` 启动。
 
 #### 1.1 Claude 全局
 
@@ -237,13 +237,38 @@ CNB 等临时容器环境每次重建都会生成新密钥对，新公钥经菜�
 - 写入位置：`enabledMcpjsonServers` 使能数组中追加 `embedded-board`
 - 效果：仅指定项目可用该桥接
 
-#### 1.3 ZCode 项目
+#### 1.3 CodeBuddy
+
+CodeBuddy 支持全局与项目两级落点：
+
+- **全局**：写入文件 `~/.codebuddy/mcp.json`，位置 `mcpServers.embedded-board`
+  - server 额外带 `type: "stdio"`（CodeBuddy 省略 `type` 时会按「含 `command`」自动推断为 stdio，显式声明只是更清楚）
+- **项目**：写入文件 `<项目路径>/.mcp.json`，位置 `mcpServers.embedded-board`
+  - server 与 Claude 项目级**逐字段一致**（`{ command, args }`，不写 `type`）——两者用的是**同一个文件**，写法必须相同
+- 两个落点都不写 `enabled`（CodeBuddy 的 server schema 没有该字段）
+- 效果：全局对所有项目可用，项目仅指定项目可用
+
+> [!IMPORTANT]
+> **全局落点固定用不带点的 `mcp.json`，这不是笔误。** 官方 CLI 的用户级优先级为 `~/.codebuddy/.mcp.json` > `~/.codebuddy/mcp.json` > `~/.codebuddy.json`，但 **CodeBuddy IDE 只认不带点的 `~/.codebuddy/mcp.json`**（带点的 `.mcp.json` 仅在项目级与插件级被识别，放在用户级目录下不会被读取）。不带点者是 IDE 与 CLI 两个宿主都生效的唯一路径——这也与 `cnb` 命令写入容器的落点完全一致。
+>
+> 另需注意 CodeBuddy 的配置查找是「**只读第一个存在的文件、不做合并**」。若远端已存在 `~/.codebuddy/.mcp.json`，它会**整体遮蔽** `~/.codebuddy/mcp.json`，导致本命令写入的配置读不到。两个文件同时存在时，请先确认希望哪一个生效并清理另一个。
+
+> [!NOTE]
+> **CodeBuddy 项目级与 Claude 项目级是同一个文件、同一种写法。** 两者都写 `<项目路径>/.mcp.json` 的 `mcpServers.embedded-board`，server 对象逐字段相同（`{ command, args }`，都不写 `type`）——`type` 由各客户端按「含 `command`」自行推断为 `stdio`，无需写入。因此**给其中一个客户端配项目级，另一个也自动可用**，不必重复配置，也不存在两次配置互相覆盖形态的问题。
+
+#### 1.4 ZCode 项目
 
 - 写入文件：`<项目路径>/.zcode/config.json`
 - 写入位置：`mcp.servers.embedded-board`（额外带 `type: "stdio"` / `enabled: true`）
 - 效果：指定 ZCode 项目可用该桥接（ZCode 全局本期不做）
 
-#### 1.4 opencode
+#### 1.5 DSH 项目
+
+- 写入文件：`<项目路径>/.dsh/dshmm/mcp.json`
+- 写入位置：`mcpServers.embedded-board`（额外带 `type: "stdio"`，并按约定带一个置空的 `cwd`；不含 `enabled`）
+- 效果：指定 DSH（DeepSeek Harness）项目可用该桥接（DSH 全局本期不做）
+
+#### 1.6 opencode
 
 opencode 支持全局与项目两级落点：
 
@@ -252,7 +277,7 @@ opencode 支持全局与项目两级落点：
 - 写入位置：顶层 `mcp.embedded-board`（opencode 风格：`command` 为数组，额外带 `type: "local"` / `enabled: true` / `timeout: 600000`）；文件缺 `$schema` 时自动补齐 `"$schema": "https://opencode.ai/config.json"`
 - 效果：全局对所有项目可用，项目仅指定项目可用（opencode 全局与项目配置会**合并**，非覆盖）
 
-#### 1.5 桥接 server 的定义
+#### 1.7 桥接 server 的定义
 
 无论哪种落点，写入的 server 定义都是同一个「反向 SSH 桥接」：
 
@@ -272,9 +297,9 @@ opencode 支持全局与项目两级落点：
 }
 ```
 
-含义：Linux 端用专用密钥 `~/.ssh/id_mcp_server` 免密反向登录 Windows 的 `<win_user>@<win_ip>`，执行 `remote-start-mcp.bat` 拉起 Windows 上的 MCP 服务。ZCode 落点额外带 `type: "stdio"` / `enabled: true`；opencode 落点把 `command`+`args` 合并为 `command` 数组，额外带 `type: "local"` / `enabled: true` / `timeout: 600000`。
+含义：Linux 端用专用密钥 `~/.ssh/id_mcp_server` 免密反向登录 Windows 的 `<win_user>@<win_ip>`，执行 `remote-start-mcp.bat` 拉起 Windows 上的 MCP 服务。ZCode / DSH 落点与 **CodeBuddy 全局**额外带 `type: "stdio"`（ZCode 另带 `enabled: true`；CodeBuddy 与 DSH 不带 `enabled`）；**CodeBuddy 项目级与 Claude 项目级同形，不写 `type`**（两者共用同一文件）；opencode 落点把 `command`+`args` 合并为 `command` 数组，额外带 `type: "local"` / `enabled: true` / `timeout: 600000`。
 
-`-o ServerAliveInterval=60 -o ServerAliveCountMax=3` 是 ssh 客户端自身的保活选项，与写在哪类客户端（Claude Code / ZCode / opencode / CodeBuddy / dsh）无关，因此六个落点都用同一份参数：
+`-o ServerAliveInterval=60 -o ServerAliveCountMax=3` 是 ssh 客户端自身的保活选项，与写在哪类客户端（Claude Code / ZCode / opencode / CodeBuddy / dsh）无关，因此八个落点都用同一份参数：
 
 - **断得更少**：每 60 秒一个保活包，让中间的 NAT / 防火墙 / 隧道设备一直看到流量，空闲映射不被回收——这是"长时间不用就断"的主因（绝大多数设备的空闲回收阈值在分钟级，60 秒已足够把连接焐住，又不必每分钟打扰链路）；
 - **发现得更快**：链路真断（黑洞、隧道死掉）时，本地 ssh 得先自己察觉才会退出。不加保活，完全空闲时 Linux 的 TCP keepalive 默认要 2 小时才动手，有数据要写也要等重传耗尽（约 15 分钟），这段时间表现为"工具调用挂住"；加上后最迟 180 秒（3 × 60s）内 ssh 主动退出，客户端的掉线检测与自动重连才有即时、可靠的触发点。
@@ -321,9 +346,11 @@ embedded-mcp-toolkit remote-mcp-config
 
 命令交互式引导你选择写入到哪里：
 
-- **选择客户端类型**：`Claude Code` / `ZCode` / `opencode`
+- **选择客户端类型**：`Claude Code` / `ZCode` / `opencode` / `DSH (DeepSeek Harness)` / `CodeBuddy`
 - 若选 **Claude Code**：再选**全局**（`~/.claude.json`，所有项目可用）或**项目**（需输入远端项目绝对路径）
+- 若选 **CodeBuddy**：再选**全局**（`~/.codebuddy/mcp.json`，所有项目可用）或**项目**（`.mcp.json`，需输入远端项目绝对路径；与 Claude 项目级是同一个文件）
 - 若选 **ZCode**：直接输入远端项目绝对路径（本期仅项目级）
+- 若选 **DSH**：直接输入远端项目绝对路径（本期仅项目级）
 - 若选 **opencode**：再选**全局**（`~/.config/opencode/opencode.json`，所有项目可用）或**项目**（`.opencode/opencode.json`，需输入远端项目绝对路径）
 
 > 项目路径需为远端 Linux 上的**绝对路径**，如 `/home/sumu/my-project`。
@@ -353,7 +380,7 @@ embedded-mcp-toolkit remote-mcp-config
 
 #### 3.5 第五步：回显与生效
 
-写入完成后命令回显最终写入的桥接定义（按落点渲染后的 server 对象），并提示**需重启对应 client（Claude / ZCode / opencode）使配置生效**。
+写入完成后命令回显最终写入的桥接定义（按落点渲染后的 server 对象），并提示**需重启对应 client（Claude / ZCode / opencode / CodeBuddy）使配置生效**。
 
 ### 4. 查看与删除配置
 
@@ -392,9 +419,11 @@ ssh -i ~/.ssh/id_mcp_server <win_user>@<win_ip>
 
 ### 4. 重启客户端使配置生效
 
-在 Linux 端重启 Claude Code（或对应 MCP 客户端），即可通过 `embedded-board` 调用 Windows 上的 MCP 工具。
+在 Linux 端重启 Claude Code / CodeBuddy（或对应 MCP 客户端），即可通过 `embedded-board` 调用 Windows 上的 MCP 工具。
 
-> **可选进阶**：如需在 Linux 端做更精细的 MCP 桥接配置（如 Claude 全局 / 项目、ZCode 项目、opencode 全局 / 项目落点），可配合使用 `remote-mcp-config`，它通过 SFTP 直接在 Linux 端写 `~/.claude.json`、`.mcp.json`、`.zcode/config.json`、`~/.config/opencode/opencode.json`、`.opencode/opencode.json`。
+> **模板的适用范围**：本模板写成 Claude 风格的 `mcpServers.embedded-board = { command, args }`。CodeBuddy 项目级读的是**同一个** `<项目根>/.mcp.json`，且 `remote-mcp-config` 的 CodeBuddy 项目级落点写出的 server 对象与之**逐字段一致**（同样不写 `type`，由客户端按含 `command` 自动推断为 `stdio`），因此这份模板对两个客户端通用。
+
+> **可选进阶**：如需在 Linux 端做更精细的 MCP 桥接配置（如 Claude 全局 / 项目、CodeBuddy 全局 / 项目、ZCode 项目、DSH 项目、opencode 全局 / 项目落点），可配合使用 `remote-mcp-config`，它通过 SFTP 直接在 Linux 端写 `~/.claude.json`、`.mcp.json`、`~/.codebuddy/mcp.json`、`.zcode/config.json`、`.dsh/dshmm/mcp.json`、`~/.config/opencode/opencode.json`、`.opencode/opencode.json`。
 
 ---
 
@@ -405,11 +434,11 @@ ssh -i ~/.ssh/id_mcp_server <win_user>@<win_ip>
 ```
 1.  Windows 项目根目录执行 init              → 生成 remote-start-mcp.bat 与配置
 2.  Windows 执行 sshd-config 搭桥            → Linux 免密反向登录进 Windows
-3.  Windows 执行 remote-mcp-config           → 在 Linux 端写 Claude/ZCode/opencode 的 MCP 桥接配置
-4.  Linux 端重启 Claude / ZCode / opencode   → 即可通过 embedded-board 调用 Windows 上的 MCP 工具
+3.  Windows 执行 remote-mcp-config           → 在 Linux 端写 Claude/CodeBuddy/ZCode/DSH/opencode 的 MCP 桥接配置
+4.  Linux 端重启对应 MCP 客户端              → 即可通过 embedded-board 调用 Windows 上的 MCP 工具
 ```
 
-第 3 步 `remote-mcp-config` 的五种落点按需选择其一（Claude 全局 / Claude 项目 / ZCode 项目 / opencode 全局 / opencode 项目），可重复执行对不同落点或不同项目写入。
+第 3 步 `remote-mcp-config` 的八种落点按需选择其一（Claude 全局 / Claude 项目 / CodeBuddy 全局 / CodeBuddy 项目 / ZCode 项目 / DSH 项目 / opencode 全局 / opencode 项目），可重复执行对不同落点或不同项目写入。
 
 ---
 
