@@ -67,12 +67,12 @@ async function askProjectPath(): Promise<string | null> {
     placeholder: "如 /home/sumu/my-project",
   });
   if (isCancel(projRaw)) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return null;
   }
   const projectPath = projRaw.trim();
   if (!projectPath) {
-    log.message("    项目路径为空");
+    logDetail("    项目路径为空");
     return null;
   }
   return projectPath;
@@ -98,7 +98,7 @@ async function selectClient(): Promise<[McpClient, ClientSpec] | null> {
     })),
   });
   if (isCancel(clientId)) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return null;
   }
   return [clientId, CLIENTS[clientId]];
@@ -125,7 +125,7 @@ async function selectScope(spec: ClientSpec): Promise<Scope | null> {
     })),
   });
   if (isCancel(scope)) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return null;
   }
   return scope;
@@ -162,6 +162,17 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * @brief 紧凑明细行输出
+ * @details clack 的 log.message 默认 spacing:1，每次调用都会在内容行前垫一条
+ *          空的引导竖线行，逐行输出明细时表现为行间宽间距。本函数统一以
+ *          spacing:0 输出，明细行之间不再垫空行；区段标题仍用 log.info /
+ *          log.success，保留默认间距作视觉分隔。
+ */
+function logDetail(text: string): void {
+  log.message(text, { spacing: 0 });
+}
+
 /** @brief 压缩展示现有 server 对象的关键字段（command + args） */
 function compactServer(existing: Record<string, unknown>): string {
   return JSON.stringify({ command: existing.command, args: existing.args });
@@ -182,16 +193,16 @@ async function reportCurrentStatus(
   log.info("当前状态");
   let hasError = false;
   for (const file of files) {
-    log.message(`    [${file.label}]`);
-    log.message(`        路径: ${file.remotePath}`);
+    logDetail(`    [${file.label}]`);
+    logDetail(`        路径: ${file.remotePath}`);
     try {
       const state = await readTargetStatus(sftp, file, bridge);
-      log.message(`        状态: ${state.detail}`);
+      logDetail(`        状态: ${state.detail}`);
       if (state.existing) {
-        log.message(`        现有: ${compactServer(state.existing)}`);
+        logDetail(`        现有: ${compactServer(state.existing)}`);
       }
     } catch (err) {
-      log.message(`        状态读取失败: ${errText(err)}`);
+      logDetail(`        状态读取失败: ${errText(err)}`);
       hasError = true;
     }
   }
@@ -218,11 +229,11 @@ async function commitAndReport(
   for (const file of files) {
     try {
       const written = await commitTargetFile(sftp, file, desired);
-      log.message(
+      logDetail(
         `    [${file.label}] ${written ? verbs.ok : verbs.skip}: ${file.remotePath}`
       );
     } catch (err) {
-      log.message(`    [${file.label}] ${verbs.fail}: ${errText(err)}`);
+      logDetail(`    [${file.label}] ${verbs.fail}: ${errText(err)}`);
     }
   }
 }
@@ -245,13 +256,13 @@ export async function doConfigure(
   // 采集本机端点（无可用 IP 或多 IP 用户取消则中止）
   const endpoint = await collectWindowsEndpoint();
   if (!endpoint) {
-    log.message("    未检测到本机可用 IPv4 地址，无法生成桥接配置");
-    log.message("    请确认网络连接正常后重试");
+    logDetail("    未检测到本机可用 IPv4 地址，无法生成桥接配置");
+    logDetail("    请确认网络连接正常后重试");
     return;
   }
-  log.message(`    Windows 用户名: ${endpoint.sshUser}`);
-  log.message(`    Windows 主 IP: ${endpoint.primaryIp}`);
-  log.message(`    bat 路径:      ${endpoint.batPath}`);
+  logDetail(`    Windows 用户名: ${endpoint.sshUser}`);
+  logDetail(`    Windows 主 IP: ${endpoint.primaryIp}`);
+  logDetail(`    bat 路径:      ${endpoint.batPath}`);
 
   // 路由落点
   const target = await askTarget(client);
@@ -266,7 +277,7 @@ export async function doConfigure(
 
   // 展示各落点当前状态；任一落点读取异常则中止（避免对未知现状盲目覆盖）
   if (await reportCurrentStatus(sftp, target.files, bridge)) {
-    log.message("    存在状态读取异常，已中止");
+    logDetail("    存在状态读取异常，已中止");
     return;
   }
 
@@ -278,7 +289,7 @@ export async function doConfigure(
     initialValue: true,
   });
   if (isCancel(ok) || !ok) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return;
   }
 
@@ -295,10 +306,10 @@ export async function doConfigure(
   log.info("写入的桥接定义");
   const firstServer = target.files.find((file) => file.kind === "server");
   if (firstServer) {
-    log.message(`    ${JSON.stringify(firstServer.slot.render(bridge))}`);
+    logDetail(`    ${JSON.stringify(firstServer.slot.render(bridge))}`);
   }
   log.success("配置完成");
-  log.message(
+  logDetail(
     "    需重启对应 client（claude/zcode/opencode/dsh/codebuddy）使配置生效"
   );
 }
@@ -330,7 +341,7 @@ export async function doRemove(
     initialValue: false,
   });
   if (isCancel(ok) || !ok) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return;
   }
 
@@ -367,5 +378,5 @@ export async function doCheckStatus(
   if (!target) return;
 
   await reportCurrentStatus(sftp, target.files, bridge);
-  log.message("    提示: 仅展示状态，未修改任何文件");
+  logDetail("    提示: 仅展示状态，未修改任何文件");
 }
