@@ -18,6 +18,7 @@
  */
 
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { DEFAULT_TUNNEL_URL } from "../../cloudflared/constants.js";
 import { checkTunnelHealth } from "../../cloudflared/tunnel-health.js";
@@ -65,22 +66,22 @@ export async function ensureTunnelDomain(): Promise<string | null> {
       await stopProcessTree(state.pid);
       clearTunnelState();
     } else if (health.status === "ok") {
-      log.message(`    隧道运行中（PID ${state.pid}），域名: ${state.domain}`);
+      logDetail(`    隧道运行中（PID ${state.pid}），域名: ${state.domain}`);
       return state.domain;
     } else {
-      log.message(
+      logDetail(
         `    隧道域名尚未解析生效（${health.detail}），等待就绪后继续 ...`
       );
     }
   } else {
-    log.message("    隧道未运行，正在后台启动 ...");
+    logDetail("    隧道未运行，正在后台启动 ...");
   }
 
   // doStart 返回 true 即域名已解析生效；否则已耗尽重试次数
   const started = await doStart(DEFAULT_TUNNEL_URL);
   if (!started) {
-    log.message("    隧道域名不可用，已中止后续配置（不写入容器侧文件）");
-    log.message(
+    logDetail("    隧道域名不可用，已中止后续配置（不写入容器侧文件）");
+    logDetail(
       "    请执行 embedded-mcp-toolkit cloudflared stop 后重新运行本命令"
     );
     return null;
@@ -88,12 +89,12 @@ export async function ensureTunnelDomain(): Promise<string | null> {
 
   const fresh = readTunnelState();
   if (!fresh?.domain) {
-    log.message("    隧道状态异常：未记录域名，已中止后续配置");
+    logDetail("    隧道状态异常：未记录域名，已中止后续配置");
     return null;
   }
 
-  log.message(`    域名已就绪: ${fresh.domain}`);
-  log.message(
+  logDetail(`    域名已就绪: ${fresh.domain}`);
+  logDetail(
     "    提示: 域名已解析生效，容器侧首次连接若仍报 no such host，稍等数秒重试即可"
   );
   return fresh.domain;

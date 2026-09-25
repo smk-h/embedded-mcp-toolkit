@@ -15,6 +15,7 @@
 
 import { Client } from "ssh2";
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { sshExec, sshReadText, sshWriteText } from "../../../shared/ssh.js";
 import { sshKeepaliveConfigLines } from "../../../shared/ssh-bridge.js";
@@ -57,14 +58,14 @@ export async function doPushKey(
 
   const privateKey = readLocalPrivateKey();
   if (!privateKey) {
-    log.message("    未找到本地私钥，请先完成本地密钥对生成");
+    logDetail("    未找到本地私钥，请先完成本地密钥对生成");
     return null;
   }
 
   // 容器家目录：SFTP 与后续路径拼接都需要绝对路径
   const home = (await sshExec(client, "echo $HOME")).replace(/\s+/g, "");
   if (!home) {
-    log.message("    获取容器家目录失败");
+    logDetail("    获取容器家目录失败");
     return null;
   }
 
@@ -75,7 +76,7 @@ export async function doPushKey(
   const remoteKeyPath = `${home}/.ssh/${REMOTE_KEY_NAME}`;
   await sshWriteText(client, remoteKeyPath, privateKey);
   await sshExec(client, `chmod 600 "${remoteKeyPath}"`);
-  log.message(`    私钥已写入: ${remoteKeyPath} (600)`);
+  logDetail(`    私钥已写入: ${remoteKeyPath} (600)`);
 
   // 3. 隧道 ssh config（标记段替换，保留用户其它配置）
   const remoteConfigPath = `${home}/${REMOTE_SSH_CONFIG}`;
@@ -86,8 +87,8 @@ export async function doPushKey(
     winUser
   );
   await sshWriteText(client, remoteConfigPath, merged);
-  log.message(`    ssh config 已更新: ${remoteConfigPath}`);
-  log.message(
+  logDetail(`    ssh config 已更新: ${remoteConfigPath}`);
+  logDetail(
     `    隧道段: Host ${TUNNEL_ENDPOINT} → cloudflared access ssh --hostname ${domain}`
   );
 

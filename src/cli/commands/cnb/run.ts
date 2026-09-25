@@ -29,6 +29,7 @@ import {
   clearScreen,
   collectConnectionInfo,
   waitForQuit,
+  logDetail,
 } from "../../shared/cli-helpers.js";
 import { isWindows } from "../../shared/platform.js";
 import { MCP_TEMPLATE_REL, START_SCRIPT_NAME } from "./constants.js";
@@ -102,15 +103,15 @@ async function executeFlow(): Promise<boolean> {
     placeholder: "cnb-ihg-xxxxx-xxx.xxxx-xxxx-xxxx-xxxx@cnb.space",
   });
   if (isCancel(addressRaw)) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return false;
   }
   const envInfo = parseCnbAddress(String(addressRaw).trim());
   if (!envInfo) {
-    log.message("    地址格式错误，应为 <环境标识>@cnb.space");
+    logDetail("    地址格式错误，应为 <环境标识>@cnb.space");
     return true;
   }
-  log.message(`    ${envInfo.username}@${envInfo.host}:${envInfo.port}`);
+  logDetail(`    ${envInfo.username}@${envInfo.host}:${envInfo.port}`);
 
   // 2. 采集 Windows 侧端点
   const { sshUser } = collectConnectionInfo();
@@ -120,10 +121,10 @@ async function executeFlow(): Promise<boolean> {
       "/"
     );
   const endpoint: LocalEndpoint = { sshUser, batPath };
-  log.message(`    Windows 用户: ${sshUser}`);
-  log.message(`    启动脚本:     ${batPath}`);
+  logDetail(`    Windows 用户: ${sshUser}`);
+  logDetail(`    启动脚本:     ${batPath}`);
   if (!existsSync(resolve(process.cwd(), START_SCRIPT_NAME))) {
-    log.message(`    警告: 未找到 ${START_SCRIPT_NAME}，MCP 启动可能失败`);
+    logDetail(`    警告: 未找到 ${START_SCRIPT_NAME}，MCP 启动可能失败`);
   }
 
   // 3. 确保隧道域名可用
@@ -143,10 +144,10 @@ async function executeFlow(): Promise<boolean> {
   try {
     log.info("连接 CNB 云开发环境 ...");
     client = await connectCnbEnv(envInfo);
-    log.message("    连接成功（none 认证，无需密码）");
+    logDetail("    连接成功（none 认证，无需密码）");
   } catch (err) {
-    log.message(`    连接失败: ${err instanceof Error ? err.message : err}`);
-    log.message("    请确认环境标识正确、开发环境已启动且网络可达");
+    logDetail(`    连接失败: ${err instanceof Error ? err.message : err}`);
+    logDetail("    请确认环境标识正确、开发环境已启动且网络可达");
     return true;
   }
 
@@ -173,7 +174,7 @@ async function executeFlow(): Promise<boolean> {
       templatePath: resolve(process.cwd(), MCP_TEMPLATE_REL),
     });
   } catch (err) {
-    log.message(`    执行失败: ${err instanceof Error ? err.message : err}`);
+    logDetail(`    执行失败: ${err instanceof Error ? err.message : err}`);
   } finally {
     sshDisconnect(client);
   }

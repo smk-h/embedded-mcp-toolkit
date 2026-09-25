@@ -10,6 +10,7 @@
  */
 
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { REMOTE_KEY_NAME, SERVER_KEY, TUNNEL_ENDPOINT } from "../constants.js";
 import { type LocalEndpoint } from "../types.js";
@@ -42,30 +43,30 @@ export function printFinalSummary(params: {
   const { endpoint, domain } = params;
 
   log.info("配置结果");
-  log.message(`    隧道域名:      ${domain}`);
-  log.message(`    容器内私钥:    ${params.remoteKeyPath}`);
-  log.message(`    容器内 ssh config: ${params.remoteConfigPath}`);
-  log.message(`    容器内 MCP 配置:   ${params.remoteMcpPath}`);
-  log.message(`    本地模板:      ${params.templatePath}`);
+  logDetail(`    隧道域名:      ${domain}`);
+  logDetail(`    容器内私钥:    ${params.remoteKeyPath}`);
+  logDetail(`    容器内 ssh config: ${params.remoteConfigPath}`);
+  logDetail(`    容器内 MCP 配置:   ${params.remoteMcpPath}`);
+  logDetail(`    本地模板:      ${params.templatePath}`);
 
   log.success("CNB 免密通道已就绪");
 
   log.info("在 CNB 开发环境中执行以下命令（免密登录到 Windows）");
-  log.message(
+  logDetail(
     `    ssh -i ~/.ssh/${REMOTE_KEY_NAME} ${endpoint.sshUser}@${TUNNEL_ENDPOINT}`
   );
-  log.message(
+  logDetail(
     `    简写（ssh config 已带 User/IdentityFile）: ssh ${TUNNEL_ENDPOINT}`
   );
 
   log.info("下一步");
-  log.message(
+  logDetail(
     `    1. 重启 CodeBuddy 使 ~/.codebuddy/mcp.json 生效，即可调用 ${SERVER_KEY} 工具`
   );
-  log.message(
+  logDetail(
     "    2. 若容器刚重建过，重跑本命令即可恢复免密通道（无需改 Windows 侧配置）"
   );
-  log.message(
+  logDetail(
     "    3. 新分配的隧道域名 DNS 传播约需 1 分钟，期间连接可能报 no such host"
   );
 }

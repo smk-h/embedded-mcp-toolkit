@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { Client } from "ssh2";
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { sshExec, sshReadText, sshWriteText } from "../../../shared/ssh.js";
 import { buildSshBridgeArgs } from "../../../shared/ssh-bridge.js";
@@ -87,7 +88,7 @@ export async function doMcpConfig(
     mkdirSync(templateDir, { recursive: true });
   }
   writeFileSync(templatePath, JSON.stringify(template, null, 2) + "\n", "utf8");
-  log.message(`    模板已生成: ${templatePath}`);
+  logDetail(`    模板已生成: ${templatePath}`);
 
   // 3. 容器用户级落点：<home>/.codebuddy/mcp.json（不带点，CodeBuddy IDE 读这个）
   const remoteDir = `${home}/${REMOTE_CONFIG_DIR_REL}`;
@@ -101,7 +102,7 @@ export async function doMcpConfig(
     try {
       json = JSON.parse(existing.content) as Record<string, unknown>;
     } catch (err) {
-      log.message(
+      logDetail(
         `    容器内 ${remotePath} 不是合法 JSON: ${err instanceof Error ? err.message : err}`
       );
       return null;
@@ -122,8 +123,8 @@ export async function doMcpConfig(
   json["mcpServers"] = servers;
 
   await sshWriteText(client, remotePath, JSON.stringify(json, null, 2) + "\n");
-  log.message(`    已写入: ${remotePath}`);
-  log.message(
+  logDetail(`    已写入: ${remotePath}`);
+  logDetail(
     `    server: ${SERVER_KEY} = ssh -i ~/.ssh/${REMOTE_KEY_NAME} ${endpoint.sshUser}@${TUNNEL_ENDPOINT} <bat>`
   );
 

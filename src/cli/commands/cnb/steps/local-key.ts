@@ -17,6 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { dirname, resolve } from "path";
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { runCmd } from "../../../shared/exec.js";
 import { appendAuthorizedKey } from "../../sshd-config/authorized-keys.js";
@@ -47,13 +48,13 @@ export async function doLocalKey(): Promise<LocalKeyResult | null> {
   const hasKeyPair = existsSync(keyPath) && existsSync(pubPath);
 
   if (hasKeyPair) {
-    log.message(`    复用已有密钥: ${keyPath}`);
+    logDetail(`    复用已有密钥: ${keyPath}`);
   } else {
     // 半残密钥对（仅私钥或仅公钥）会让 ssh-keygen 停在覆盖确认上，先清理
     if (existsSync(keyPath) || existsSync(pubPath)) {
       rmSync(keyPath, { force: true });
       rmSync(pubPath, { force: true });
-      log.message("    检测到不完整密钥对，已清理后重新生成");
+      logDetail("    检测到不完整密钥对，已清理后重新生成");
     }
 
     const keyDir = dirname(keyPath);
@@ -67,17 +68,17 @@ export async function doLocalKey(): Promise<LocalKeyResult | null> {
       120000
     );
     if (!generated.success || !existsSync(keyPath) || !existsSync(pubPath)) {
-      log.message(`    ssh-keygen 执行失败: ${generated.stderr || "未知错误"}`);
-      log.message("    请确认本机已安装 OpenSSH 客户端（ssh-keygen 可用）");
+      logDetail(`    ssh-keygen 执行失败: ${generated.stderr || "未知错误"}`);
+      logDetail("    请确认本机已安装 OpenSSH 客户端（ssh-keygen 可用）");
       return null;
     }
-    log.message(`    已生成私钥: ${keyPath}`);
+    logDetail(`    已生成私钥: ${keyPath}`);
   }
 
   // 公钥追加进本机 authorized_keys：容器持私钥即可免密登录本机
   const pubKey = readFileSync(pubPath, "utf8").trim();
   if (!pubKey) {
-    log.message(`    公钥内容为空: ${pubPath}`);
+    logDetail(`    公钥内容为空: ${pubPath}`);
     return null;
   }
   log.info("写入本机 authorized_keys ...");
