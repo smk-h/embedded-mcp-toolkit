@@ -364,11 +364,9 @@ cloudflaredCmd.action(() => {
  * @brief 远程 MCP 桥接配置命令
  * @details 与 sshd-config 对偶：从本机 SSH 登录远程 Linux 服务器，交互式地在远端
  *          配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接 server（ssh 转发到本机的
- *          remote-start-mcp.bat）。覆盖八类落点：Claude 全局（~/.claude.json）、
- *          Claude 项目（.mcp.json + settings.local.json）、CodeBuddy 全局（~/.codebuddy/mcp.json）、
- *          CodeBuddy 项目（与 Claude 项目级共用的 .mcp.json）、ZCode 项目（.zcode/config.json）、
- *          DSH 项目（.dsh/dshmm/mcp.json）、opencode 全局（~/.config/opencode/opencode.json）、
- *          opencode 项目（.opencode/opencode.json）。配置前先读取展示
+ *          remote-start-mcp.bat）。覆盖八类落点——Claude 全局/项目、CodeBuddy 全局/项目、
+ *          ZCode 项目、DSH 项目、opencode 全局/项目；各落点路径与 server 形态的权威定义
+ *          见 src/cli/commands/remote-mcp-config/targets.ts 的 CLIENTS 数据表。配置前先读取展示
  *          状态，支持配置/查看/删除。所有文件操作通过 SFTP 完成，远端无需预装 node。
  *
  * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。

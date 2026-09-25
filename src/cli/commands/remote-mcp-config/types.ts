@@ -3,16 +3,22 @@
  * Copyright © sumu. 2022-present. Tech. Co., Ltd. All rights reserved.
  * File name  : types.ts
  * Author     : sumu
- * Date       : 2026/07/30
+ * Date       : 2026/09/25
  * Version    : x.x.x
- * Description: remote-mcp-config 命令的类型、接口与常量定义
+ * Description: remote-mcp-config 命令的领域模型与常量
  *
- * 集中本命令目录内跨文件共享的类型、接口、菜单枚举与路径常量，作为类型层供各子文件引用。
+ * 领域模型按"写什么 → 往哪写 → 怎么改 → 现状如何"一条线组织：
+ *   - BridgeServer  （写什么）本次桥接定义，由 bridge.ts 构造，全命令唯一事实来源
+ *   - TargetFile    （往哪写）单个落点文件，判别联合：server 型写 server 对象、
+ *                   enable 型操作使能数组；全部客户端的落点数据集中在 targets.ts
+ *   - DesiredState  （怎么改）期望状态：写入 {present:true, bridge} 或移除
+ *                   {present:false}，配置与删除共用同一套应用逻辑（files.ts）
+ *   - StatusResult  （现状如何）单个落点当前与期望的比对结果（files.ts 判定）
  * ======================================================
  */
 
 // ============================================================
-// 类型与常量
+// 命令选项与菜单常量
 // ============================================================
 
 /**
@@ -43,6 +49,10 @@ export type MenuChoice =
   | typeof MENU_REMOVE
   | typeof MENU_EXIT;
 
+// ============================================================
+// 客户端与配置范围
+// ============================================================
+
 /**
  * @brief 客户端类型
  * @details claude / zcode / opencode / dsh / codebuddy。
@@ -51,15 +61,29 @@ export type MenuChoice =
  */
 export type McpClient = "claude" | "zcode" | "opencode" | "dsh" | "codebuddy";
 
-/** @brief Claude 配置范围 */
-export type ClaudeScope = "global" | "project";
+/** @brief 配置范围：global = 用户级文件（所有项目可用），project = 指定项目内文件 */
+export type Scope = "global" | "project";
+
+/**
+ * @brief 落点解析上下文
+ * @details 把 SSH 连接与终端交互收敛为落点解析需要的最小能力集，使 targets.ts 的
+ *          resolveTarget 不必依赖 ssh2 的 Client，从而可被测试用替身驱动（见 test/cli/）。
+ * @param getHome        取远端家目录绝对路径（global 落点用于展开 ~）
+ * @param askProjectPath 询问远端项目绝对路径；用户取消或输入为空时返回 null
+ */
+export interface ResolveCtx {
+  getHome(): Promise<string>;
+  askProjectPath(): Promise<string | null>;
+}
+
+// ============================================================
+// 写什么：桥接定义与期望状态
+// ============================================================
 
 /**
  * @brief SSH 桥接 server 对象的逻辑定义（与客户端写法无关）
  * @details 纯逻辑表达：command 固定为 ssh，args 为专用密钥 + <user>@<ip> + bat 路径。
- *          具体写入目标文件时的对象形态（command+args 分体 / command 数组、
- *          type/enabled/timeout 等客户端差异）由 TargetFile.serverStyle / serverType 决定，
- *          在 status.ts 的 renderServerObject 中按落点渲染。
+ *          具体写入目标文件时的对象形态由 ServerSlot.render 按落点渲染。
  */
 export interface BridgeServer {
   command: string;
@@ -67,41 +91,74 @@ export interface BridgeServer {
 }
 
 /**
- * @brief 配置落点描述符（配置驱动，核心抽象）
- * @details 一个 TargetFile 完整描述"在远端哪个文件、哪个 JSON 路径下、如何读写
- *          embedded-board"。各落点的所有差异都收敛为该结构的不同字段取值，
- *          读写逻辑对各落点完全通用。
- * @param remotePath       远端绝对路径
- * @param label            用户可见的落点描述（如 "Claude 全局"）
- * @param serverPath       server 容器的 JSON 路径（claude:["mcpServers"]，
- *                         zcode:["mcp","servers"]，opencode:["mcp"]）；
- *                         无 server 定义时留空（仅做使能数组操作的文件）
- * @param serverStyle      server 对象写法：split=command+args 分体（claude/zcode/dsh/codebuddy），
- *                         array=command 为数组（opencode）
- * @param serverType       带 type 时的 type 值（zcode/dsh 落点与 codebuddy 全局：
- *                         "stdio"、opencode:"local"）；无则不写 type——即 claude
- *                         两个落点，以及 codebuddy 项目级（它与 Claude 项目级共用
- *                         .mcp.json，形态必须逐字段一致，见 target.ts）
- * @param serverEnabled    是否随 type 一并写 enabled:true（zcode/opencode 需要；dsh 与
- *                         codebuddy 全局不需要，显式传 false 抑制）
- * @param cwd              server 的工作目录（仅 dsh）；该字段非必需，故按约定保留并置空
- *                         字符串，仅在字段存在时写入
- * @param rootSchema       顶层固定字段值（仅 opencode："$schema"）；写入时若缺失则补齐
- * @param enableArrayPath  使能数组的 JSON 路径（仅 claude 项目 settings.local.json）
- * @param enableValue      使能数组中追加/移除的值（"embedded-board"）
+ * @brief 对一个落点的期望状态（配置与删除的统一表达）
+ * @details 配置 = { present: true, bridge }（写入本次桥接定义）；
+ *          删除 = { present: false }（移除 embedded-board，不关心内容长什么样）。
+ *          判别联合保证"要写入就必须给出桥接定义"。
  */
-export interface TargetFile {
+export type DesiredState =
+  { present: true; bridge: BridgeServer } | { present: false };
+
+// ============================================================
+// 往哪写：落点文件（判别联合，只有两种合法形态）
+// ============================================================
+
+/**
+ * @brief server 写入槽（往哪写 + 怎么写）
+ * @details 把"server 容器在哪"与"server 对象长什么样"绑成一个不可分的整体：
+ *          形态差异（是否写 type / enabled / cwd，command 是字符串还是数组）由本槽自带
+ *          的 render / matches 决定。新增客户端若引入新形态，只需在 targets.ts 的
+ *          形态工厂里给出一份实现，无需改动读写通用逻辑。
+ * @param path    server 容器的 JSON 路径（claude:["mcpServers"]，
+ *                zcode:["mcp","servers"]，opencode:["mcp"]）
+ * @param render  渲染写入目标文件的 server 对象
+ * @param matches 判断文件中现有的 server 对象是否与桥接定义一致；一致性基准只比
+ *                command（+args），不比 type / enabled 等开关字段
+ */
+export interface ServerSlot {
+  path: string[];
+  render(bridge: BridgeServer): Record<string, unknown>;
+  matches(existing: Record<string, unknown>, bridge: BridgeServer): boolean;
+}
+
+/**
+ * @brief 使能数组槽（仅 Claude 项目的 settings.local.json 使用）
+ * @param path  使能数组的 JSON 路径（如 ["enabledMcpjsonServers"]）
+ * @param value 数组中追加/移除的值（"embedded-board"）
+ */
+export interface EnableSlot {
+  path: string[];
+  value: string;
+}
+
+/**
+ * @brief server 型落点：在 remotePath 里写一个 server 对象
+ * @param remotePath 远端绝对路径（targets.ts 的数据表中为含 ~ / {proj} 的模板）
+ * @param label      用户可见的落点描述（如 "Claude 全局"）
+ * @param slot       server 写入槽
+ * @param rootSchema 顶层固定字段值（仅 opencode："$schema"）；写入时若缺失则补齐
+ */
+export interface ServerTargetFile {
+  kind: "server";
   remotePath: string;
   label: string;
-  serverPath: string[];
-  serverStyle: "split" | "array";
-  serverType?: string;
-  serverEnabled?: boolean;
-  cwd?: string;
+  slot: ServerSlot;
   rootSchema?: string;
-  enableArrayPath?: string[];
-  enableValue?: string;
 }
+
+/**
+ * @brief enable 型落点：只操作 remotePath 里的使能数组，不写 server 对象
+ * @details 当前仅 Claude 项目的 .claude/settings.local.json（enabledMcpjsonServers）。
+ */
+export interface EnableTargetFile {
+  kind: "enable";
+  remotePath: string;
+  label: string;
+  enable: EnableSlot;
+}
+
+/** @brief 一个落点文件：server 型或 enable 型，二者必有其一且只有其一 */
+export type TargetFile = ServerTargetFile | EnableTargetFile;
 
 /**
  * @brief 一个配置目标（对应一次用户选择的 client + scope/路径）
@@ -113,8 +170,20 @@ export interface Target {
   files: TargetFile[];
 }
 
-/** @brief 状态判定结果 */
-export type ServerStatus = "absent" | "consistent" | "inconsistent" | "error";
+// ============================================================
+// 现状如何：状态判定结果
+// ============================================================
+
+/**
+ * @brief 单个落点的状态枚举
+ * @details absent   ：文件不存在，或其中没有 embedded-board
+ *          present  ：存在 embedded-board，但本次未提供桥接定义、不做一致性比对
+ *                    （删除场景只关心"是否已配置"）
+ *          consistent / inconsistent：提供了桥接定义且已完成比对
+ *          error    ：文件存在但 JSON 解析失败
+ */
+export type ServerStatus =
+  "absent" | "present" | "consistent" | "inconsistent" | "error";
 
 /**
  * @brief 单个落点的状态读取结果

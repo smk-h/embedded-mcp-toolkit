@@ -5,7 +5,7 @@
  * Author     : sumu
  * Date       : 2026/07/30
  * Version    : x.x.x
- * Description: C2. JSON 按 path 操作（纯函数，操作本地内存中的 JSON 对象）
+ * Description: JSON 按 path 操作（纯函数，操作本地内存中的 JSON 对象）
  *
  * 按 JSON 路径取/设/删嵌套对象与使能数组。全部为纯函数，入参为普通对象/数组，
  * 不依赖任何外部状态。
@@ -13,17 +13,19 @@
  */
 
 // ============================================================
-// C2. JSON 按 path 操作（纯函数，操作本地内存中的 JSON 对象）
+// JSON 按 path 操作（纯函数，操作本地内存中的 JSON 对象）
 // ============================================================
 
 /**
- * @brief 按 path 取嵌套对象
- * @details 沿 path 逐层取键；任一层缺失或非对象则返回 null。
+ * @brief 按 path 取嵌套容器对象（末层必须是普通对象，数组不算）
+ * @details 沿 path 逐层取键；任一层缺失或非对象（含数组）则返回 null。
+ *          与 getValueAtPath 的区别：本函数用于取"server 容器"这类对象层级，
+ *          末层若为数组视为无效；取数组叶子值请用 getValueAtPath。
  * @param obj  根对象
  * @param path JSON 路径（如 ["mcp","servers"]）
  * @returns path 指向的对象；不存在返回 null
  */
-export function getAtPath(
+export function getContainerAtPath(
   obj: Record<string, unknown>,
   path: string[]
 ): Record<string, unknown> | null {
@@ -51,10 +53,51 @@ export function getAtPath(
 }
 
 /**
+ * @brief 按 path 取数组；缺失或非数组则创建为空数组
+ * @details 用于"使能数组"的写入场景：沿 path 的中间层缺失则创建空对象，末层缺失
+ *          或不是数组则重建为空数组。删除场景勿用本函数（会把不存在的数组建出来），
+ *          应先用 getValueAtPath 探测。
+ * @param obj  根对象（会被原地修改）
+ * @param path 数组的 JSON 路径（如 ["enabledMcpjsonServers"]）
+ * @returns path 指向的数组（原地引用）
+ */
+export function ensureArrayAtPath(
+  obj: Record<string, unknown>,
+  path: string[]
+): unknown[] {
+  let current: Record<string, unknown> = obj;
+  // 中间层：缺失或非对象则创建空对象
+  for (let i = 0; i < path.length - 1; i++) {
+    const next = current[path[i]];
+    if (
+      next === null ||
+      next === undefined ||
+      typeof next !== "object" ||
+      Array.isArray(next)
+    ) {
+      const created: Record<string, unknown> = {};
+      current[path[i]] = created;
+      current = created;
+    } else {
+      current = next as Record<string, unknown>;
+    }
+  }
+  // 末层：缺失或非数组则创建空数组
+  const lastKey = path[path.length - 1];
+  const leaf = current[lastKey];
+  if (!Array.isArray(leaf)) {
+    const created: unknown[] = [];
+    current[lastKey] = created;
+    return created;
+  }
+  return leaf;
+}
+
+/**
  * @brief 按 path 取任意类型值（不排斥数组）
- * @details 与 getAtPath 的区别：本函数用于取"使能数组"这类叶子值，末层若是数组也
- *          原样返回（getAtPath 会把数组当无效对象返回 null）。中间层仍要求为普通
- *          对象（数组不能作为中间容器）。
+ * @details 与 getContainerAtPath 的区别：本函数用于取"使能数组"这类叶子值，末层若是
+ *          数组也原样返回（getContainerAtPath 会把数组当无效对象返回 null）。中间层
+ *          仍要求为普通对象（数组不能作为中间容器）。
  * @param obj  根对象
  * @param path JSON 路径（如 ["enabledMcpjsonServers"]）
  * @returns path 指向的值；中间层缺失或非对象返回 null
@@ -131,7 +174,7 @@ export function removeServerAtPath(
   path: string[],
   key: string
 ): boolean {
-  const container = getAtPath(obj, path);
+  const container = getContainerAtPath(obj, path);
   if (!container) return false;
   if (!(key in container)) return false;
   delete container[key];
