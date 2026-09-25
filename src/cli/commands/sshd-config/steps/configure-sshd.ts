@@ -12,6 +12,7 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import {
   SSHD_CONFIG_PATH,
@@ -53,11 +54,11 @@ export async function doConfigureSshd(): Promise<boolean> {
   log.info("检查 本地 id_mcp_server(linux) 是否已经存在 ...");
   const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   if (!existsSync(pubKeyPath)) {
-    log.message(`    未找到公钥文件: ${pubKeyPath}`);
-    log.message(`    请先执行 [${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
+    logDetail(`    未找到公钥文件: ${pubKeyPath}`);
+    logDetail(`    请先执行 [${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
     return false;
   }
-  log.message(`    已找到公钥文件: ${pubKeyPath}`);
+  logDetail(`    已找到公钥文件: ${pubKeyPath}`);
   const pubKey = readFileSync(pubKeyPath, "utf8").trim();
 
   // 2. 写入 authorized_keys（去重）
@@ -68,8 +69,8 @@ export async function doConfigureSshd(): Promise<boolean> {
   // 3. 读取 sshd_config 原始内容（不存在则提示先安装）
   const originalConfig = readSshdConfig();
   if (originalConfig === null) {
-    log.message(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
-    log.message(`    请先执行 [${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
+    logDetail(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
+    logDetail(`    请先执行 [${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
     return false;
   }
 
@@ -78,7 +79,7 @@ export async function doConfigureSshd(): Promise<boolean> {
 
   // 5. 修改并写回 sshd_config
   writeSshdConfig(modifySshdConfig(originalConfig));
-  log.message(
+  logDetail(
     "    sshd_config 已修改(PubkeyAuthentication yes / AuthorizedKeysFile / 禁用 administrators 分组)"
   );
 
@@ -89,30 +90,28 @@ export async function doConfigureSshd(): Promise<boolean> {
   const svcRegistered = await isSshdServiceRegistered();
 
   if (!svcRegistered) {
-    log.message("    sshd 服务未注册（可能以非服务方式运行），跳过自动重启");
-    log.message("    配置已写入，请手动重启 sshd 使其生效：");
-    log.message(
+    logDetail("    sshd 服务未注册（可能以非服务方式运行），跳过自动重启");
+    logDetail("    配置已写入，请手动重启 sshd 使其生效：");
+    logDetail(
       `      若 sshd 以服务方式运行：先执行 [${MENU_INSTALL_SSH}] 安装服务`
     );
-    log.message("      若 sshd 以进程方式运行：手动结束 sshd 进程后重新启动");
+    logDetail("      若 sshd 以进程方式运行：手动结束 sshd 进程后重新启动");
   } else {
-    log.message("    sshd 服务已注册");
+    logDetail("    sshd 服务已注册");
     log.info("重启 sshd 服务 ...");
     const restartResult = await runPowerShell("Restart-Service sshd -Force");
     if (!restartResult.success) {
-      log.message(`    重启 sshd 失败: ${restartResult.stderr || "未知错误"}`);
-      log.message("    正在回滚 sshd_config ...");
+      logDetail(`    重启 sshd 失败: ${restartResult.stderr || "未知错误"}`);
+      logDetail("    正在回滚 sshd_config ...");
       try {
         writeSshdConfig(originalConfig);
-        log.message("    sshd_config 已回滚");
+        logDetail("    sshd_config 已回滚");
       } catch (err) {
-        log.message(
-          `    回滚失败: ${err instanceof Error ? err.message : err}`
-        );
+        logDetail(`    回滚失败: ${err instanceof Error ? err.message : err}`);
       }
       return false;
     }
-    log.message("    sshd 服务已重启");
+    logDetail("    sshd 服务已重启");
   }
 
   // 7. 回显最终关键配置项
@@ -124,18 +123,18 @@ export async function doConfigureSshd(): Promise<boolean> {
     finalLines,
     /^\s*PubkeyAuthentication\s+/i
   );
-  log.message(`    PubkeyAuthentication: ${pubKeyLine ?? "(未设置)"}`);
+  logDetail(`    PubkeyAuthentication: ${pubKeyLine ?? "(未设置)"}`);
 
   const authKeysLine = findActiveConfigLine(
     finalLines,
     /^\s*AuthorizedKeysFile\s+/i
   );
-  log.message(`    AuthorizedKeysFile:   ${authKeysLine ?? "(未设置)"}`);
+  logDetail(`    AuthorizedKeysFile:   ${authKeysLine ?? "(未设置)"}`);
 
   const matchAdminLine = finalLines.find((l) =>
     /^#\s*Match\s+Group\s+administrators/i.test(l)
   );
-  log.message(
+  logDetail(
     `    Match Group admin:     ${matchAdminLine ? "已注释（禁用分组）" : "(未找到原始规则)"}`
   );
 

@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
-import { log } from "@clack/prompts";
+import { logDetail } from "../../shared/cli-helpers.js";
 
 import { PUBKEY_LINE_RE } from "./constants.js";
 
@@ -48,7 +48,7 @@ export function appendAuthorizedKey(pubKey: string): boolean {
   const sshDir = join(homedir(), ".ssh");
   if (!existsSync(sshDir)) {
     mkdirSync(sshDir, { recursive: true });
-    log.message(`    创建目录: ${sshDir}`);
+    logDetail(`    创建目录: ${sshDir}`);
   }
 
   const akPath = authorizedKeysPath();
@@ -61,7 +61,7 @@ export function appendAuthorizedKey(pubKey: string): boolean {
     .filter((l) => l);
 
   if (existingLines.includes(pubKey)) {
-    log.message("    公钥已存在于 authorized_keys, 跳过");
+    logDetail("    公钥已存在于 authorized_keys, 跳过");
     return false;
   }
 
@@ -71,7 +71,7 @@ export function appendAuthorizedKey(pubKey: string): boolean {
       ? existingContent
       : existingContent + "\n";
   writeFileSync(akPath, prefix + pubKey + "\n", "utf8");
-  log.message(`    公钥已写入: ${akPath}`);
+  logDetail(`    公钥已写入: ${akPath}`);
   return true;
 }
 
@@ -85,7 +85,7 @@ export function appendAuthorizedKey(pubKey: string): boolean {
 export function removeAuthorizedKey(pubKey: string): number {
   const akPath = authorizedKeysPath();
   if (!existsSync(akPath)) {
-    log.message("    authorized_keys 不存在，无需清理");
+    logDetail("    authorized_keys 不存在，无需清理");
     return 0;
   }
 
@@ -97,7 +97,7 @@ export function removeAuthorizedKey(pubKey: string): number {
   const removed = before - filtered.length;
 
   if (removed === 0) {
-    log.message("    authorized_keys 中未找到 MCP 公钥，无需清理");
+    logDetail("    authorized_keys 中未找到 MCP 公钥，无需清理");
     return 0;
   }
 
@@ -109,7 +109,7 @@ export function removeAuthorizedKey(pubKey: string): number {
     // 所有公钥都被移除，文件变空——保留空文件而非删除（避免权限丢失）
     writeFileSync(akPath, "", "utf8");
   }
-  log.message(`    已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
+  logDetail(`    已从 authorized_keys 移除 MCP 公钥（${removed} 条）`);
   return removed;
 }
 

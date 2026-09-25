@@ -10,6 +10,7 @@
  */
 
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { doInstallSsh } from "./install.js";
 import { doGenerateKey } from "./generate-key.js";
@@ -30,19 +31,19 @@ export async function doOneClickFlow(): Promise<boolean> {
   log.info("一键完成全流程 ...");
 
   if (!(await doInstallSsh())) {
-    log.message("    安装步骤未完成，中止流程");
+    logDetail("    安装步骤未完成，中止流程");
     return false;
   }
   if (!(await doGenerateKey())) {
-    log.message("    生成密钥步骤未完成，中止流程");
+    logDetail("    生成密钥步骤未完成，中止流程");
     return false;
   }
   if (!(await doConfigureSshd())) {
-    log.message("    配置 sshd 步骤未完成，中止流程");
+    logDetail("    配置 sshd 步骤未完成，中止流程");
     return false;
   }
   if (!(await doGenerateTemplate())) {
-    log.message("    生成模板步骤未完成，中止流程");
+    logDetail("    生成模板步骤未完成，中止流程");
     return false;
   }
 

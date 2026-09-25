@@ -17,7 +17,7 @@
  */
 
 import { existsSync } from "fs";
-import { log } from "@clack/prompts";
+import { logDetail } from "../../shared/cli-helpers.js";
 
 import { type OpenSshInstallInfo } from "./types.js";
 import {
@@ -91,7 +91,7 @@ export function findSshdExe(): string | null {
  * @returns 安装方式信息（method / methodLabel / exePath / detail）
  */
 export async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> {
-  log.message("    正在检测安装方式...");
+  logDetail("    正在检测安装方式...");
   // 信号 C：文件探测（同步，先拿到 exe 路径供后续填充）
   const exePath = findSshdExe();
 
@@ -156,7 +156,7 @@ export async function detectOpenSshInstallMethod(): Promise<OpenSshInstallInfo> 
   // —— 信号 A：Capability State（慢，仅在 B、C 都无法判定时才调用） ——
   //   Get-WindowsCapability -Online 要扫描 CBS 组件存储，某些机器上需要数十秒。
   //   给独立较短超时（30 秒），避免默认的 5 分钟卡死。
-  log.message("    进一步查询 Capability 状态（可能需要数秒）...");
+  logDetail("    进一步查询 Capability 状态（可能需要数秒）...");
   let capabilityInstalled = false;
   const capResult = await runPowerShell(
     `Get-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME} | Select-Object -ExpandProperty State`,

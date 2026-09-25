@@ -13,6 +13,7 @@ import { existsSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { Client } from "ssh2";
 import { text, password, confirm, isCancel, log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { LOCAL_PUBKEY_REL } from "../constants.js";
 import {
@@ -46,18 +47,18 @@ export async function doGenerateKey(): Promise<boolean> {
     placeholder: "user@host[:port],host 可为 IP 或主机别名，如 sumu@1.1.1.1:22",
   });
   if (isCancel(addressRaw)) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return false;
   }
   const addressInput = addressRaw.trim();
   if (!addressInput) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return false;
   }
 
   const parsed = parseServerAddress(addressInput);
   if (!parsed) {
-    log.message(
+    logDetail(
       "    地址格式错误，应为 user@host[:port]（如 root@1.2.3.4 或 root@1.2.3.4:2222）"
     );
     return false;
@@ -67,7 +68,7 @@ export async function doGenerateKey(): Promise<boolean> {
     message: "登录密码",
   });
   if (isCancel(pwdRaw)) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return false;
   }
 
@@ -78,9 +79,9 @@ export async function doGenerateKey(): Promise<boolean> {
   try {
     log.info(`连接 ${info.username}@${info.host}:${info.port} ...`);
     client = await sshConnect(info);
-    log.message("    SSH 连接成功");
+    logDetail("    SSH 连接成功");
   } catch (err) {
-    log.message(
+    logDetail(
       `    无法连接编译服务器: ${err instanceof Error ? err.message : err}`
     );
     return false;
@@ -95,9 +96,9 @@ export async function doGenerateKey(): Promise<boolean> {
     );
     const remoteHome = await sshExec(client, "eval echo ~$USER");
     log.info("连接目标信息");
-    log.message(`    当前用户: ${remoteUser || "(unknown)"}`);
-    log.message(`    主机 IP: ${remoteIp || "(unknown)"}`);
-    log.message(`    家目录: ${remoteHome || "(unknown)"}`);
+    logDetail(`    当前用户: ${remoteUser || "(unknown)"}`);
+    logDetail(`    主机 IP: ${remoteIp || "(unknown)"}`);
+    logDetail(`    家目录: ${remoteHome || "(unknown)"}`);
 
     // 检测远端 sshd 是否运行
     const sshdCheck = await sshExec(
@@ -105,17 +106,17 @@ export async function doGenerateKey(): Promise<boolean> {
       "systemctl status sshd 2>/dev/null || service ssh status 2>/dev/null || echo NO_SSHD"
     );
     if (sshdCheck.includes("NO_SSHD")) {
-      log.message("    远端 sshd 未运行");
-      log.message("    请在编译服务器上安装并启动 sshd: ");
-      log.message(
+      logDetail("    远端 sshd 未运行");
+      logDetail("    请在编译服务器上安装并启动 sshd: ");
+      logDetail(
         "        Debian/Ubuntu: sudo apt install openssh-server && sudo systemctl start sshd"
       );
-      log.message(
+      logDetail(
         "        RHEL/CentOS:   sudo dnf install openssh-server && sudo systemctl start sshd"
       );
       return false;
     }
-    log.message("    远端 sshd 运行正常");
+    logDetail("    远端 sshd 运行正常");
 
     // 检测密钥是否已存在（专用密钥名 id_mcp_server，避免覆盖用户通用密钥）
     // 注意：必须精确匹配 "EXISTS"，不能用 includes——"NOT_EXISTS" 也包含子串 "EXISTS"
@@ -131,12 +132,12 @@ export async function doGenerateKey(): Promise<boolean> {
         initialValue: false,
       });
       if (isCancel(overwrite) || !overwrite) {
-        log.message("    已取消，保留原密钥");
+        logDetail("    已取消，保留原密钥");
         return false;
       }
       // 先删除旧密钥文件，避免 ssh-keygen 触发交互式 "Overwrite (y/n)?" 确认
       // sshExec 基于 exec 通道，无法向远端 stdin 写入回应，ssh-keygen 会死等输入导致卡死
-      log.message("    删除旧密钥文件 ...");
+      logDetail("    删除旧密钥文件 ...");
       await sshExec(
         client,
         "rm -f ~/.ssh/id_mcp_server ~/.ssh/id_mcp_server.pub"
@@ -149,14 +150,14 @@ export async function doGenerateKey(): Promise<boolean> {
       client,
       'ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_mcp_server'
     );
-    log.message("    密钥对生成成功");
+    logDetail("    密钥对生成成功");
 
     // 列出 ~/.ssh 目录所有文件，供用户确认密钥已正确生成
     const sshListing = await sshExec(client, "ls -la ~/.ssh 2>/dev/null");
     log.info("~/.ssh 目录内容");
     for (const line of sshListing.split("\n")) {
       if (line.trim()) {
-        log.message(`    ${line}`);
+        logDetail(`    ${line}`);
       }
     }
 
@@ -174,11 +175,11 @@ export async function doGenerateKey(): Promise<boolean> {
     // SFTP 下载公钥
     log.info("拉取公钥到本地 ...");
     await sshDownload(client, pubPathRemote, localPubPath);
-    log.message(`    公钥已保存: ${localPubPath}`);
+    logDetail(`    公钥已保存: ${localPubPath}`);
     log.success("密钥对生成完成");
     return true;
   } catch (err) {
-    log.message(`    操作失败: ${err instanceof Error ? err.message : err}`);
+    logDetail(`    操作失败: ${err instanceof Error ? err.message : err}`);
     return false;
   } finally {
     sshDisconnect(client);

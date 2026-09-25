@@ -12,6 +12,7 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { confirm, isCancel, log, multiselect } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import { LOCAL_PUBKEY_REL } from "../constants.js";
 import {
@@ -43,11 +44,11 @@ export async function doCleanKeys(): Promise<boolean> {
   const akPath = authorizedKeysPath();
   const entries = readAuthorizedKeyEntries();
   if (entries.length === 0) {
-    log.message(`    ${akPath} 不存在或没有任何公钥，无需清理`);
+    logDetail(`    ${akPath} 不存在或没有任何公钥，无需清理`);
     return false;
   }
-  log.message(`    文件: ${akPath}`);
-  log.message(`    共 ${entries.length} 条公钥`);
+  logDetail(`    文件: ${akPath}`);
+  logDetail(`    共 ${entries.length} 条公钥`);
 
   // 当前生效公钥（.embedded/ssh/id_mcp_server.pub）：一致条目标记，删除前额外警告
   const activePubPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
@@ -69,7 +70,7 @@ export async function doCleanKeys(): Promise<boolean> {
     })),
   });
   if (isCancel(selected) || selected.length === 0) {
-    log.message("    未选择任何条目，已取消");
+    logDetail("    未选择任何条目，已取消");
     return false;
   }
 
@@ -85,7 +86,7 @@ export async function doCleanKeys(): Promise<boolean> {
     initialValue: false,
   });
   if (isCancel(confirmed) || !confirmed) {
-    log.message("    已取消");
+    logDetail("    已取消");
     return false;
   }
 
@@ -94,10 +95,12 @@ export async function doCleanKeys(): Promise<boolean> {
     selectedEntries.map((e) => e.line)
   );
   if (removed === 0) {
-    log.message("    未匹配到待删除条目（文件可能已被外部修改）");
+    logDetail("    未匹配到待删除条目（文件可能已被外部修改）");
     return false;
   }
-  log.message(`    已删除 ${removed} 条公钥，剩余 ${entries.length - removed} 条`);
+  logDetail(
+    `    已删除 ${removed} 条公钥，剩余 ${entries.length - removed} 条`
+  );
   log.success("authorized_keys 清理完成");
   return true;
 }

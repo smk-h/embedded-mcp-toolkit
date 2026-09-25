@@ -19,7 +19,10 @@ import {
   MENU_GENERATE_KEY,
   MENU_CONFIG_SSHD,
 } from "../constants.js";
-import { collectConnectionInfo } from "../../../shared/cli-helpers.js";
+import {
+  collectConnectionInfo,
+  logDetail,
+} from "../../../shared/cli-helpers.js";
 import { buildSshBridgeArgs } from "../../../shared/ssh-bridge.js";
 
 // ============================================================
@@ -43,8 +46,8 @@ export async function doGenerateTemplate(): Promise<boolean> {
   const { sshUser, ipList } = collectConnectionInfo();
 
   if (ipList.length === 0) {
-    log.message("    未检测到可用的 IPv4 地址，无法生成模板");
-    log.message("    请确认网络连接正常后重试");
+    logDetail("    未检测到可用的 IPv4 地址，无法生成模板");
+    logDetail("    请确认网络连接正常后重试");
     return false;
   }
 
@@ -84,34 +87,34 @@ export async function doGenerateTemplate(): Promise<boolean> {
 
   // 生成结果
   log.info("Windows 用户名和IP地址");
-  log.message(`    Windows 用户名: ${sshUser}`);
-  log.message(`    模板默认 IP:   ${primaryIp}`);
+  logDetail(`    Windows 用户名: ${sshUser}`);
+  logDetail(`    模板默认 IP:   ${primaryIp}`);
   if (ipList.length > 1) {
-    log.message("    其它可用 IP:");
+    logDetail("    其它可用 IP:");
     for (const entry of ipList.slice(1)) {
-      log.message(`      ${entry.ip}（${entry.iface}）`);
+      logDetail(`      ${entry.ip}（${entry.iface}）`);
     }
   }
   log.success(`模板已生成: ${templatePath}`);
 
   // 使用步骤
   log.info("使用步骤");
-  log.message(
+  logDetail(
     `    1. 将 ${templatePath} 复制到 Linux 项目根目录并重命名为 .mcp.json`
   );
-  log.message("    2. 按需修改以下内容：");
-  log.message(
+  logDetail("    2. 按需修改以下内容：");
+  logDetail(
     `       - ssh 连接的 IP（当前为 ${primaryIp}，若不通换用其它候选 IP）`
   );
-  log.message(`       - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`);
-  log.message("    3. 在 Linux 端重启 Claude Code 使配置生效");
-  log.message(
+  logDetail(`       - remote-start-mcp.bat 的绝对路径（当前为 ${batPath}）`);
+  logDetail("    3. 在 Linux 端重启 Claude Code 使配置生效");
+  logDetail(
     "    注意: MCP 客户端首次连接 Windows 会触发主机密钥确认，需先在 Linux 端手动执行一次 ssh 连接并输入 yes 完成信任，之后客户端即可自动免密连接"
   );
-  log.message(
+  logDetail(
     `    前置条件：已依次执行 [${MENU_INSTALL_SSH}] 安装 → [${MENU_GENERATE_KEY}] 生成密钥 → [${MENU_CONFIG_SSHD}] 配置 sshd`
   );
-  log.message("    否则 ssh 连接会失败（密码提示 / 连接拒绝）");
+  logDetail("    否则 ssh 连接会失败（密码提示 / 连接拒绝）");
 
   // 模板内容预览（box 包裹，标题作为独立节点）
   log.info("模板内容如下");

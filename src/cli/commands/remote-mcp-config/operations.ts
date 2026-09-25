@@ -37,6 +37,7 @@ import {
   type ClientSpec,
 } from "./targets.js";
 import { buildBridgeServer, collectWindowsEndpoint } from "./bridge.js";
+import { logDetail } from "../../shared/cli-helpers.js";
 import { sshExec } from "../../shared/ssh.js";
 
 // ============================================================
@@ -160,17 +161,6 @@ export async function askTarget(client: Client): Promise<Target | null> {
 /** @brief 统一的错误消息文本 */
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * @brief 紧凑明细行输出
- * @details clack 的 log.message 默认 spacing:1，每次调用都会在内容行前垫一条
- *          空的引导竖线行，逐行输出明细时表现为行间宽间距。本函数统一以
- *          spacing:0 输出，明细行之间不再垫空行；区段标题仍用 log.info /
- *          log.success，保留默认间距作视觉分隔。
- */
-function logDetail(text: string): void {
-  log.message(text, { spacing: 0 });
 }
 
 /** @brief 压缩展示现有 server 对象的关键字段（command + args） */

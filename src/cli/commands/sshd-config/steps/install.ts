@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { select, isCancel, log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import {
   OPENSSH_CAPABILITY_NAME,
@@ -46,7 +47,7 @@ export async function doInstallSsh(): Promise<boolean> {
   // 安装检测：服务注册 / exe 文件 / Capability 三信号交叉判定（统一探测入口）
   const installInfo = await detectOpenSshInstallMethod();
   if (installInfo.method !== "unknown") {
-    log.message(
+    logDetail(
       `    OpenSSH Server 已安装(${installInfo.methodLabel})，跳过安装`
     );
     return ensureSshdReady();
@@ -72,7 +73,7 @@ export async function doInstallSsh(): Promise<boolean> {
   });
   // Ctrl+C 取消：直接返回主菜单
   if (isCancel(methodChoiceRaw)) {
-    log.message("    已取消安装方式选择");
+    logDetail("    已取消安装方式选择");
     return false;
   }
   const methodChoice = methodChoiceRaw;
@@ -83,17 +84,17 @@ export async function doInstallSsh(): Promise<boolean> {
 
   if (methodChoice === "2") {
     // ===== 在线安装分支 =====
-    log.message("    在线安装 (Add-WindowsCapability)...");
-    log.message("    依赖 Windows Update, 网络不佳时可能长时间卡住");
+    logDetail("    在线安装 (Add-WindowsCapability)...");
+    logDetail("    依赖 Windows Update, 网络不佳时可能长时间卡住");
     const installOnline = await runPowerShell(
       `Add-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME}`
     );
     if (!installOnline.success) {
       log.error(`    在线安装失败: ${installOnline.stderr || "未知错误"}`);
-      log.message("     可重新运行本项改选 MSI 离线安装");
+      logDetail("     可重新运行本项改选 MSI 离线安装");
       return false;
     }
-    log.message("在线安装成功");
+    logDetail("在线安装成功");
   } else {
     // ===== MSI 离线安装分支（默认）=====
     // 确保下载目录存在
@@ -104,14 +105,14 @@ export async function doInstallSsh(): Promise<boolean> {
     try {
       // 本地已存在 MSI 包则跳过下载
       if (existsSync(msiPath)) {
-        log.message(`    已存在 MSI 安装包，跳过下载: ${msiPath}`);
+        logDetail(`    已存在 MSI 安装包，跳过下载: ${msiPath}`);
       } else {
-        log.message(`    下载 MSI 安装包: ${OPENSSH_MSI_URL}`);
+        logDetail(`    下载 MSI 安装包: ${OPENSSH_MSI_URL}`);
         await downloadFile(OPENSSH_MSI_URL, msiPath);
-        log.message(`    下载完成: ${msiPath}`);
+        logDetail(`    下载完成: ${msiPath}`);
       }
 
-      log.message("    执行 MSI 静默安装...");
+      logDetail("    执行 MSI 静默安装...");
       const installMsi = await runCmd("msiexec", [
         "/i",
         msiPath,
@@ -119,12 +120,12 @@ export async function doInstallSsh(): Promise<boolean> {
         "/norestart",
       ]);
       if (!installMsi.success) {
-        log.message(`    MSI 安装失败: ${installMsi.stderr || "未知错误"}`);
+        logDetail(`    MSI 安装失败: ${installMsi.stderr || "未知错误"}`);
         return false;
       }
-      log.message("    MSI 安装成功");
+      logDetail("    MSI 安装成功");
     } catch (err) {
-      log.message(
+      logDetail(
         `    MSI 下载/安装失败: ${err instanceof Error ? err.message : err}`
       );
       return false;
@@ -149,13 +150,13 @@ async function ensureSshdReady(): Promise<boolean> {
   }
 
   // 启动 sshd 服务
-  log.message("    正在启动 sshd 服务...");
+  logDetail("    正在启动 sshd 服务...");
   const startResult = await runPowerShell("Start-Service sshd");
   if (!startResult.success) {
-    log.message(`    启动 sshd 失败: ${startResult.stderr || "未知错误"}`);
+    logDetail(`    启动 sshd 失败: ${startResult.stderr || "未知错误"}`);
     return false;
   }
-  log.message("    sshd 服务已启动");
+  logDetail("    sshd 服务已启动");
 
   // 设为开机自启
   log.info("设置 sshd 开机自启 ...");
@@ -163,10 +164,10 @@ async function ensureSshdReady(): Promise<boolean> {
     "Set-Service -Name sshd -StartupType Automatic"
   );
   if (!autoResult.success) {
-    log.message(`    设置自启失败: ${autoResult.stderr || "未知错误"}`);
+    logDetail(`    设置自启失败: ${autoResult.stderr || "未知错误"}`);
     return false;
   }
-  log.message("    sshd 已设为开机自启");
+  logDetail("    sshd 已设为开机自启");
   log.success("Windows SSH 服务安装完成");
   return true;
 }

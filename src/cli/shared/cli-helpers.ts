@@ -17,6 +17,7 @@
 
 import { userInfo, networkInterfaces } from "os";
 import { createInterface } from "readline";
+import { log } from "@clack/prompts";
 
 // ============================================================
 // 类型
@@ -136,6 +137,16 @@ export function clearScreen(): void {
   if (process.stdout.isTTY) {
     process.stdout.write("\x1Bc");
   }
+}
+
+/**
+ * @brief 紧凑明细行输出（clack log.message 的 spacing:0 版本）
+ * @details clack 的 log.message 默认 spacing:1，每次调用都会在内容行前垫一条
+ *          空的引导竖线行，逐行输出明细时表现为行间宽间距。逐行明细统一用本函数
+ *          输出；区段标题仍用 log.info / log.success，保留默认间距作视觉分隔。
+ */
+export function logDetail(text: string): void {
+  log.message(text, { spacing: 0 });
 }
 
 /**

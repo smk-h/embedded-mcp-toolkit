@@ -23,7 +23,7 @@ import {
   copyFileSync,
   unlinkSync,
 } from "fs";
-import { log } from "@clack/prompts";
+import { logDetail } from "../../shared/cli-helpers.js";
 
 import { SSHD_CONFIG_PATH } from "./constants.js";
 
@@ -138,11 +138,11 @@ export function modifySshdConfig(content: string): string {
 export function backupSshdConfig(): boolean {
   const bakPath = SSHD_CONFIG_PATH + ".bak";
   if (existsSync(bakPath)) {
-    log.message(`    备份已存在，保留首次备份: ${bakPath}`);
+    logDetail(`    备份已存在，保留首次备份: ${bakPath}`);
     return false;
   }
   copyFileSync(SSHD_CONFIG_PATH, bakPath);
-  log.message(`    已备份: ${bakPath}`);
+  logDetail(`    已备份: ${bakPath}`);
   return true;
 }
 
@@ -154,23 +154,23 @@ export function backupSshdConfig(): boolean {
  */
 export function restoreSshdConfigFromBackup(): void {
   if (!existsSync(SSHD_CONFIG_PATH)) {
-    log.message("    sshd_config 不存在，跳过恢复");
+    logDetail("    sshd_config 不存在，跳过恢复");
     return;
   }
   const bakPath = SSHD_CONFIG_PATH + ".bak";
   if (!existsSync(bakPath)) {
-    log.message("    未找到 sshd_config.bak 备份，跳过恢复");
+    logDetail("    未找到 sshd_config.bak 备份，跳过恢复");
     return;
   }
   try {
     copyFileSync(bakPath, SSHD_CONFIG_PATH);
     unlinkSync(bakPath);
-    log.message("    sshd_config 已从备份恢复（.bak 已删除）");
+    logDetail("    sshd_config 已从备份恢复（.bak 已删除）");
   } catch (err) {
-    log.message(
+    logDetail(
       `    [err] 恢复 sshd_config 失败: ${err instanceof Error ? err.message : err}`
     );
-    log.message("    [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
+    logDetail("    [info] 可手动执行: copy /Y sshd_config.bak sshd_config");
   }
 }
 

@@ -16,7 +16,10 @@ import {
   MENU_GENERATE_KEY,
   MENU_CONFIG_SSHD,
 } from "../constants.js";
-import { collectConnectionInfo } from "../../../shared/cli-helpers.js";
+import {
+  collectConnectionInfo,
+  logDetail,
+} from "../../../shared/cli-helpers.js";
 
 // ============================================================
 // 菜单 [7]: 查看本机连接信息
@@ -40,15 +43,15 @@ export async function doShowConnectionInfo(): Promise<void> {
 
   // (a) 用户名
   log.info("Windows 用户名");
-  log.message(`当前登录用户名: ${sshUser}(用于 Linux 端 ssh 登录)`);
+  logDetail(`当前登录用户名: ${sshUser}(用于 Linux 端 ssh 登录)`);
 
   // (b) IPv4 地址列表
   log.info("本机 IPv4 地址");
   if (ipList.length === 0) {
-    log.message("    未检测到可用的 IPv4 地址");
+    logDetail("    未检测到可用的 IPv4 地址");
   } else {
     for (const entry of ipList) {
-      log.message(`    ${entry.ip}(${entry.iface})`);
+      logDetail(`    ${entry.ip}(${entry.iface})`);
     }
   }
 
@@ -56,19 +59,17 @@ export async function doShowConnectionInfo(): Promise<void> {
   log.info("Linux 端连接本机命令(免密登录)示例");
   const keyPath = "~/.ssh/id_mcp_server";
   if (ipList.length === 0) {
-    log.message(`    ssh -i ${keyPath} ${sshUser}@<Windows_IP>`);
+    logDetail(`    ssh -i ${keyPath} ${sshUser}@<Windows_IP>`);
   } else {
     for (const entry of ipList) {
-      log.message(
-        `    ssh -i ${keyPath} ${sshUser}@${entry.ip}(${entry.iface})`
-      );
+      logDetail(`    ssh -i ${keyPath} ${sshUser}@${entry.ip}(${entry.iface})`);
     }
   }
   log.success("以上信息可直接在 Linux 端使用，确保已生成专用密钥并配置 sshd");
-  log.message(
+  logDetail(
     "    首次连接会提示主机密钥确认(Are you sure you want to continue connecting?)，输入 yes 即可，之后不再询问"
   );
-  log.message(
+  logDetail(
     `    确保已依次执行 [${MENU_INSTALL_SSH}] 安装 → [${MENU_GENERATE_KEY}] 生成密钥 → [${MENU_CONFIG_SSHD}] 配置 sshd, 连接才能免密成功`
   );
 }

@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import { homedir } from "os";
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import {
   SSHD_CONFIG_PATH,
@@ -51,7 +52,7 @@ export async function doCheckStatus(): Promise<void> {
     "$s = Get-Service sshd -ErrorAction SilentlyContinue; if ($s) { '{0}|{1}' -f $s.Status, $s.StartType } else { 'NOT_INSTALLED' }"
   );
   if (!svcResult.success || svcResult.stdout === "NOT_INSTALLED") {
-    log.message("    sshd 服务未安装");
+    logDetail("    sshd 服务未安装");
     issues.push(`[${MENU_INSTALL_SSH}] 安装 Windows SSH 服务`);
   } else {
     const parts = svcResult.stdout.split("|");
@@ -59,8 +60,8 @@ export async function doCheckStatus(): Promise<void> {
     const startType = parts[1]?.trim() ?? "Unknown";
     const isRunning = status === "Running";
     const isAuto = startType === "Automatic";
-    log.message(`    状态: ${status}`);
-    log.message(`    启动类型: ${startType}`);
+    logDetail(`    状态: ${status}`);
+    logDetail(`    启动类型: ${startType}`);
     if (!isRunning) {
       issues.push(`启动 sshd 服务（或重新执行 [${MENU_INSTALL_SSH}]）`);
     }
@@ -71,14 +72,12 @@ export async function doCheckStatus(): Promise<void> {
 
   // (a.2) 安装方式（MSI / Capability / 未知）
   const installInfo = await detectOpenSshInstallMethod();
-  log.message(
-    `    安装方式: ${installInfo.methodLabel}(${installInfo.detail})`
-  );
+  logDetail(`    安装方式: ${installInfo.methodLabel}(${installInfo.detail})`);
 
   // (b) sshd_config 关键项
   log.info("sshd_config 关键项");
   if (!existsSync(SSHD_CONFIG_PATH)) {
-    log.message(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
+    logDetail(`    未找到 sshd_config: ${SSHD_CONFIG_PATH}`);
     issues.push(
       `[${MENU_INSTALL_SSH}] 安装 Windows SSH 服务(生成 sshd_config)`
     );
@@ -92,7 +91,7 @@ export async function doCheckStatus(): Promise<void> {
       /^\s*PubkeyAuthentication\s+/i
     );
     const pubKeyOk = pubKeyLine && /yes/i.test(pubKeyLine.trim());
-    log.message(
+    logDetail(
       `    PubkeyAuthentication: ${pubKeyLine?.trim() ?? "(未设置，需为 yes)"}`
     );
     if (!pubKeyOk)
@@ -105,9 +104,7 @@ export async function doCheckStatus(): Promise<void> {
     );
     const authKeysOk =
       authKeysLine && authKeysLine.includes(".ssh/authorized_keys");
-    log.message(
-      `    AuthorizedKeysFile: ${authKeysLine?.trim() ?? "(未设置)"}`
-    );
+    logDetail(`    AuthorizedKeysFile: ${authKeysLine?.trim() ?? "(未设置)"}`);
     if (!authKeysOk)
       issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (AuthorizedKeysFile)`);
 
@@ -117,7 +114,7 @@ export async function doCheckStatus(): Promise<void> {
       /^\s*Match\s+Group\s+administrators/i
     );
     const matchAdminOk = !matchAdminLine;
-    log.message(
+    logDetail(
       `    Match Group administrators: ${matchAdminOk ? "已禁用" : "仍激活（" + matchAdminLine.trim() + "）"}`
     );
     if (!matchAdminOk)
@@ -128,8 +125,8 @@ export async function doCheckStatus(): Promise<void> {
   log.info("authorized_keys 状态");
   const akPath = join(homedir(), ".ssh", "authorized_keys");
   if (!existsSync(akPath)) {
-    log.message(`    不存在: ${akPath}`);
-    log.message("    公钥条数: 0");
+    logDetail(`    不存在: ${akPath}`);
+    logDetail("    公钥条数: 0");
     issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (写入 authorized_keys)`);
   } else {
     const akContent = readFileSync(akPath, "utf8");
@@ -137,8 +134,8 @@ export async function doCheckStatus(): Promise<void> {
       .split(/\r?\n/)
       .filter((l) => PUBKEY_LINE_RE.test(l)).length;
     const hasKeys = keyCount > 0;
-    log.message(`    路径: ${akPath}`);
-    log.message(`    公钥条数: ${keyCount}`);
+    logDetail(`    路径: ${akPath}`);
+    logDetail(`    公钥条数: ${keyCount}`);
     if (!hasKeys)
       issues.push(`[${MENU_CONFIG_SSHD}] 配置 sshd (authorized_keys 为空)`);
   }
@@ -147,18 +144,18 @@ export async function doCheckStatus(): Promise<void> {
   log.info("本地公钥状态");
   const localPubPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   const pubExists = existsSync(localPubPath);
-  log.message(`    ${pubExists ? "存在" : "不存在"}: ${localPubPath}`);
+  logDetail(`    ${pubExists ? "存在" : "不存在"}: ${localPubPath}`);
   if (!pubExists) issues.push(`[${MENU_GENERATE_KEY}] 编译服务器生成密钥对`);
 
   // 汇总结论
   if (issues.length === 0) {
     log.success("配置就绪，可尝试从 Linux 免密登录");
   } else {
-    log.message(`    存在 ${issues.length} 项异常，建议依次执行：`);
+    logDetail(`    存在 ${issues.length} 项异常，建议依次执行：`);
     // 去重（同一菜单项可能被多次建议）
     const unique = Array.from(new Set(issues));
     for (const item of unique) {
-      log.message(`    ${item}`);
+      logDetail(`    ${item}`);
     }
   }
 }

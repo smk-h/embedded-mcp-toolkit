@@ -12,6 +12,7 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { log } from "@clack/prompts";
+import { logDetail } from "../../../shared/cli-helpers.js";
 
 import {
   LOCAL_PUBKEY_REL,
@@ -43,15 +44,15 @@ import { prompt } from "../../../shared/cli-helpers.js";
  * @returns 打开失败时返回 false（已打印错误提示）
  */
 async function openAppwizAndAwait(): Promise<boolean> {
-  log.message('    正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
+  logDetail('    正在打开"程序和功能"，请在窗口中找到 OpenSSH 手动卸载...');
   const openResult = await runCmd("cmd", ["/c", "start", "", "appwiz.cpl"]);
   if (!openResult.success) {
-    log.message(`    打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`);
-    log.message('    可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
+    logDetail(`    打开"程序和功能"失败: ${openResult.stderr || "未知错误"}`);
+    logDetail('    可手动运行 appwiz.cpl 或通过"设置 > 应用"卸载');
     return false;
   }
-  log.message('    已打开"程序和功能"，请在窗口中卸载 OpenSSH');
-  log.message("    卸载完成后按回车继续...");
+  logDetail('    已打开"程序和功能"，请在窗口中卸载 OpenSSH');
+  logDetail("    卸载完成后按回车继续...");
   await prompt("  ");
   return true;
 }
@@ -86,10 +87,10 @@ export async function doUninstallSsh(): Promise<void> {
   log.info("检测安装方式 ...");
   const info = await detectOpenSshInstallMethod();
   if (info.method === "unknown" && info.exePath === null) {
-    log.message("    未检测到 OpenSSH 安装，无需卸载");
+    logDetail("    未检测到 OpenSSH 安装，无需卸载");
     return;
   }
-  log.message(`    检测到安装方式: ${info.methodLabel}(${info.detail})`);
+  logDetail(`    检测到安装方式: ${info.methodLabel}(${info.detail})`);
 
   // ===== 步骤 0：先停止 sshd 服务（后续卸载/删文件时避免被运行中进程占用） =====
   if (await isSshdServiceRegistered()) {
@@ -98,13 +99,13 @@ export async function doUninstallSsh(): Promise<void> {
       "Stop-Service sshd -Force -ErrorAction SilentlyContinue"
     );
     if (stopResult.success) {
-      log.message("    sshd 服务已停止");
+      logDetail("    sshd 服务已停止");
     } else {
       // 停止失败不阻断后续流程（服务可能已是停止状态或权限受限）
-      log.message("    停止 sshd 服务失败（可能已停止），继续后续步骤");
+      logDetail("    停止 sshd 服务失败（可能已停止），继续后续步骤");
     }
   } else {
-    log.message("    sshd 服务未注册，跳过停止");
+    logDetail("    sshd 服务未注册，跳过停止");
   }
 
   // ===== 步骤 1：按安装方式卸载 OpenSSH =====
@@ -115,11 +116,11 @@ export async function doUninstallSsh(): Promise<void> {
       `Remove-WindowsCapability -Online -Name ${OPENSSH_CAPABILITY_NAME}`
     );
     if (!capResult.success) {
-      log.message(`    Capability 卸载失败: ${capResult.stderr || "未知错误"}`);
-      log.message('    请打开"程序和功能"手动卸载');
+      logDetail(`    Capability 卸载失败: ${capResult.stderr || "未知错误"}`);
+      logDetail('    请打开"程序和功能"手动卸载');
       await openAppwizAndAwait();
     } else {
-      log.message("    Capability 卸载成功");
+      logDetail("    Capability 卸载成功");
     }
   } else if (info.method === "msi") {
     // ===== MSI 方式：优先 msiexec /x 静默卸载，否则 appwiz.cpl =====
@@ -134,22 +135,20 @@ export async function doUninstallSsh(): Promise<void> {
         "/norestart",
       ]);
       if (uninstallResult.success) {
-        log.message("    MSI 卸载成功");
+        logDetail("    MSI 卸载成功");
       } else {
-        log.message(
-          `     MSI 卸载失败: ${uninstallResult.stderr || "未知错误"}`
-        );
-        log.message(`    请改用下方打开的"程序和功能"手动卸载`);
+        logDetail(`     MSI 卸载失败: ${uninstallResult.stderr || "未知错误"}`);
+        logDetail(`    请改用下方打开的"程序和功能"手动卸载`);
         await openAppwizAndAwait();
       }
     } else {
       // 本地没有 MSI 包，只能走图形界面
-      log.message(`    未找到本地 MSI 包（${msiPath}），无法静默卸载`);
+      logDetail(`    未找到本地 MSI 包（${msiPath}），无法静默卸载`);
       await openAppwizAndAwait();
     }
   } else {
     // ===== unknown：无法确定来源，交给用户手动卸载 =====
-    log.message("    无法确定安装来源，需手动卸载");
+    logDetail("    无法确定安装来源，需手动卸载");
     await openAppwizAndAwait();
   }
 
@@ -158,28 +157,28 @@ export async function doUninstallSsh(): Promise<void> {
     log.info("sshd 服务仍存在，正在删除服务...");
     const delResult = await runCmd("sc.exe", ["delete", "sshd"]);
     if (delResult.success) {
-      log.message("    sshd 服务已删除");
+      logDetail("    sshd 服务已删除");
     } else {
       // sc.exe 的错误信息输出到 stdout 而非 stderr（且为 GBK 编码可能乱码），
       // 优先取 stderr，其次 stdout，最后兜底 exitCode
       const errMsg =
         delResult.stderr || delResult.stdout || `退出码 ${delResult.exitCode}`;
-      log.message(`    删除 sshd 服务失败: ${errMsg}`);
-      log.message("    可手动执行: sc.exe delete sshd");
+      logDetail(`    删除 sshd 服务失败: ${errMsg}`);
+      logDetail("    可手动执行: sc.exe delete sshd");
     }
   } else {
-    log.message("    sshd 服务已不存在");
+    logDetail("    sshd 服务已不存在");
   }
 
   // ===== 步骤 3：从 authorized_keys 移除 MCP 专用公钥（对应配置步骤的写入） =====
   log.info("从 authorized_keys 移除 MCP 专用公钥 ...");
   const pubKeyPath = resolve(process.cwd(), LOCAL_PUBKEY_REL);
   if (!existsSync(pubKeyPath)) {
-    log.message("    未找到本地公钥文件，跳过 authorized_keys 清理");
+    logDetail("    未找到本地公钥文件，跳过 authorized_keys 清理");
   } else {
     const pubKey = readFileSync(pubKeyPath, "utf8").trim();
     if (!pubKey) {
-      log.message("    本地公钥文件为空，跳过 authorized_keys 清理");
+      logDetail("    本地公钥文件为空，跳过 authorized_keys 清理");
     } else {
       removeAuthorizedKey(pubKey);
     }
@@ -190,8 +189,6 @@ export async function doUninstallSsh(): Promise<void> {
   restoreSshdConfigFromBackup();
 
   log.success("    Windows SSH 服务卸载完成");
-  log.message(
-    "    配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）"
-  );
-  log.message("    如需彻底清除，请手动删除该目录");
+  logDetail("    配置目录 C:\\ProgramData\\ssh 未自动清理（可能含自定义配置）");
+  logDetail("    如需彻底清除，请手动删除该目录");
 }
