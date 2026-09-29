@@ -16,6 +16,7 @@
  */
 
 import { resolve } from "path";
+import { logger } from "../shared/logger.js";
 
 // ── 类型定义 ────────────────────────────────────────────────
 
@@ -31,13 +32,22 @@ export interface LogChannel {
 }
 
 /**
+ * @brief 业务日志通道的解析结果
+ * @details 在 LogChannel 基础上补充 file：logger 单例实际正在写入的日志文件
+ *          绝对路径（一次运行一个 YYYY-MM-DD_HHMMSS.log）；未启用时为 null。
+ */
+export interface BusinessLogChannel extends LogChannel {
+  file: string | null; // 当前业务日志文件绝对路径；未启用时为 null
+}
+
+/**
  * @brief 日志目录整体解析结果
  * @details cwd 为 MCP 进程工作目录；business 为业务日志通道（LOG_SAVE + LOG_DIR）；
  *          rawData 为原始数据日志通道（SAVE2FILE_PATH）。
  */
 export interface LogPaths {
   cwd: string; // MCP 进程工作目录（绝对路径）
-  business: LogChannel; // 业务日志通道
+  business: BusinessLogChannel; // 业务日志通道
   rawData: LogChannel; // 原始数据日志通道
 }
 
@@ -70,17 +80,23 @@ function isRawDataEnabled(value: string | undefined): boolean {
  * @brief 解析日志保存目录（含绝对路径与启用状态）
  * @details 解析规则：
  *          1. cwd = process.cwd()，即 MCP 进程工作目录（相对路径解析基准）
- *          2. 业务日志：dir = resolve(LOG_DIR ?? "./log")；enabled = LOG_SAVE 为真值
+ *          2. 业务日志：dir = resolve(LOG_DIR ?? "./log")；enabled = LOG_SAVE 为真值；
+ *             file 取自 logger 单例的 filePath（首次访问会触发延迟初始化并创建文件，
+ *             与 host_info 实际调用时机一致——处理函数已先写了一条入口日志）
  *          3. 原始数据日志：dir = resolve(SAVE2FILE_PATH)（未置位时以空目录占位）；
  *             enabled = SAVE2FILE_PATH 非空且非 "none"
  *          两条通道独立启用，互不影响。
- * @returns 结构化日志目录信息；本函数不依赖文件系统状态，仅依据环境变量与 cwd
+ * @returns 结构化日志目录信息；除业务日志 file 字段外不依赖文件系统状态
  */
 export function resolveLogPaths(): LogPaths {
   const cwd = process.cwd();
 
   // 业务日志通道：LOG_DIR 默认 "./log"（与 logger.ts 口径一致），resolve 成绝对路径
   const businessDir = resolve(process.env.LOG_DIR ?? "./log");
+
+  // logger 内部 join 时不 resolve，LOG_DIR 为相对路径时拿到的是相对形式；
+  // 本模块职责是给绝对路径，这里统一收敛（LOG_SAVE 未启用时 filePath 为 null）
+  const businessFile = logger.filePath ? resolve(logger.filePath) : null;
 
   // 原始数据日志通道：SAVE2FILE_PATH 未置位或为 "none" 时视为未启用，目录以 cwd 占位
   // （实际不会写文件）；否则 resolve 成绝对路径
@@ -93,6 +109,7 @@ export function resolveLogPaths(): LogPaths {
     business: {
       enabled: isLogSaveEnabled(process.env.LOG_SAVE),
       dir: businessDir,
+      file: businessFile,
     },
     rawData: {
       enabled: isRawDataEnabled(process.env.SAVE2FILE_PATH),

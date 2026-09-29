@@ -34,7 +34,7 @@ import { resolveTransferTmpDir } from "../../shared/data-dir.js";
 export const hostInfoConfig: SdkToolConfig = {
   description:
     `Query the MCP host endpoint (username@ip) of ${pkg.name} for constructing cross-machine file transfers (scp) when this MCP (${pkg.name}) runs on Windows and the AI client runs on Linux. ` +
-    `Also returns the ${pkg.name} log save directories (business log & raw data log absolute paths) for locating/cleaning up logs. ` +
+    `Also returns the ${pkg.name} log directory (shared by business logs and per-session raw-data logs) and the exact business log file path of the current run (the YYYY-MM-DD_HHMMSS.log the server is appending to) for locating/reading/cleaning up logs. ` +
     "Returns 'local started' with no endpoint for local launches.",
   inputSchema: {
     type: "object",
@@ -46,32 +46,47 @@ export const hostInfoConfig: SdkToolConfig = {
 
 /**
  * @brief 将日志/传输目录解析结果格式化为多行文本
- * @details 输出 cwd 与两条日志通道（业务日志 / 原始数据日志）的绝对路径及启用状态，
- *          以及传输暂存目录（.embedded/tmp）。供 AI 客户端拿到绝对路径后用
- *          power_shell（Windows 本机）或 scp（跨机）自行清理日志/定位传输文件。
- *          两种部署方式（本地 / Linux→Windows 桥接）下 MCP 工具都运行在 MCP
- *          所在主机，返回的绝对路径即该主机上的真实保存位置。
+ * @details 输出 cwd、日志总目录（业务日志与会话原始日志共用，业务日志平铺、
+ *          会话日志按设备分子目录；仅当两条通道配置分路时才把会话日志目录单独
+ *          列出）、当前运行实际写入的业务日志文件路径，以及传输暂存目录
+ *          （.embedded/tmp）。供 AI 客户端拿到绝对路径后用 power_shell（Windows
+ *          本机）或 scp（跨机）自行清理/读取日志、定位传输文件。两种部署方式
+ *          （本地 / Linux→Windows 桥接）下 MCP 工具都运行在 MCP 所在主机，
+ *          返回的绝对路径即该主机上的真实保存位置。
  * @param lp 日志目录解析结果
  * @returns 文本行数组
  */
 function formatLogDirectories(lp: LogPaths): string[] {
+  // 目录展示：部署配置里 LOG_DIR 与 SAVE2FILE_PATH 通常同指一个目录，此时合并为
+  // 一行 log dir，避免同一路径重复占两行；分路配置时才把会话日志目录单独列出
+  const sameDir = lp.business.dir === lp.rawData.dir;
   const businessState = lp.business.enabled ? "enabled" : "disabled";
   const rawDataState = lp.rawData.enabled ? "enabled" : "disabled";
-  // scp 展示形态：正斜杠 + 结尾斜杠（推入目录时保留源文件名）
-  const tmpDirForScp = `${resolveTransferTmpDir().replace(/\\/g, "/")}/`;
-  return [
+  // 业务日志文件：enabled 时给出当前运行实际写入的文件绝对路径；
+  // disabled 时 logger 尚无文件，显式说明而不是给误导性占位
+  const businessFileLine = lp.business.file
+    ? `  business log file: ${lp.business.file}  (current run)`
+    : "  business log file: (disabled, no file written)";
+  const lines = [
     `Log directories (${pkg.name} MCP server):`,
     `  server cwd:       ${lp.cwd}`,
-    `  business log:     ${lp.business.dir}  (${businessState})`,
-    `  raw data log:     ${lp.rawData.dir}  (${rawDataState})`,
+    `  log dir:          ${lp.business.dir}  (business: ${businessState}, session: ${rawDataState})`,
+  ];
+  if (!sameDir) {
+    lines.push(
+      `  session log dir:  ${lp.rawData.dir}  (session: ${rawDataState})`
+    );
+  }
+  lines.push(
+    businessFileLine,
     `  transfer tmp:     ${resolveTransferTmpDir()}  (default landing dir for ZMODEM/SFTP downloads and scp pushes)`,
     "",
     "Notes:",
-    "  - business log (LOG_SAVE + LOG_DIR): whole-process diagnostic info, one file per run (YYYY-MM-DD_HHMMSS.log).",
-    "  - raw data log (SAVE2FILE_PATH): per-session raw byte stream from serial/ssh/adb, subdir per device.",
+    "  - log dir is the shared home of two kinds of logs: business logs (LOG_SAVE) sit flat as one YYYY-MM-DD_HHMMSS.log per run ('business log file' above is the current run's), and session raw-data logs (SAVE2FILE_PATH) sit in per-device subdirs ({device}/{session}_YYYY-MM-DD_HHMMSS.log).",
     "  - 'disabled' means that channel is not currently writing to disk; the dir above is where it WOULD save if enabled.",
-    `  - To clean up logs, run power_shell on the ${pkg.name} MCP host against these dirs (e.g. Get-ChildItem '...' -Recurse | Remove-Item), or scp from your Linux shell in mode 2.`,
-  ];
+    `  - To clean up logs, run power_shell on the ${pkg.name} MCP host against these dirs (e.g. Get-ChildItem '...' -Recurse | Remove-Item), or scp from your Linux shell in mode 2.`
+  );
+  return lines;
 }
 
 /**

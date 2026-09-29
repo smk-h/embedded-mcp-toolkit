@@ -191,6 +191,17 @@ class Logger {
   get isEnabled(): boolean {
     return this.logFile !== null;
   }
+
+  /**
+   * @brief 当前业务日志文件的绝对路径
+   * @details 触发延迟初始化，保证返回路径就是实际正在写入的文件
+   *          （文件名在首次写入时定格，一处生成、处处一致）；
+   *          LOG_SAVE 未启用时返回 null。
+   */
+  get filePath(): string | null {
+    this.ensureInit();
+    return this.logFile;
+  }
 }
 
 /** 全局单例 logger */
