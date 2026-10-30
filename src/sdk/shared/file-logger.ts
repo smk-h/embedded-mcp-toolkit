@@ -24,6 +24,7 @@ import {
 } from "../utils/timestamp.js";
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
 import { logger } from "./logger.js";
+import { formatPartSuffix, LogRotator } from "./log-rotation.js";
 
 /**
  * @brief 原始数据文件日志记录器
@@ -32,13 +33,19 @@ import { logger } from "./logger.js";
  * 行缓冲区确保跨 chunk 到达的数据合并为完整行后再输出，
  * 同一行只有一个时间戳（该行实际到达完成的时刻）。
  *
+ * 单文件超过 LOG_MAX_SIZE_MB（默认 10MB）时自动滚动到下一分段：
+ * 首段沿用原文件名，之后依次是 _001、_002…（见 log-rotation.ts），
+ * 长会话不会再产出上百兆的单个日志文件。
+ *
  * 供 SerialShell、SSHShell、AdbShell 等复用。
  */
 export class FileLogger {
-  /** 日志文件写入流，enable 时创建，disable 时关闭 */
+  /** 日志文件写入流，enable 时创建，disable 时关闭；滚动时换到新分段 */
   #logStream: WriteStream | null = null;
   /** 行缓冲区：缓存不完整行，遇换行符时整行输出 */
   #logLineBuf = "";
+  /** 分段记账器：记录当前分段路径与已写字节数，enable 时创建 */
+  #rotator: LogRotator | null = null;
 
   /**
    * @brief 启用文件日志
@@ -46,22 +53,27 @@ export class FileLogger {
    * 创建日志目录（如不存在），打开文件写入流。
    * 若文件为新文件或空文件，先写入统一头部。
    *
-   * @param logPath 日志文件完整路径
+   * @param logPath 日志文件完整路径（首段路径）
    */
   enable(logPath: string): void {
     const dir = dirname(logPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    const isNew = !existsSync(logPath) || statSync(logPath).size === 0;
+    const existing = existsSync(logPath) ? statSync(logPath).size : 0;
+    const isNew = existing === 0;
     this.#logStream = createWriteStream(logPath, { flags: "a" });
+    // 分段器读取当前 LOG_MAX_SIZE_MB；续写既有文件时对齐已写字节数，
+    // 保证滚动阈值按真实文件大小判断，而不是从 0 重新计
+    this.#rotator = new LogRotator(logPath);
+    this.#rotator.resetTo(existing);
     if (isNew) {
       const f = beijingFields();
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
       this.#logStream.write("\uFEFF");
-      this.#logStream.write(
-        `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`
-      );
+      const header = `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
+      this.#logStream.write(header);
+      this.#rotator.account(3 + Buffer.byteLength(header, "utf8"));
     }
   }
 
@@ -76,7 +88,7 @@ export class FileLogger {
    *
    * @param sessionId 会话 ID（如 serial_1）
    * @param deviceName 设备名（如 board-lubancat）；可选，缺失时降级写入根目录
-   * @returns 实际创建的日志文件完整路径；文件日志未启用时返回 undefined
+   * @returns 首段日志文件完整路径（写满后自动滚动到 _001、_002…）；文件日志未启用时返回 undefined
    */
   enableFromEnv(sessionId: string, deviceName?: string): string | undefined {
     const savePath = process.env.SAVE2FILE_PATH;
@@ -93,6 +105,15 @@ export class FileLogger {
   }
 
   /**
+   * @brief 当前正在写入的分段日志路径
+   *
+   * 未启用（或已 disable）时返回 null；滚动后返回新分段路径。
+   */
+  get currentPath(): string | null {
+    return this.#rotator && this.#logStream ? this.#rotator.currentPath : null;
+  }
+
+  /**
    * @brief 关闭文件日志
    *
    * 将行缓冲区中剩余的不完整行写入文件，然后关闭写流。
@@ -102,7 +123,7 @@ export class FileLogger {
     if (this.#logStream) {
       if (this.#logLineBuf) {
         // 尾行同样要清洗：缓冲区可能残留带裸 ESC 的不完整行（如 \x1b[?2004h…）
-        this.#logStream.write(
+        this.#writeLine(
           `${logTimestamp()} ${sanitizeLine(this.#logLineBuf)}\n`
         );
         this.#logLineBuf = "";
@@ -110,6 +131,7 @@ export class FileLogger {
       this.#logStream.end();
       this.#logStream = null;
     }
+    this.#rotator = null;
   }
 
   /**
@@ -127,7 +149,49 @@ export class FileLogger {
     const lines = this.#logLineBuf.split("\n");
     this.#logLineBuf = lines.pop() ?? "";
     for (const line of lines) {
-      this.#logStream.write(`${logTimestamp()} ${sanitizeLine(line)}\n`);
+      this.#writeLine(`${logTimestamp()} ${sanitizeLine(line)}\n`);
     }
+  }
+
+  /**
+   * @brief 写入一整行（含换行符），必要时先滚动分段
+   *
+   * 单行是分段的最小单位：超限时先切到下一段再整行写入，
+   * 不会把一行内容拆到两个文件里。
+   *
+   * @param line 已带时间戳前缀与换行符的日志行
+   */
+  #writeLine(line: string): void {
+    const stream = this.#logStream;
+    if (!stream || !this.#rotator) return;
+    const len = Buffer.byteLength(line, "utf8");
+    if (this.#rotator.shouldRotate(len)) {
+      this.#rotate();
+    }
+    const target = this.#logStream;
+    if (!target) return;
+    target.write(line);
+    this.#rotator?.account(len);
+  }
+
+  /**
+   * @brief 滚动到下一分段
+   *
+   * 关闭当前写入流，打开 _001/_002… 新分段，并写入续接头部
+   * （标注分段序号与时间，便于多文件按时间线拼接阅读）。
+   */
+  #rotate(): void {
+    if (!this.#rotator) return;
+    const nextPath = this.#rotator.rotate();
+    this.#logStream?.end();
+    this.#logStream = createWriteStream(nextPath, { flags: "a" });
+
+    const f = beijingFields();
+    const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
+    const header = `\uFEFF=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log (part ${formatPartSuffix(
+      this.#rotator.part
+    )}, continued) ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
+    this.#logStream.write(header);
+    this.#rotator.account(3 + Buffer.byteLength(header, "utf8"));
   }
 }

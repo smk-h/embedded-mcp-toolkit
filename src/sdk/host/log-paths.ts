@@ -34,7 +34,9 @@ export interface LogChannel {
 /**
  * @brief 业务日志通道的解析结果
  * @details 在 LogChannel 基础上补充 file：logger 单例实际正在写入的日志文件
- *          绝对路径（一次运行一个 YYYY-MM-DD_HHMMSS.log）；未启用时为 null。
+ *          绝对路径（一次运行一个 YYYY-MM-DD_HHMMSS.log；写满
+ *          LOG_MAX_SIZE_MB 后滚动到同目录的 _001/_002… 分段）；
+ *          未启用时为 null。
  */
 export interface BusinessLogChannel extends LogChannel {
   file: string | null; // 当前业务日志文件绝对路径；未启用时为 null

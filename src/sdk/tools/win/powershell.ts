@@ -35,6 +35,7 @@ import {
   logTimestamp,
 } from "../../utils/timestamp.js";
 import { sanitizeLine } from "../../utils/terminal-sanitizer.js";
+import { formatPartSuffix, LogRotator } from "../../shared/log-rotation.js";
 
 // ── 控制台代码页检测与编码转换 ──────────────────────────────
 
@@ -137,11 +138,15 @@ let psExecSeq = 0;
  *     即 .embedded/log/local，与退役前的 PowerShell 会话日志同目录）
  *   - 文件名：{fileTimestamp()}.log（如 2026-08-28_074731.log）
  *   - 首次调用时懒创建（避免依赖模块加载时的环境变量时序），
- *     之后 MCP 进程存活期间一直追加同一文件，不滚动
+ *     进程存活期间追加同一文件；单文件写满 LOG_MAX_SIZE_MB
+ *     （默认 10MB）后自动滚动到 _001、_002… 分段（见 log-rotation.ts）
  *
  * null 表示未启用或尚未初始化成功。
  */
 let execLogFile: string | null = null;
+
+/** exec 落盘日志的分段记账器（与 execLogFile 同步生命周期） */
+let execLogRotator: LogRotator | null = null;
 
 /**
  * @brief 懒初始化 exec 落盘日志文件
@@ -165,15 +170,16 @@ function ensureExecLogFile(): void {
     }
     execLogFile = join(dir, `${fileTimestamp()}.log`);
 
-    const isNew = !existsSync(execLogFile) || statSync(execLogFile).size === 0;
-    if (isNew) {
+    // 续写既有同名文件时对齐已写字节数，滚动阈值按真实文件大小判断
+    const existing = existsSync(execLogFile) ? statSync(execLogFile).size : 0;
+    execLogRotator = new LogRotator(execLogFile);
+    execLogRotator.resetTo(existing);
+    if (existing === 0) {
       const f = beijingFields();
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
-      appendFileSync(
-        execLogFile,
-        `=~=~=~=~=~=~=~=~=~=~=~= PowerShell exec log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`,
-        "utf8"
-      );
+      const header = `=~=~=~=~=~=~=~=~=~=~=~= PowerShell exec log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
+      appendFileSync(execLogFile, header, "utf8");
+      execLogRotator.account(Buffer.byteLength(header, "utf8"));
     }
     logger.info(`[power_shell_exec] file logging enabled: ${execLogFile}`);
   } catch (err) {
@@ -192,6 +198,7 @@ function ensureExecLogFile(): void {
  * （与业务日志同款 logTimestamp），便于跨文件按时间对齐翻查。
  * appendFileSync 即时落盘（远程管理场景调用频率低，无性能顾虑），
  * 无需管理流生命周期；输出逐行 sanitize 清洗 ANSI 转义，防污染日志文件。
+ * 单文件写满 LOG_MAX_SIZE_MB 后整块切换到 _001/_002… 分段（不拆调用块）。
  *
  * 落盘失败不阻断工具返回（日志是辅助能力），仅记录业务日志告警。
  *
@@ -221,10 +228,44 @@ function appendExecLog(
     const tail =
       `\n${ts} (${elapsedMs}ms)\n` +
       `${ts} └─ end #${seq} ────────────────────────────────\n`;
-    appendFileSync(execLogFile, head + body + tail, "utf8");
+    const text = head + body + tail;
+    const bytes = Buffer.byteLength(text, "utf8");
+    // 单次调用块不拆到两个文件：整块超限时先切到下一分段再整体写入
+    if (execLogRotator?.shouldRotate(bytes)) {
+      rotateExecLog();
+    }
+    appendFileSync(execLogFile, text, "utf8");
+    execLogRotator?.account(bytes);
   } catch (err) {
     logger.warn(
       `[power_shell_exec] failed to append exec log: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
+/**
+ * @brief 滚动 exec 落盘日志到下一分段（_001、_002…）
+ *
+ * 与业务日志/会话日志同一套分段规则（见 log-rotation.ts），
+ * 新分段写入续接头部标注分段序号，便于跨文件按时间线翻查。
+ * 落盘失败仅告警，不影响 exec 主流程。
+ */
+function rotateExecLog(): void {
+  if (!execLogRotator) return;
+  const nextPath = execLogRotator.rotate();
+  execLogFile = nextPath;
+  try {
+    const f = beijingFields();
+    const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
+    const header = `=~=~=~=~=~=~=~=~=~=~=~= PowerShell exec log (part ${formatPartSuffix(
+      execLogRotator.part
+    )}, continued) ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
+    appendFileSync(nextPath, header, "utf8");
+    execLogRotator.account(Buffer.byteLength(header, "utf8"));
+    logger.info(`[power_shell_exec] exec log rotated: ${nextPath}`);
+  } catch (err) {
+    logger.warn(
+      `[power_shell_exec] failed to init rotated exec log: ${err instanceof Error ? err.message : String(err)}`
     );
   }
 }

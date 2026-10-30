@@ -11,6 +11,8 @@
  * - LOG_SAVE 为真值时启用文件保存
  * - LOG_DIR 指定日志目录，默认 "./log"
  * - 日志文件名格式: YYYY-MM-DD_HHMMSS.log（北京时间）
+ * - 单文件超过 LOG_MAX_SIZE_MB（默认 10MB）自动滚动到 _001、_002… 分段
+ *   （长驻进程不再产出上百兆的单个业务日志文件，见 log-rotation.ts）
  *
  * 导出单例 logger 对象，通过 logger.info / error / warn 写入日志。
  * ======================================================
@@ -24,6 +26,7 @@ import {
   logTimestamp,
 } from "../utils/timestamp.js";
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
+import { formatPartSuffix, LogRotator } from "./log-rotation.js";
 
 /**
  * @brief 日志来源标识约定（手写于消息开头）
@@ -43,6 +46,8 @@ import { sanitizeLine } from "../utils/terminal-sanitizer.js";
 class Logger {
   private logFile: string | null = null;
   private initialized = false;
+  /** 分段记账器：记录当前分段路径与已写字节数，ensureInit 时创建 */
+  private rotator: LogRotator | null = null;
 
   /** 延迟初始化（首次写入时触发，确保 LOG_SAVE / LOG_DIR 已设置） */
   private ensureInit(): void {
@@ -58,17 +63,54 @@ class Logger {
     }
     this.logFile = join(dir, `${fileTimestamp()}.log`);
 
+    // 续写既有同名文件时对齐已写字节数，滚动阈值按真实文件大小判断
+    const existing = existsSync(this.logFile) ? statSync(this.logFile).size : 0;
+    this.rotator = new LogRotator(this.logFile);
+    this.rotator.resetTo(existing);
+
     // 新文件或空文件时写入统一头部
-    const isNew =
-      !existsSync(this.logFile) || statSync(this.logFile).size === 0;
-    if (isNew) {
+    if (existing === 0) {
       const f = beijingFields();
       const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
-      appendFileSync(
-        this.logFile,
-        `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`
-      );
+      const header = `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
+      appendFileSync(this.logFile, header);
+      this.rotator.account(Buffer.byteLength(header, "utf8"));
     }
+  }
+
+  /**
+   * @brief 追加文本到当前分段，超过上限时先滚动到下一段
+   *
+   * @param text 已格式化的日志文本（可多行）
+   */
+  private appendText(text: string): void {
+    if (!this.logFile) return;
+    try {
+      const buf = Buffer.from(sanitizeLine(text), "utf8");
+      if (this.rotator?.shouldRotate(buf.length)) {
+        this.rotate();
+      }
+      if (!this.logFile) return;
+      appendFileSync(this.logFile, buf);
+      this.rotator?.account(buf.length);
+    } catch {
+      /* 静默失败，不影响主流程 */
+    }
+  }
+
+  /**
+   * @brief 滚动到下一分段（_001、_002…），并写入续接头部
+   */
+  private rotate(): void {
+    if (!this.rotator) return;
+    this.logFile = this.rotator.rotate();
+    const f = beijingFields();
+    const ts = `${f.y}.${f.m}.${f.d} ${f.hh}:${f.mm}:${f.ss}`;
+    const header = `=~=~=~=~=~=~=~=~=~=~=~= Mcp Server log (part ${formatPartSuffix(
+      this.rotator.part
+    )}, continued) ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
+    appendFileSync(this.logFile, header);
+    this.rotator.account(Buffer.byteLength(header, "utf8"));
   }
 
   /**
@@ -83,17 +125,11 @@ class Logger {
     }
   }
 
-  /** 写入一行到日志文件 */
+  /** 写入一行到日志文件（超限自动滚动到下一分段） */
   private write(level: string, message: string): void {
     this.ensureInit();
     if (!this.logFile) return;
-    try {
-      const line = `${logTimestamp()} [${level}] ${message}\n`;
-      const safe = sanitizeLine(line);
-      appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
-    } catch {
-      /* 静默失败，不影响主流程 */
-    }
+    this.appendText(`${logTimestamp()} [${level}] ${message}\n`);
   }
 
   /** 序列化参数为字符串 */
@@ -170,12 +206,7 @@ class Logger {
     parts.push("----------------------------");
 
     if (this.logFile) {
-      try {
-        const safe = sanitizeLine(parts.join("\n") + "\n");
-        appendFileSync(this.logFile, Buffer.from(safe, "utf8"));
-      } catch {
-        /* 静默失败，不影响主流程 */
-      }
+      this.appendText(parts.join("\n") + "\n");
     }
 
     const indented = display
@@ -195,7 +226,8 @@ class Logger {
   /**
    * @brief 当前业务日志文件的绝对路径
    * @details 触发延迟初始化，保证返回路径就是实际正在写入的文件
-   *          （文件名在首次写入时定格，一处生成、处处一致）；
+   *          （文件名在首次写入时定格，一处生成、处处一致；
+   *          写满一段后返回新的分段路径 _001/_002…）；
    *          LOG_SAVE 未启用时返回 null。
    */
   get filePath(): string | null {
