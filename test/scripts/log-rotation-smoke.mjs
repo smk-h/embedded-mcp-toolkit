@@ -24,11 +24,15 @@ process.env.LOG_DIR = bizDir;
 // 0.002MB ≈ 2097 字节，几百行即触发多次滚动
 process.env.LOG_MAX_SIZE_MB = "0.002";
 
-const { resolveMaxLogBytes, segmentLogPath } = await import(
+const { resolveMaxLogBytes, segmentLogPath, listLogSegments } = await import(
   "../../out/sdk/shared/log-rotation.js"
 );
 const { FileLogger } = await import("../../out/sdk/shared/file-logger.js");
 const { logger } = await import("../../out/sdk/shared/logger.js");
+const { registry } = await import("../../out/sdk/sessions/registry.js");
+const { sessionInfoHandler } = await import(
+  "../../out/sdk/tools/basic/session-info.js"
+);
 
 let passCount = 0;
 let failCount = 0;
@@ -213,6 +217,88 @@ async function main() {
     bizSeen.size === BIZ_TOTAL,
     `业务日志全部 ${BIZ_TOTAL} 条均落盘且不重复`,
     `got ${bizSeen.size}`
+  );
+
+  // ── 5. listLogSegments / session_info 分段提示 ──
+  const segInfo = listLogSegments(sessionBase);
+  assert(
+    segInfo.count === sessionFiles.length,
+    "listLogSegments 段数与磁盘一致",
+    `${segInfo.count} vs ${sessionFiles.length}`
+  );
+  assert(
+    segInfo.paths[0] === sessionFiles[0].path,
+    "listLogSegments 首项为最旧的首段",
+    segInfo.paths[0]
+  );
+  assert(
+    segInfo.latest === sessionFiles[sessionFiles.length - 1].path,
+    "listLogSegments latest 指向序号最大的最新段",
+    segInfo.latest
+  );
+  assert(
+    listLogSegments(join(sessionDir, "missing_2026-01-01_000000.log")).count === 0,
+    "listLogSegments 无匹配文件时返回空（不抛异常）"
+  );
+
+  // session_info 输出：既要给首段路径，也要给最新段与段数
+  const origStderrWrite2 = process.stderr.write.bind(process.stderr);
+  process.stderr.write = () => true;
+  registry.register({
+    id: "smoke_1",
+    type: "serial",
+    deviceName: "board-smoke",
+    connectionInfo: "COM1@115200",
+    createdAt: new Date().toISOString(),
+    logPath: sessionBase,
+  });
+  const infoText = sessionInfoHandler({ session_id: "smoke_1" });
+  registry.register({
+    id: "smoke_2",
+    type: "serial",
+    deviceName: "board-smoke",
+    connectionInfo: "COM2@115200",
+    createdAt: new Date().toISOString(),
+  });
+  const disabledText = sessionInfoHandler({ session_id: "smoke_2" });
+  process.stderr.write = origStderrWrite2;
+
+  assert(
+    infoText.includes("Log latest:") && infoText.includes(segInfo.latest),
+    "session_info 的 Log latest 指向最新分段",
+    infoText
+  );
+  assert(
+    infoText.includes(`Log segments: ${sessionFiles.length} on disk`),
+    "session_info 的 Log segments 给出段数与新旧说明",
+    infoText
+  );
+  assert(
+    disabledText.includes("(file logging disabled)") &&
+      !disabledText.includes("Log latest:"),
+    "未启用日志的会话不输出分段行",
+    disabledText
+  );
+
+  // ── 6. host_info 数据源：业务日志首段 / 当前段 / 分段扫描 ──
+  const { resolveLogPaths } = await import("../../out/sdk/host/log-paths.js");
+  const lp = resolveLogPaths();
+  assert(lp.business.enabled, "LOG_SAVE 启用时 business.enabled 为 true");
+  assert(
+    lp.business.base !== null && basename(lp.business.base) === bizFiles[0].name,
+    "business.base 指向首段（无 _NNN 后缀）",
+    String(lp.business.base)
+  );
+  assert(
+    lp.business.file !== null && lp.business.file === logger.filePath,
+    "business.file 指向 logger 当前写入段",
+    `${lp.business.file} vs ${logger.filePath}`
+  );
+  assert(
+    lp.business.base !== null &&
+      listLogSegments(lp.business.base).latest === lp.business.file,
+    "按 business.base 扫描到的最新段 = 当前写入段",
+    `${lp.business.base ? listLogSegments(lp.business.base).latest : null} vs ${lp.business.file}`
   );
 
   console.log(`\n${passCount} passed, ${failCount} failed`);
