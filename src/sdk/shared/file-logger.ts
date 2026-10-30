@@ -192,6 +192,7 @@ export class FileLogger {
       this.#rotator.part
     )}, continued) ${ts} =~=~=~=~=~=~=~=~=~=~=~=\n`;
     this.#logStream.write(header);
-    this.#rotator.account(3 + Buffer.byteLength(header, "utf8"));
+    // BOM 已内嵌在 header 首字符，byteLength 已含其 3 字节，无需额外相加
+    this.#rotator.account(Buffer.byteLength(header, "utf8"));
   }
 }
