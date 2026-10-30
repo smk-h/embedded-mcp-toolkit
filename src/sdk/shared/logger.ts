@@ -234,6 +234,17 @@ class Logger {
     this.ensureInit();
     return this.logFile;
   }
+
+  /**
+   * @brief 本次运行业务日志的首段（基准）文件路径
+   * @details 不含 _001/_002 后缀，作为磁盘上该次运行全部分段的前缀使用；
+   *          供 host_info 扫描目录、给客户端呈现分段情况；
+   *          LOG_SAVE 未启用时返回 null。
+   */
+  get basePath(): string | null {
+    this.ensureInit();
+    return this.rotator?.basePath ?? null;
+  }
 }
 
 /** 全局单例 logger */

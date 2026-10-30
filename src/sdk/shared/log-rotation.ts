@@ -18,6 +18,7 @@
  * ======================================================
  */
 
+import { readdirSync } from "fs";
 import { join, parse } from "path";
 
 /** 单文件默认上限（MB）：未显式配置 LOG_MAX_SIZE_MB 时使用 */
@@ -86,6 +87,69 @@ export function segmentLogPath(basePath: string, part: number): string {
   if (part <= 0) return basePath;
   const { dir, name, ext } = parse(basePath);
   return join(dir, `${name}_${formatPartSuffix(part)}${ext}`);
+}
+
+/** 磁盘上某个日志前缀的分段快照 */
+export interface LogSegments {
+  /** 已存在的分段路径，按分段序号升序（首段在前） */
+  paths: string[];
+  /** 序号最大的分段（即最新的一段）；磁盘上无任何分段时为 null */
+  latest: string | null;
+  /** 已存在的分段数量（含首段） */
+  count: number;
+}
+
+/**
+ * @brief 正则元字符转义（文件名可能含 . + ( ) 等字符）
+ *
+ * @param text 原始文本
+ * @returns 可直接放进正则字面量的文本
+ */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * @brief 列出某个日志前缀在磁盘上已存在的所有分段
+ *
+ * 日志按大小滚动后，同一目录下会并存 base.log、base_001.log…
+ * 本函数按分段序号升序返回，供上层告知客户端「共有几段、哪一段最新」，
+ * 避免客户端只拿到首段（最旧）路径而读不到最新内容。
+ *
+ * 目录不存在或不可读时返回空结果——日志未启用或尚未落盘属正常情况，
+ * 不抛异常、不打扰调用方。
+ *
+ * @param basePath 首段日志文件的完整路径
+ * @returns 分段信息（升序路径、最新段、数量）
+ */
+export function listLogSegments(basePath: string): LogSegments {
+  const { dir, name, ext } = parse(basePath);
+  // 只匹配本前缀：base.log 或 base_001.log（序号至少 3 位，与命名规则对齐）
+  const pattern = new RegExp(
+    `^${escapeRegExp(name)}(?:_(\\d{3,}))?${escapeRegExp(ext)}$`
+  );
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return { paths: [], latest: null, count: 0 };
+  }
+
+  const found: Array<{ part: number; path: string }> = [];
+  for (const entry of entries) {
+    const matched = pattern.exec(entry);
+    if (!matched) continue;
+    found.push({
+      part: matched[1] ? Number(matched[1]) : 0,
+      path: join(dir, entry),
+    });
+  }
+  found.sort((a, b) => a.part - b.part);
+  return {
+    paths: found.map((f) => f.path),
+    latest: found.length > 0 ? found[found.length - 1].path : null,
+    count: found.length,
+  };
 }
 
 /**

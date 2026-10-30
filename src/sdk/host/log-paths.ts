@@ -33,13 +33,15 @@ export interface LogChannel {
 
 /**
  * @brief 业务日志通道的解析结果
- * @details 在 LogChannel 基础上补充 file：logger 单例实际正在写入的日志文件
- *          绝对路径（一次运行一个 YYYY-MM-DD_HHMMSS.log；写满
- *          LOG_MAX_SIZE_MB 后滚动到同目录的 _001/_002… 分段）；
- *          未启用时为 null。
+ * @details 在 LogChannel 基础上补充两个文件路径（未启用时均为 null）：
+ *          - base：本次运行的首段（基准）文件，如 2026-10-30_155702.log，
+ *            用作磁盘上该次运行全部分段的前缀（扫描目录时用）
+ *          - file：logger 单例当前正在写入的分段，写满 LOG_MAX_SIZE_MB 后
+ *            会变成同目录的 2026-10-30_155702_001.log 等
  */
 export interface BusinessLogChannel extends LogChannel {
-  file: string | null; // 当前业务日志文件绝对路径；未启用时为 null
+  base: string | null; // 首段（基准）日志文件绝对路径；未启用时为 null
+  file: string | null; // 当前正在写入的分段文件绝对路径；未启用时为 null
 }
 
 /**
@@ -83,8 +85,9 @@ function isRawDataEnabled(value: string | undefined): boolean {
  * @details 解析规则：
  *          1. cwd = process.cwd()，即 MCP 进程工作目录（相对路径解析基准）
  *          2. 业务日志：dir = resolve(LOG_DIR ?? "./log")；enabled = LOG_SAVE 为真值；
- *             file 取自 logger 单例的 filePath（首次访问会触发延迟初始化并创建文件，
- *             与 host_info 实际调用时机一致——处理函数已先写了一条入口日志）
+ *             base / file 取自 logger 单例的 basePath / filePath（首次访问会触发
+ *             延迟初始化并创建文件，与 host_info 实际调用时机一致——处理函数已先
+ *             写了一条入口日志）；base 为首段，file 为滚动后的当前段
  *          3. 原始数据日志：dir = resolve(SAVE2FILE_PATH)（未置位时以空目录占位）；
  *             enabled = SAVE2FILE_PATH 非空且非 "none"
  *          两条通道独立启用，互不影响。
@@ -97,7 +100,8 @@ export function resolveLogPaths(): LogPaths {
   const businessDir = resolve(process.env.LOG_DIR ?? "./log");
 
   // logger 内部 join 时不 resolve，LOG_DIR 为相对路径时拿到的是相对形式；
-  // 本模块职责是给绝对路径，这里统一收敛（LOG_SAVE 未启用时 filePath 为 null）
+  // 本模块职责是给绝对路径，这里统一收敛（LOG_SAVE 未启用时两者均为 null）
+  const businessBase = logger.basePath ? resolve(logger.basePath) : null;
   const businessFile = logger.filePath ? resolve(logger.filePath) : null;
 
   // 原始数据日志通道：SAVE2FILE_PATH 未置位或为 "none" 时视为未启用，目录以 cwd 占位
@@ -111,6 +115,7 @@ export function resolveLogPaths(): LogPaths {
     business: {
       enabled: isLogSaveEnabled(process.env.LOG_SAVE),
       dir: businessDir,
+      base: businessBase,
       file: businessFile,
     },
     rawData: {

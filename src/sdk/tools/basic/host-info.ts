@@ -22,6 +22,7 @@ import { resolveHostEndpoint } from "../../host/host-endpoint.js";
 import { resolveLogPaths, type LogPaths } from "../../host/log-paths.js";
 import { buildRoutingHint } from "../../host/build-routing.js";
 import { resolveTransferTmpDir } from "../../shared/data-dir.js";
+import { listLogSegments } from "../../shared/log-rotation.js";
 
 // ── 声明 ────────────────────────────────────────────────────
 
@@ -34,7 +35,9 @@ import { resolveTransferTmpDir } from "../../shared/data-dir.js";
 export const hostInfoConfig: SdkToolConfig = {
   description:
     `Query the MCP host endpoint (username@ip) of ${pkg.name} for constructing cross-machine file transfers (scp) when this MCP (${pkg.name}) runs on Windows and the AI client runs on Linux. ` +
-    `Also returns the ${pkg.name} log directory (shared by business logs and per-session raw-data logs) and the exact business log file path of the current run (the YYYY-MM-DD_HHMMSS.log the server is appending to) for locating/reading/cleaning up logs. ` +
+    `Also returns the ${pkg.name} log directory (shared by business logs and per-session raw-data logs), this run's business log base file (segment 0), the newest business log segment on disk and how many segments exist, for locating/reading/cleaning up logs. ` +
+    "Logs are size-capped and split into segments: the base name (YYYY-MM-DD_HHMMSS.log) is segment 0, and overflow continues in the same directory as YYYY-MM-DD_HHMMSS_001.log, _002.log, ... — a higher _NNN suffix is always newer. " +
+    "Read every segment of a prefix in ascending order for the full history; read the highest-numbered segment for the latest output and walk down to older ones if you need more. " +
     "Returns 'local started' with no endpoint for local launches.",
   inputSchema: {
     type: "object",
@@ -62,27 +65,53 @@ function formatLogDirectories(lp: LogPaths): string[] {
   const sameDir = lp.business.dir === lp.rawData.dir;
   const businessState = lp.business.enabled ? "enabled" : "disabled";
   const rawDataState = lp.rawData.enabled ? "enabled" : "disabled";
-  // 业务日志文件：enabled 时给出当前运行实际写入的文件绝对路径；
-  // disabled 时 logger 尚无文件，显式说明而不是给误导性占位
-  const businessFileLine = lp.business.file
-    ? `  business log file: ${lp.business.file}  (current run)`
-    : "  business log file: (disabled, no file written)";
+  // 字段行统一 label 宽度（取最长的 business log segments:），保证值列对齐
+  const row = (label: string, value: string): string =>
+    `  ${label.padEnd(22)} ${value}`;
+  // 业务日志分段：以首段路径为前缀扫描磁盘，得到段数与最新段；
+  // 与 session_info 的 Log latest / Log segments 同口径（序号越大越新）
+  const segments = lp.business.base ? listLogSegments(lp.business.base) : null;
   const lines = [
     `Log directories (${pkg.name} MCP server):`,
-    `  server cwd:       ${lp.cwd}`,
-    `  log dir:          ${lp.business.dir}  (business: ${businessState}, session: ${rawDataState})`,
+    row("server cwd:", lp.cwd),
+    row(
+      "log dir:",
+      `${lp.business.dir}  (business: ${businessState}, session: ${rawDataState})`
+    ),
   ];
   if (!sameDir) {
     lines.push(
-      `  session log dir:  ${lp.rawData.dir}  (session: ${rawDataState})`
+      row("session log dir:", `${lp.rawData.dir}  (session: ${rawDataState})`)
+    );
+  }
+  // 业务日志：enabled 时给出首段（序号 0）绝对路径，disabled 时显式说明
+  // 而非给误导性占位
+  lines.push(
+    lp.business.base
+      ? row(
+          "business log file:",
+          `${lp.business.base}  (current run, segment 0)`
+        )
+      : row("business log file:", "(disabled, no file written)")
+  );
+  if (segments) {
+    lines.push(
+      row("business log latest:", segments.latest ?? "(not created yet)"),
+      row(
+        "business log segments:",
+        `${segments.count} on disk (base = oldest, higher _NNN = newer; read all for full history)`
+      )
     );
   }
   lines.push(
-    businessFileLine,
-    `  transfer tmp:     ${resolveTransferTmpDir()}  (default landing dir for ZMODEM/SFTP downloads and scp pushes)`,
+    row(
+      "transfer tmp:",
+      `${resolveTransferTmpDir()}  (default landing dir for ZMODEM/SFTP downloads and scp pushes)`
+    ),
     "",
     "Notes:",
-    "  - log dir is the shared home of two kinds of logs: business logs (LOG_SAVE) sit flat as one YYYY-MM-DD_HHMMSS.log per run ('business log file' above is the current run's), and session raw-data logs (SAVE2FILE_PATH) sit in per-device subdirs ({device}/{session}_YYYY-MM-DD_HHMMSS.log).",
+    "  - log dir is the shared home of two kinds of logs: business logs (LOG_SAVE) sit flat as one YYYY-MM-DD_HHMMSS.log per run ('business log file' above is segment 0 of the current run, 'business log latest' is the newest segment on disk), and session raw-data logs (SAVE2FILE_PATH) sit in per-device subdirs ({device}/{session}_YYYY-MM-DD_HHMMSS.log).",
+    "  - both log kinds are size-capped (LOG_MAX_SIZE_MB) and split into segments: base name = segment 0, overflow = _001/_002/... in the same dir, higher _NNN = newer. Read all segments of a prefix (ascending) for the complete history, or start from the highest-numbered one for the latest and walk down if needed.",
     "  - 'disabled' means that channel is not currently writing to disk; the dir above is where it WOULD save if enabled.",
     `  - To clean up logs, run power_shell on the ${pkg.name} MCP host against these dirs (e.g. Get-ChildItem '...' -Recurse | Remove-Item), or scp from your Linux shell in mode 2.`
   );

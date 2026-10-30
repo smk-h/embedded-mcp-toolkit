@@ -18,6 +18,7 @@ import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../shared/logger.js";
 import { registry, type SessionMeta } from "../../sessions/registry.js";
 import { formatBeijingTime } from "../../utils/timestamp.js";
+import { listLogSegments } from "../../shared/log-rotation.js";
 
 // ── session_info ──────────────────────────────────────────
 
@@ -33,7 +34,11 @@ export const sessionInfoConfig: SdkToolConfig = {
   description:
     "Query active session metadata. Pass session_id for one session, device for all sessions of a device, or neither for all active sessions. " +
     "Each session returns: session id, connection type (serial/ssh/adb), device name, connection info (e.g. COM3@115200), creation time, " +
-    "and the raw session log file path (serial/ssh/adb traffic recorded continuously by the server, including full boot logs after reset/reboot).",
+    "and the raw session log file path (serial/ssh/adb traffic recorded continuously by the server, including full boot logs after reset/reboot). " +
+    "Large logs are split into segments on disk: the reported Log path is segment 0, and overflow continues in the same directory as " +
+    "`<name>_001.log`, `<name>_002.log`, ... — a higher `_NNN` suffix is always newer. The Log latest line points at the newest segment present. " +
+    "For the full history read every segment of that prefix in ascending order; for recent activity only, read the latest segment first " +
+    "and walk down to older ones if you need more.",
   inputSchema: {
     type: "object",
     properties: {
@@ -54,19 +59,32 @@ export const sessionInfoConfig: SdkToolConfig = {
 /**
  * @brief 格式化单条会话元数据为多行字符串
  *
+ * @details 会话日志按大小滚动后会散成 base.log + base_001.log…（序号越大越新），
+ *          这里除了首段路径，还扫描磁盘给出「共几段」与「最新段路径」，
+ *          供客户端按需取最新一段或拼出完整历史。
+ *
  * @param s 会话元数据
  * @returns 格式化后的文本行数组
  */
 function formatSessionMeta(s: SessionMeta): string[] {
-  return [
+  const lines = [
     `  [${s.id}]`,
     `  Type:         ${s.type}`,
     `  Device:       ${s.deviceName}`,
     `  Connection:   ${s.connectionInfo}`,
     `  Created:      ${formatBeijingTime(s.createdAt)}`,
     `  Log:          ${s.logPath ?? "(file logging disabled)"}`,
-    "",
   ];
+  // 日志路径存在时补充分段信息：base = 第 0 段（最旧），_NNN 越大越新
+  if (s.logPath) {
+    const segments = listLogSegments(s.logPath);
+    lines.push(
+      `  Log latest:   ${segments.latest ?? "(not created yet)"}`,
+      `  Log segments: ${segments.count} on disk (base = oldest, higher _NNN = newer; read all for full history)`
+    );
+  }
+  lines.push("");
+  return lines;
 }
 
 /**

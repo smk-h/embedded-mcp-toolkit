@@ -316,7 +316,8 @@ export const powerShellExecConfig: SdkToolConfig = {
     "compose it into the command itself (e.g. 'cd C:\\work; npm test'). " +
     "When LOG_SAVE is enabled, every call (command + full result) is appended to " +
     "{LOG_DIR}/local/<timestamp>.log — same lifecycle as the business log " +
-    "(one file per MCP process, created on first call), every line prefixed with " +
+    "(created on first call), split into _001/_002/... segments once it exceeds " +
+    "LOG_MAX_SIZE_MB (higher suffix = newer), every line prefixed with " +
     "the same [YYYY-MM-DD HH:mm:ss] timestamp as the business log — for offline review.",
   inputSchema: {
     type: "object",

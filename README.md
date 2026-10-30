@@ -363,7 +363,7 @@ execTimeout:
 - 写满后自动切换下一个文件，文件名 = 原文件名 + `_001`、`_002`… 后缀（序号超过 999 时自然加宽为 `_1000`）
 - 换行是分段的最小单位：一次写入的整行（或 `power_shell_exec` 的整个调用块）不会跨文件被拆开
 - 每个新分段的头部会写一行 `... (part 002, continued) ...`，标注它是同一次日志的第几段，便于按时间线拼接阅读
-- 滚动是**静默自动**的，无需客户端做任何事；`session_info` 返回的 `Log` 路径是首段路径，后续分段在同一目录下按 `_001`、`_002` 递增
+- 滚动是**静默自动**的，无需客户端做任何事；`session_info` 与 `host_info` 会同时给出**首段路径**、**磁盘上最新的分段**与**已有段数**（`Log` / `Log latest` / `Log segments`，`business log file` / `business log latest` / `business log segments`），需要完整历史就按序号升序读全部段，只要最新内容就从序号最大的段往前翻
 
 以会话日志为例（`SAVE2FILE_PATH=./.embedded/log`，上限 10MB）：
 
