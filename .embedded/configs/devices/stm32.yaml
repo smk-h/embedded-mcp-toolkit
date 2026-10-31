@@ -1,0 +1,14 @@
+# STM32 flash-app 裸固件板（ATK 战舰 V3 类, CH340 一键下载电路）
+# 文件名即设备名。mcu 子段启用单片机模式：open 后 DTR/RTS 置 off 规避
+# 一键下载电路的复位/进 ISP 竞态，并软件复位拉起应用。
+serial:
+  port: "COM4"
+  baudRate: 115200
+  lineEnding: "\r\n"
+  mcu:
+    enabled: true
+    dtr: off
+    rts: off
+    resetOnOpen: true
+    quietMs: 400
+    responsePattern: ""
