@@ -22,6 +22,7 @@ import {
   runCloudflaredAction,
 } from "./commands/cloudflared/index.js";
 import { runRemoteMcpConfig } from "./commands/remote-mcp-config/index.js";
+import { runLocalMcpConfig } from "./commands/local-mcp-config/index.js";
 import { runCnb } from "./commands/cnb/index.js";
 import { runRegexVerify } from "./commands/regex-verify.js";
 
@@ -45,6 +46,7 @@ import { runRegexVerify } from "./commands/regex-verify.js";
  * │   ├── log                    ←   查看隧道日志尾部
  * │   └── install                ←   安装 cloudflared(winget / 便携版)
  * ├── remote-mcp-config          ← 登录远程 Linux 配置 claude/zcode/opencode/dsh/codebuddy 的 MCP 桥接（.action()）
+ * ├── local-mcp-config           ← 为本机其它项目目录生成 claude/zcode/opencode/dsh/codebuddy 的本地 MCP 配置（.action()）
  * ├── cnb                        ← 一键打通 CNB 云环境与 Windows 本地 MCP（.action()）
  * ├── config                     ← 打印当前配置（.action()）
  * ├── demo                       ← 演示父命令（无 .action()，聚合子命令）
@@ -381,6 +383,34 @@ program
   )
   .action(() => {
     runRemoteMcpConfig({});
+  });
+
+// =============================================================================
+// local-mcp-config 命令 —— 为本机其它项目目录生成各客户端的本地 MCP 配置
+// =============================================================================
+
+/**
+ * @brief 本地 MCP 配置命令
+ * @details 与 remote-mcp-config 对偶：为本机（Windows）其它项目目录交互式生成
+ *          claude/zcode/opencode/dsh/codebuddy 的本地 MCP 配置。server 统一为
+ *          `cmd /c <remote-start-mcp.bat 绝对路径>`——bat 锚定 cwd 并持有全部
+ *          环境变量（env 单一事实来源），生成的配置不含 env 块。运行时自动探测
+ *          bat 绝对路径（包根 / exe 目录 / cwd 三候选，未命中可手输），覆盖
+ *          八类落点（与 remote-mcp-config 共用 targets.ts 的 CLIENTS 数据表），
+ *          支持配置/查看/删除。所有文件操作为本机 fs 直写，带 .bak 备份与回滚。
+ *
+ * @par 子命令类型 顶层内联命令 —— 通过 `.action()` 在同一进程内执行回调。
+ *
+ * @example
+ * embedded-mcp-toolkit local-mcp-config
+ */
+program
+  .command("local-mcp-config")
+  .description(
+    "为本机其它项目目录生成 claude/zcode/opencode/dsh/codebuddy 的本地 MCP 配置（交互式菜单）"
+  )
+  .action(() => {
+    runLocalMcpConfig({});
   });
 
 // =============================================================================

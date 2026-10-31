@@ -23,6 +23,8 @@
     "git-sync-force": "node scripts/sync-force.mjs",
     "cmd:sshd-config": "node ./bin/embedded-mcp-toolkit-cli.js sshd-config",
     "cmd:remote-mcp-config": "node ./bin/embedded-mcp-toolkit-cli.js remote-mcp-config",
+    "cmd:local-mcp-config": "node ./bin/embedded-mcp-toolkit-cli.js local-mcp-config",
+    "test:local-mcp-config": "node test/cli/local-mcp-config.mjs",
     "cmd:cnb": "node ./bin/embedded-mcp-toolkit-cli.js cnb",
     "format:check": "prettier ./src --check",
     "format:fix": "prettier ./src --write",
