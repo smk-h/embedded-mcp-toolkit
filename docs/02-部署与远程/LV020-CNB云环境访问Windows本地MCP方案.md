@@ -1,6 +1,6 @@
 <!-- more -->
 
-> 本文讨论 [项目简介](./项目简介.md) 中"用法二：跨机远程"的**公网容器变体**——AI 客户端跑在 CNB（云原生开发环境）容器里，MCP Server 跑在路由器 NAT 后的 Windows 工位机。与 [MCP-公网反向隧道跨机部署方案](./MCP-公网反向隧道跨机部署方案.md)（下称"公网隧道篇"）的区别在于：那篇假设 AI 客户端所在的 Linux 是**一台常规公网服务器**（有公网 IP、可被入站访问、有 root 与内核能力），而 CNB 是**受管容器**，这些前提基本都不成立——唯有一个平台专供的公网 SSH 入口例外（见一、3.4 节）。本文先给出 CNB 容器能力的实测画像，再逐条判定公网隧道篇的两个方案为何不能原样落地，最后给出唯一可行的 Cloudflare Quick Tunnel 路线与落地细节。
+> 本文讨论 [项目简介](../01-MCP设计/LV005-项目简介.md) 中"用法二：跨机远程"的**公网容器变体**——AI 客户端跑在 CNB（云原生开发环境）容器里，MCP Server 跑在路由器 NAT 后的 Windows 工位机。与 [公网反向隧道跨机部署方案](LV015-公网反向隧道跨机部署方案.md)（下称"公网隧道篇"）的区别在于：那篇假设 AI 客户端所在的 Linux 是**一台常规公网服务器**（有公网 IP、可被入站访问、有 root 与内核能力），而 CNB 是**受管容器**，这些前提基本都不成立——唯有一个平台专供的公网 SSH 入口例外（见一、3.4 节）。本文先给出 CNB 容器能力的实测画像，再逐条判定公网隧道篇的两个方案为何不能原样落地，最后给出唯一可行的 Cloudflare Quick Tunnel 路线与落地细节。
 
 ## 一、 方案定位与 CNB 环境画像
 
@@ -19,8 +19,8 @@ CNB 云原生开发环境把整台开发机做成一个托管容器：拉代码�
 
 | 文档 | 远端前提 | 与本文的关系 |
 | --- | --- | --- |
-| [Linux远程连接Windows MCP配置指南](./Linux远程连接Windows%20MCP配置指南.md) | Linux 与 Windows **同局域网**，Linux 可直达 Windows 的 `winip:22` | 本文是其"两端都在 NAT 后、无法互相直达"时的延伸 |
-| [MCP-公网反向隧道跨机部署方案](./MCP-公网反向隧道跨机部署方案.md) | 远端是**常规公网服务器**（可入站、有 root、有内核能力） | 本文判定其方案 A、方案 B 在该前提换成 CNB 后为何失效，并给出替代载体 |
+| [Linux远程连接Windows MCP配置指南](LV005-Linux远程连接Windows%20MCP配置指南.md) | Linux 与 Windows **同局域网**，Linux 可直达 Windows 的 `winip:22` | 本文是其"两端都在 NAT 后、无法互相直达"时的延伸 |
+| [公网反向隧道跨机部署方案](LV015-公网反向隧道跨机部署方案.md) | 远端是**常规公网服务器**（可入站、有 root、有内核能力） | 本文判定其方案 A、方案 B 在该前提换成 CNB 后为何失效，并给出替代载体 |
 
 三者的公共内核一致：**AI 客户端与 MCP Server 之间总要走一条 stdio 或 HTTP 通道，MCP 本体的工具、配置、行为完全相同**，差别只在通道怎么搭。
 
@@ -252,7 +252,7 @@ embedded-mcp-toolkit sshd-config
 <Windows 项目根>/.embedded/ssh/id_mcp_server.pub
 ```
 
-这个路径不是随手定的——`sshd-config` 的配置步骤正是从**当前工作目录下的 `.embedded/ssh/id_mcp_server.pub`** 读取公钥内容（路径常量见 [`constants.ts`](../src/cli/commands/sshd-config/constants.ts)，读取见 [`configure-sshd.ts`](../src/cli/commands/sshd-config/steps/configure-sshd.ts)，写入逻辑见 [`authorized-keys.ts`](../src/cli/commands/sshd-config/authorized-keys.ts)），再追加进 `~/.ssh/authorized_keys`（自动去重）。
+这个路径不是随手定的——`sshd-config` 的配置步骤正是从**当前工作目录下的 `.embedded/ssh/id_mcp_server.pub`** 读取公钥内容（路径常量见 [`constants.ts`](../../src/cli/commands/sshd-config/constants.ts)，读取见 [`configure-sshd.ts`](../../src/cli/commands/sshd-config/steps/configure-sshd.ts)，写入逻辑见 [`authorized-keys.ts`](../../src/cli/commands/sshd-config/authorized-keys.ts)），再追加进 `~/.ssh/authorized_keys`（自动去重）。
 
 放好文件后，**再次执行菜单 `[4]`**，即可复用项目既有的免密配置流程，无需手工编辑 `authorized_keys`。若目标是 Windows 管理员账户，公钥应落到 `C:\ProgramData\ssh\administrators_authorized_keys`（菜单 `[4]` 会一并处理分组规则）。
 
@@ -266,7 +266,7 @@ embedded-mcp-toolkit sshd-config
 cloudflared tunnel --url ssh://127.0.0.1:22
 ```
 
-【**实测**】2026-09-15 对比过两种写法：URL 写 `localhost` 时，cloudflared 在 Windows 上把回环解析成 **IPv6 的 `::1`**，Windows sshd 眼中连接来自 `::1`，MCP 拿到的 `SSH_CONNECTION` 为 `::1 <port> ::1 22`——而 [`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 的端点解析只认 IPv4，最终 `host_info` 输出 `Endpoint: (unavailable)`。改写 `ssh://127.0.0.1:22` 后，`SSH_CONNECTION` 变为 `127.0.0.1 <port> 127.0.0.1 22`，端点正确解析为 `<win_user>@127.0.0.1`（见六、3）。隧道 URL 的这一写法直接决定第四章的场景判定能否完整生效，部署时务必用显式 IPv4。
+【**实测**】2026-09-15 对比过两种写法：URL 写 `localhost` 时，cloudflared 在 Windows 上把回环解析成 **IPv6 的 `::1`**，Windows sshd 眼中连接来自 `::1`，MCP 拿到的 `SSH_CONNECTION` 为 `::1 <port> ::1 22`——而 [`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts#L82-L94) 的端点解析只认 IPv4，最终 `host_info` 输出 `Endpoint: (unavailable)`。改写 `ssh://127.0.0.1:22` 后，`SSH_CONNECTION` 变为 `127.0.0.1 <port> 127.0.0.1 22`，端点正确解析为 `<win_user>@127.0.0.1`（见六、3）。隧道 URL 的这一写法直接决定第四章的场景判定能否完整生效，部署时务必用显式 IPv4。
 
 启动后日志会输出连通性预检结果与分配到的随机域名：
 
@@ -370,7 +370,7 @@ ssh -i ~/.ssh/id_mcp_server \
 
 要点：
 
-（1）`command` 为 `ssh`、末位参数是 `remote-start-mcp.bat` 的**绝对路径**——这与 [Linux远程连接Windows MCP配置指南](./Linux远程连接Windows%20MCP配置指南.md) 的 stdio 桥接定义完全一致，只是把端点从 `winip` 换成了 `127.0.0.1`。
+（1）`command` 为 `ssh`、末位参数是 `remote-start-mcp.bat` 的**绝对路径**——这与 [Linux远程连接Windows MCP配置指南](LV005-Linux远程连接Windows%20MCP配置指南.md) 的 stdio 桥接定义完全一致，只是把端点从 `winip` 换成了 `127.0.0.1`。
 
 （2）这里**没有写 `-o ProxyCommand`**，因为该参数由下一章的 `~/.ssh/config` 统一提供（一个域名只维护一处）。若希望配置自包含，也可改成显式写法：
 
@@ -391,7 +391,7 @@ MCP Server 启动时会依据环境变量判定"本地 / 远程"并决定注入�
 
 ### 1. 场景判定天然正确
 
-[`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L135-L150) 的逻辑是二值的：`SSH_CONNECTION` 存在且非 `(unset)` → `remote-ssh`，否则 → `local`。
+[`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts#L135-L150) 的逻辑是二值的：`SSH_CONNECTION` 存在且非 `(unset)` → `remote-ssh`，否则 → `local`。
 
 隧道拓扑下，`remote-start-mcp.bat` 是被 **Windows 的 sshd** 拉起的，而 `SSH_CONNECTION` 由 sshd 注入到会话环境——所以它**必然存在**，判定结果为 `remote-ssh`。这与公网隧道篇方案 A 的处境截然不同：
 
@@ -402,7 +402,7 @@ MCP Server 启动时会依据环境变量判定"本地 / 远程"并决定注入�
 | 公网隧道篇方案 A（supergateway） | Windows 本地 supergateway | **无** | `local` ❌ 误判 |
 | **本文（Cloudflare + ProxyCommand）** | **Windows sshd（经 ssh）** | **有** | `remote-ssh` ✅ |
 
-因此公网隧道篇第四章为方案 A 设计的 `remote-tunnel` 场景改造（涉及 [`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts)、[`host-info.ts`](../src/sdk/tools/basic/host-info.ts)、[`server.ts`](../src/mcp/server.ts)、[`pshell-policy.ts`](../src/mcp/pshell-policy.ts) 四处）**在本方案下整个不需要做**。配套行为也全部天然正确（2026-09-15 端到端实测确认，见六、3）：
+因此公网隧道篇第四章为方案 A 设计的 `remote-tunnel` 场景改造（涉及 [`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts)、[`host-info.ts`](../../src/sdk/tools/basic/host-info.ts)、[`server.ts`](../../src/mcp/server.ts)、[`pshell-policy.ts`](../../src/mcp/pshell-policy.ts) 四处）**在本方案下整个不需要做**。配套行为也全部天然正确（2026-09-15 端到端实测确认，见六、3）：
 
 - `instructions` 正常注入 scp 引导（实测输出完整 `scp -i ~/.ssh/id_mcp_server ... 20380@127.0.0.1` 骨架）；
 - `host_info` 返回 `remote-ssh started` 而非 `local started`；
@@ -413,7 +413,7 @@ MCP Server 启动时会依据环境变量判定"本地 / 远程"并决定注入�
 
 场景判定对了，但**端点内容会有一个需要处理的地方**。
 
-[`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 解析 `SSH_CONNECTION`（格式为 `<client-ip> <client-port> <server-ip> <server-port>`）时，取的是**第 3 字段 `server-ip`**（即 sshd 实际监听并被连入的本地地址）作为宿主 IP。
+[`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts#L82-L94) 解析 `SSH_CONNECTION`（格式为 `<client-ip> <client-port> <server-ip> <server-port>`）时，取的是**第 3 字段 `server-ip`**（即 sshd 实际监听并被连入的本地地址）作为宿主 IP。
 
 在隧道拓扑下，连接到 Windows sshd 的那一跳是 **Windows 本机的 cloudflared 从回环发起到 sshd 的**，`server-ip` 就是那个回环地址。实测发现它**取决于 2.4 节隧道 URL 的写法**：写 `localhost` 时 cloudflared 走 IPv6 回环，`server-ip` 为 `::1`，解析不出 IPv4 端点（`Endpoint: (unavailable)`）；写 `127.0.0.1` 时 `server-ip` 为 `127.0.0.1`，解析结果是：
 
@@ -552,7 +552,7 @@ CNB 容器是临时环境，重建后：出口 IP 变化、容器内 `~/.ssh/id_
 
 ### 3. 两个实测新发现（已回填正文）
 
-（1）**隧道 URL 必须写 `ssh://127.0.0.1:22`，不要写 `localhost`**。`localhost` 在 Windows 上被 cloudflared 解析为 IPv6 回环 `::1`，`SSH_CONNECTION` 变为 `::1 <port> ::1 22`，[`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 解析不出 IPv4 端点，`host_info` 输出 `Endpoint: (unavailable)`；改用显式 IPv4 后端点正确解析为 `<win_user>@127.0.0.1`（见 2.4 节与四、2 节）。
+（1）**隧道 URL 必须写 `ssh://127.0.0.1:22`，不要写 `localhost`**。`localhost` 在 Windows 上被 cloudflared 解析为 IPv6 回环 `::1`，`SSH_CONNECTION` 变为 `::1 <port> ::1 22`，[`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts#L82-L94) 解析不出 IPv4 端点，`host_info` 输出 `Endpoint: (unavailable)`；改用显式 IPv4 后端点正确解析为 `<win_user>@127.0.0.1`（见 2.4 节与四、2 节）。
 
 （2）**Quick Tunnel 新域名的 DNS 传播有约 1 分钟延迟**。隧道建立成功并输出域名后，立即从 CNB 侧连接会报 `no such host`，等待约 1 分钟后域名方可解析。五、1 节的域名漂移应对（自动同步 / 手工更换）需要把这段延迟计入。
 

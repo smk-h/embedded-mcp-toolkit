@@ -8,7 +8,7 @@
  * Description: embedded-mcp-toolkit cnb 命令（目录门面）
  *
  * 一键打通"CNB 云开发环境 → Windows 本地 MCP"的免密通道，把方案文档
- * （docs/MCP-CNB云环境访问Windows本地MCP方案.md）中需要手工执行的步骤
+ * （docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md）中需要手工执行的步骤
  * 固化为一条命令。核心价值在于**可重复执行**：CNB 容器每次重建都会丢密钥与
  * 配置，重跑本命令即可恢复，Windows 侧无需任何改动。
  *

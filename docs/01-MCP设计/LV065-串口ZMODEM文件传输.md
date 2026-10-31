@@ -22,7 +22,7 @@
 | `serial_read` | 读取文本输出 | 数据监听走 `data.toString()`，二进制帧会被 UTF-8 解码污染 |
 | `serial_exec` | 执行命令取结果 | 基于提示符检测，无法承载协议帧 |
 
-问题的核心在 [`src/sdk/transports/serial.ts`](../src/sdk/transports/serial.ts) 的数据监听：原始 `Buffer` 被无条件 `toString()` 后送入文本态 `OutputBuffer`，ZMODEM 协议帧（含大量非 ASCII 字节）一旦经过 UTF-8 解码就不可逆地损坏。
+问题的核心在 [`src/sdk/transports/serial.ts`](../../src/sdk/transports/serial.ts) 的数据监听：原始 `Buffer` 被无条件 `toString()` 后送入文本态 `OutputBuffer`，ZMODEM 协议帧（含大量非 ASCII 字节）一旦经过 UTF-8 解码就不可逆地损坏。
 
 ### 3. 解决思路
 
@@ -41,7 +41,7 @@
 
 整个方案分为三层，自上而下各司其职，层间通过明确的接口解耦：
 
-![三层分层架构](./MCP串口ZMODEM文件传输/img/layered-architecture.svg)
+![三层分层架构](LV065-串口ZMODEM文件传输/img/layered-architecture.svg)
 
 底层依赖第三方库 `zmodem.js@0.1.10` 负责协议帧的编码解码，桥接层把它和串口的字节流粘合起来。
 
@@ -51,9 +51,9 @@
 
 这是整个方案的地基。串口的 `data` 事件原本只喂文本态 `OutputBuffer`，ZMODEM 帧会被污染。解决方案是**双写**——`data` 事件同时喂文本态和字节旁路：
 
-![字节旁路双写](./MCP串口ZMODEM文件传输/img/byte-bypass.svg)
+![字节旁路双写](LV065-串口ZMODEM文件传输/img/byte-bypass.svg)
 
-相关代码在 [`src/sdk/transports/serial.ts`](../src/sdk/transports/serial.ts#L180-L183) 的数据监听：
+相关代码在 [`src/sdk/transports/serial.ts`](../../src/sdk/transports/serial.ts#L180-L183) 的数据监听：
 
 ```typescript
 // src/sdk/transports/serial.ts
@@ -73,7 +73,7 @@ serialPort.on("data", (data: Buffer) => {
 
 上传与下载的字节流向是对称的，区别仅在于"谁发数据、谁发控制帧"。完整双向数据流如下：
 
-![双向数据流（上传与下载）](./MCP串口ZMODEM文件传输/img/data-flow-bidirectional.svg)
+![双向数据流（上传与下载）](LV065-串口ZMODEM文件传输/img/data-flow-bidirectional.svg)
 
 ### 3. 文件组织
 
@@ -81,13 +81,13 @@ serialPort.on("data", (data: Buffer) => {
 
 | 文件 | 状态 | 职责 |
 |---|---|---|
-| [`src/sdk/zmodem/zmodem-bridge.ts`](../src/sdk/zmodem/zmodem-bridge.ts) | 新增 | 协议桥接层，`zmodemSend`/`zmodemReceive` |
-| [`src/sdk/zmodem/index.ts`](../src/sdk/zmodem/index.ts) | 新增 | 模块导出 |
-| [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) | 新增 | 工具层，两个 handler |
-| [`src/sdk/tools/serial/index.ts`](../src/sdk/tools/serial/index.ts) | 修改 | 注册新工具 |
-| [`src/sdk/transports/serial.ts`](../src/sdk/transports/serial.ts) | 修改 | 字节旁路、rawWrite、drainPort |
-| [`src/sdk/shared/transfer-result.ts`](../src/sdk/shared/transfer-result.ts) | 新增 | 传输结果摘要格式化 |
-| [`src/mcp/server.ts`](../src/mcp/server.ts) | 修改 | 全局异常兜底 |
+| [`src/sdk/zmodem/zmodem-bridge.ts`](../../src/sdk/zmodem/zmodem-bridge.ts) | 新增 | 协议桥接层，`zmodemSend`/`zmodemReceive` |
+| [`src/sdk/zmodem/index.ts`](../../src/sdk/zmodem/index.ts) | 新增 | 模块导出 |
+| [`src/sdk/tools/serial/transfer.ts`](../../src/sdk/tools/serial/transfer.ts) | 新增 | 工具层，两个 handler |
+| [`src/sdk/tools/serial/index.ts`](../../src/sdk/tools/serial/index.ts) | 修改 | 注册新工具 |
+| [`src/sdk/transports/serial.ts`](../../src/sdk/transports/serial.ts) | 修改 | 字节旁路、rawWrite、drainPort |
+| [`src/sdk/shared/transfer-result.ts`](../../src/sdk/shared/transfer-result.ts) | 新增 | 传输结果摘要格式化 |
+| [`src/mcp/server.ts`](../../src/mcp/server.ts) | 修改 | 全局异常兜底 |
 
 ## 三、 协议与传输原理
 
@@ -284,7 +284,7 @@ function detectHandshakeFailure(bytes: number[]):
 
 #### 2.5 建链流程图
 
-![建链流程图](./MCP串口ZMODEM文件传输/img/establish-session.svg)
+![建链流程图](LV065-串口ZMODEM文件传输/img/establish-session.svg)
 
 ### 3. 上传方案（serial_upload）
 
@@ -292,7 +292,7 @@ function detectHandshakeFailure(bytes: number[]):
 
 上传时，MCP 是 ZMODEM **发送端**，设备端 `rz` 是接收端。完整时序：
 
-![上传时序图](./MCP串口ZMODEM文件传输/img/upload-sequence.svg)
+![上传时序图](LV065-串口ZMODEM文件传输/img/upload-sequence.svg)
 
 #### 3.2 数据发送
 
@@ -398,7 +398,7 @@ function closeSessionWithTimeout(
 
 下载时，MCP 是 ZMODEM **接收端**，设备端 `sz` 是发送端。完整时序：
 
-![下载时序图](./MCP串口ZMODEM文件传输/img/download-sequence.svg)
+![下载时序图](LV065-串口ZMODEM文件传输/img/download-sequence.svg)
 
 #### 4.2 接收端的惰性会话（关键）
 
@@ -505,7 +505,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 - **垃圾上限误判**：`detectHandshakeFailure` 的 `garbage` 判据是"缓冲区超 256 字节仍无 ZMODEM 头"。持续的日志输出完全可能在首帧到达前就把 256 字节额度烧光，导致**误判为"对端没进协议态"**而提前失败——这本来是为"命令打错、设备回 shell"设计的判据，在洪水场景下变成了误伤源
 - **错误文本误命中**：日志行里如果恰好包含 `not found`、`skipped` 等子串（`DEVICE_CMD_ERROR_MARKERS` 的成员），会被 `error-marker` 判据误命中，建链直接判死
 
-![建链期冲击](./MCP串口ZMODEM文件传输/img/flood-impact-handshake.svg)
+![建链期冲击](LV065-串口ZMODEM文件传输/img/flood-impact-handshake.svg)
 
 #### 2.2 数据期：上传与下载的差异化冲击
 
@@ -533,7 +533,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 
 因此上传方向的典型退化形态是**吞吐滑坡**（重传消耗时间）而非传输失败。
 
-![上传方向：污染正面命中与本地缓存重传](./MCP串口ZMODEM文件传输/img/flood-impact-upload-direction.svg)
+![上传方向：污染正面命中与本地缓存重传](LV065-串口ZMODEM文件传输/img/flood-impact-upload-direction.svg)
 
 ##### 2.2.2 下载方向（设备 sz → MCP）：污染双重命中 + 恢复链路更脆
 
@@ -546,11 +546,11 @@ session.on("offer", (xfer: ReceiveOffer) => {
 
 失败上限更硬：`MAX_CRC_RETRIES=10` 烧穿后桥接层放弃恢复，交由 idle/overall 超时兜底报错，传输整体失败；上传方向没有这个上限。
 
-![下载方向：双重命中与单向恢复的脆弱链路](./MCP串口ZMODEM文件传输/img/flood-impact-download-direction.svg)
+![下载方向：双重命中与单向恢复的脆弱链路](LV065-串口ZMODEM文件传输/img/flood-impact-download-direction.svg)
 
 zmodem.js 在子包 CRC 校验失败时直接抛 `Zmodem.Error("crc")` 且不主动发 ZRPOS（它假设可靠传输）。桥接层的 `recoverFromCrcError` 捕获该错误后主动发 `ZRPOS(_file_offset)` 请 sz 从上次正确位置续传，并复位协议态机重新等 ZDATA 头对齐。完整恢复链与时序见下图：
 
-![下载方向 CRC 恢复链](./MCP串口ZMODEM文件传输/img/flood-impact-crc-recovery.svg)
+![下载方向 CRC 恢复链](LV065-串口ZMODEM文件传输/img/flood-impact-crc-recovery.svg)
 
 ##### 2.2.3 上传与下载的差异汇总
 
@@ -577,11 +577,11 @@ zmodem.js 在子包 CRC 校验失败时直接抛 `Zmodem.Error("crc")` 且不主
 
 把静默链路与洪水链路放在同一条时间线上对比，冲击一目了然：
 
-![静默链路与洪水链路对比](./MCP串口ZMODEM文件传输/img/flood-throughput-compare.svg)
+![静默链路与洪水链路对比](LV065-串口ZMODEM文件传输/img/flood-throughput-compare.svg)
 
 其中洪水链路对上传/下载的退化形态并不相同（差异分析见 2.2.3），上传方向在本地重传弹药支撑下典型表现为吞吐滑坡；下载方向则叠加了设备侧 sz 发送被打断、恢复链路双向趟洪水的双重冲击：
 
-![洪水链路上上传与下载的退化形态差异](./MCP串口ZMODEM文件传输/img/flood-direction-degrade.svg)
+![洪水链路上上传与下载的退化形态差异](LV065-串口ZMODEM文件传输/img/flood-direction-degrade.svg)
 
 静默链路上子包背靠背流动，吞吐接近线速的 90% 以上；洪水链路上每次污染都要付出"重传 + 重新对齐 + 节流等待"的往返代价，有效吞吐可能跌至 1/3 以下。按 115200bps 线速约 11.5KB/s 计，一个 10MB 文件在静默链路约需 15 分钟，洪水链路下可能超过 45 分钟——若期间重试烧穿上限，则直接失败。
 
@@ -662,7 +662,7 @@ ZMODEM 协议自带的**逐子包 CRC 校验**是第一道防线——任何被�
 
 ### 3. 超时守卫实现
 
-代码在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 中实现，核心判定逻辑：
+代码在 [`src/sdk/tools/serial/transfer.ts`](../../src/sdk/tools/serial/transfer.ts) 中实现，核心判定逻辑：
 
 ```typescript
 // src/sdk/tools/serial/transfer.ts
@@ -879,7 +879,7 @@ session.on("offer", (xfer: ReceiveOffer) => {
 
 异常发生后，代码按统一路径处理。以下决策流展示了不同异常的走向：
 
-![异常处理决策流](./MCP串口ZMODEM文件传输/img/exception-decision.svg)
+![异常处理决策流](LV065-串口ZMODEM文件传输/img/exception-decision.svg)
 
 ### 3. 双层 abort 设计
 
@@ -984,7 +984,7 @@ const onAbort = (): void => {
 
 ### 6. 全局异常兜底
 
-即使双层 abort 都做了，zmodem.js 内部仍可能产生未被捕获的 Promise rejection（如 "Peer aborted session"）。为此在 [`src/mcp/server.ts`](../src/mcp/server.ts) 的 `registerCleanupHooks()` 里加了全局兜底：
+即使双层 abort 都做了，zmodem.js 内部仍可能产生未被捕获的 Promise rejection（如 "Peer aborted session"）。为此在 [`src/mcp/server.ts`](../../src/mcp/server.ts) 的 `registerCleanupHooks()` 里加了全局兜底：
 
 ```typescript
 // src/mcp/server.ts
@@ -1079,7 +1079,7 @@ async function disableFlowControl(shell): Promise<void> {
 
 ##### 1.1.1 serialUploadHandler()
 
-该函数在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 文件中声明：
+该函数在 [`src/sdk/tools/serial/transfer.ts`](../../src/sdk/tools/serial/transfer.ts) 文件中声明：
 
 ```typescript
 // src/sdk/tools/serial/transfer.ts
@@ -1123,7 +1123,7 @@ serial_upload:
 
 ##### 1.2.1 serialDownloadHandler()
 
-该函数在 [`src/sdk/tools/serial/transfer.ts`](../src/sdk/tools/serial/transfer.ts) 文件中声明：
+该函数在 [`src/sdk/tools/serial/transfer.ts`](../../src/sdk/tools/serial/transfer.ts) 文件中声明：
 
 ```typescript
 // src/sdk/tools/serial/transfer.ts

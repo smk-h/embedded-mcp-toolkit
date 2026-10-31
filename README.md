@@ -14,7 +14,7 @@
 - **KeyProvider 密钥管理**：支持文件 IPC 和终端交互两种方式，自动处理 PSH 动态口令生成的密钥
 - **进程退出自动清理**：客户端断开或进程终止时自动释放所有串口、SSH、ADB 连接
 
-> 项目背景与价值定位（为什么需要它、与 PowerShell 直调的能力分界与场景选型）详见 [docs/项目简介.md](./docs/项目简介.md)。
+> 项目背景与价值定位（为什么需要它、与 PowerShell 直调的能力分界与场景选型）详见 [docs/01-MCP设计/LV005-项目简介.md](./docs/01-MCP设计/LV005-项目简介.md)。
 
 ### 2. 架构关系
 
@@ -137,7 +137,7 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `serial_mcu_exec` | 向单片机裸固件会话发送命令并等待响应（无回显/无提示符设备专用，仅限配置了 `serial.mcu` 的设备；完成判定靠 responsePattern 或静默窗口，超时不发 Ctrl+C） | `在 stm32-app 上执行 wifi info` / `让单片机跑一下 xxx` |
 
 > [!WARNING]
-> **串口持续输出的设备慎用 ZMODEM 下载**：ZMODEM 是带内协议，设备持续打印（内核日志、常驻诊断输出等）会与协议帧物理交织。同等洪水强度下，下载方向（设备 `sz` → MCP）受污染双重命中（设备侧发送被打断 + MCP 接收侧污染）、恢复链路更脆、且受 `MAX_CRC_RETRIES=10` 重试上限约束，很容易传输失败；上传方向（MCP → 设备 `rz`）靠本地缓存可无限重传，相对能扛（仅吞吐滑坡）。若设备有持续打印，建议优先用上传；确需下载时，先停掉可控输出源（`dmesg -D`、kill 常驻打印任务）再传。完整分析见 [docs/MCP串口ZMODEM文件传输.md](./docs/MCP串口ZMODEM文件传输.md#四-串口持续输出对传输的影响)。
+> **串口持续输出的设备慎用 ZMODEM 下载**：ZMODEM 是带内协议，设备持续打印（内核日志、常驻诊断输出等）会与协议帧物理交织。同等洪水强度下，下载方向（设备 `sz` → MCP）受污染双重命中（设备侧发送被打断 + MCP 接收侧污染）、恢复链路更脆、且受 `MAX_CRC_RETRIES=10` 重试上限约束，很容易传输失败；上传方向（MCP → 设备 `rz`）靠本地缓存可无限重传，相对能扛（仅吞吐滑坡）。若设备有持续打印，建议优先用上传；确需下载时，先停掉可控输出源（`dmesg -D`、kill 常驻打印任务）再传。完整分析见 [docs/01-MCP设计/LV065-串口ZMODEM文件传输.md](./docs/01-MCP设计/LV065-串口ZMODEM文件传输.md#四-串口持续输出对传输的影响)。
 
 ##### 4.2.1 单片机（MCU）模式：serial_mcu_exec
 
@@ -184,7 +184,7 @@ serial:
 
 **复位后的启动时序提醒**：`resetOnOpen` 复位后，固件可能有自身的引导流程（如 IAP 引导：慢初始化 → 等待 app.img 帧 → `go flash` 跳应用），期间发命令会撞上启动竞态（实测应用刚启动时首条命令被吃掉前两个字符：`wifi info` → echo `fi info`）。正确姿势：先 `serial_read(waitMs)` 等到就绪标志（如 `APP: ready`、跳转完成日志）再发首条命令。
 
-> 周边诊断工具见 [`test/scripts/serial/`](./test/scripts/serial/) 的 mcu 家族（线序诊断 `mcu_serial_term.mjs`、主动进 ISP `mcu_isp_enter.mjs`、ISP Go 救砖 `mcu_isp_go.mjs`、软件复位 `mcu_reset_app.mjs`），原理与踩坑分析见 [docs/DTR-RTS线序与STM32-ISP模式.md](./docs/DTR-RTS线序与STM32-ISP模式.md)。
+> 周边诊断工具见 [`test/scripts/serial/`](./test/scripts/serial/) 的 mcu 家族（线序诊断 `mcu_serial_term.mjs`、主动进 ISP `mcu_isp_enter.mjs`、ISP Go 救砖 `mcu_isp_go.mjs`、软件复位 `mcu_reset_app.mjs`），原理与踩坑分析见 [docs/01-MCP设计/LV075-DTR-RTS线序与STM32-ISP模式.md](./docs/01-MCP设计/LV075-DTR-RTS线序与STM32-ISP模式.md)。
 
 #### 4.3 ADB 工具
 
@@ -620,7 +620,7 @@ serial:
 
 **关于 keyProvider**：用于具有 PSH 的设备在解锁时提供密钥，支持 `file`（文件读写）和 `terminal`（终端输入）两种模式。Claude Code 自动调用工具登录的场景下推荐 `file` 模式。其 `challengeFilePath` / `keyFilePath` 是**相对运行 MCP server 时的工作目录（cwd）**的路径，通常写 `./` 开头的项目相对路径即可（与 config.yaml 或设备文件的位置无关）。
 
-**关于 uboot**：`serial.uboot` 子段用于 `serial_enter_uboot` 工具的提示符识别（autoboot 提示、命令提示符、printenv 验证键），全部可选，留空时使用内置默认值。各厂商 U-Boot 提示符差异较大，需要适配时请参考 [U-Boot 正则表达式配置指南](./docs/regex-guide.md)。
+**关于 uboot**：`serial.uboot` 子段用于 `serial_enter_uboot` 工具的提示符识别（autoboot 提示、命令提示符、printenv 验证键），全部可选，留空时使用内置默认值。各厂商 U-Boot 提示符差异较大，需要适配时请参考 [U-Boot 正则表达式配置指南](./docs/01-MCP设计/LV070-U-Boot正则配置指南.md)。
 
 #### 3.6 两个 txt 文本文件
 

@@ -41,7 +41,7 @@ serial:
 
 ### 2. 单一判定入口 getMcuConfig()
 
-所有 MCU 相关判断统一走 `getMcuConfig(deviceName)`（[`src/sdk/shared/config.ts`](../src/sdk/shared/config.ts)）：
+所有 MCU 相关判断统一走 `getMcuConfig(deviceName)`（[`src/sdk/shared/config.ts`](../../src/sdk/shared/config.ts)）：
 
 - 子段存在且 `enabled: true` → 返回规范化配置（`dtr/rts/resetOnOpen/quietMs` 已补默认值，`responsePattern` 已编译为正则）
 - 否则返回 `undefined`（非 MCU 设备）
@@ -75,17 +75,17 @@ serial:
 
 ### 1. 执行流程总览
 
-执行器为独立模块 [`src/sdk/exec/mcu-exec-runner.ts`](../src/sdk/exec/mcu-exec-runner.ts)，刻意不复用三通道共享的 `runExec`（避免扰动 adb/ssh 路径），复用其轮询骨架与 `OutputBuffer.drain()`：
+执行器为独立模块 [`src/sdk/exec/mcu-exec-runner.ts`](../../src/sdk/exec/mcu-exec-runner.ts)，刻意不复用三通道共享的 `runExec`（避免扰动 adb/ssh 路径），复用其轮询骨架与 `OutputBuffer.drain()`：
 
-![runMcuExec 三出口判定流程](./MCP-串口MCU模式设计/img/mcu-exec-flow.svg)
+![runMcuExec 三出口判定流程](LV080-串口MCU模式设计/img/mcu-exec-flow.svg)
 
 一次调用的完整交互时序（含实测时间线）：
 
-![serial_mcu_exec 执行时序](./MCP-串口MCU模式设计/img/mcu-exec-sequence.svg)
+![serial_mcu_exec 执行时序](LV080-串口MCU模式设计/img/mcu-exec-sequence.svg)
 
 #### 1.1 runMcuExec()
 
-单片机裸固件命令执行的核心函数，该函数在 [`src/sdk/exec/mcu-exec-runner.ts`](../src/sdk/exec/mcu-exec-runner.ts) 文件中定义：
+单片机裸固件命令执行的核心函数，该函数在 [`src/sdk/exec/mcu-exec-runner.ts`](../../src/sdk/exec/mcu-exec-runner.ts) 文件中定义：
 
 ```ts
 export async function runMcuExec(input: McuExecInput): Promise<McuExecResult>;
@@ -157,21 +157,21 @@ export async function runMcuExec(input: McuExecInput): Promise<McuExecResult>;
 
 ### 1. DTR/RTS 线序防护
 
-ATK 一键下载类板卡的 CH340 `DTR`/`RTS` 经三极管控制 `BOOT0`/`nRST`，打开端口瞬间驱动的断言电平存在"按复位/误入 ISP"竞态（实测能把芯片推进 ROM ISP 且断电重启都无法脱离）。`serial_open` 在物理串口 open 成功后立即执行 [`#applyMcuLineControl`](../src/sdk/transports/serial.ts)（仅 MCU 设备携带线路参数时执行，非 MCU 设备跳过，行为与从前一致）。
+ATK 一键下载类板卡的 CH340 `DTR`/`RTS` 经三极管控制 `BOOT0`/`nRST`，打开端口瞬间驱动的断言电平存在"按复位/误入 ISP"竞态（实测能把芯片推进 ROM ISP 且断电重启都无法脱离）。`serial_open` 在物理串口 open 成功后立即执行 [`#applyMcuLineControl`](../../src/sdk/transports/serial.ts)（仅 MCU 设备携带线路参数时执行，非 MCU 设备跳过，行为与从前一致）。
 
 ### 2. resetOnOpen 复位时序
 
-配置 `resetOnOpen: true` 时，open 后补一拍实测可靠的软件复位：按住 RESET（`DTR=off + RTS=on`）200ms 后释放（`RTS=off`）——复位释放沿 `BOOT0=0`，芯片从主 Flash 干净启动，即 MCU 版的"一键就绪"。执行细节与电路机理见 [DTR-RTS线序与STM32-ISP模式.md](./DTR-RTS线序与STM32-ISP模式.md)。
+配置 `resetOnOpen: true` 时，open 后补一拍实测可靠的软件复位：按住 RESET（`DTR=off + RTS=on`）200ms 后释放（`RTS=off`）——复位释放沿 `BOOT0=0`，芯片从主 Flash 干净启动，即 MCU 版的"一键就绪"。执行细节与电路机理见 [DTR-RTS线序与STM32-ISP模式.md](LV075-DTR-RTS线序与STM32-ISP模式.md)。
 
 open 阶段的完整交互时序（含 IAP→应用引导切换）：
 
-![serial_open 线路控制与引导切换时序](./MCP-串口MCU模式设计/img/mcu-open-sequence.svg)
+![serial_open 线路控制与引导切换时序](LV080-串口MCU模式设计/img/mcu-open-sequence.svg)
 
 ## 六、 验证与使用要点
 
 ### 1. 离线测试
 
-[`test/scripts/serial/mcu-exec-test.mjs`](../test/scripts/serial/mcu-exec-test.mjs) 以 FakeShell 模拟"无回显固件 + 周期心跳 + 命令响应"输出流，19 项检查覆盖：pattern 命中且早于静默、心跳干扰下的静默判定、超时不发 Ctrl+C 契约、空响应静默完成、前置冲刷隔离、`quietMs` 大于心跳周期时退化为固定采样、裸发送契约（无 marker/无 shell 语法追加）。
+[`test/scripts/serial/mcu-exec-test.mjs`](../../test/scripts/serial/mcu-exec-test.mjs) 以 FakeShell 模拟"无回显固件 + 周期心跳 + 命令响应"输出流，19 项检查覆盖：pattern 命中且早于静默、心跳干扰下的静默判定、超时不发 Ctrl+C 契约、空响应静默完成、前置冲刷隔离、`quietMs` 大于心跳周期时退化为固定采样、裸发送契约（无 marker/无 shell 语法追加）。
 
 ### 2. 真板实测数据
 

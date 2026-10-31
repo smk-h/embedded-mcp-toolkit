@@ -18,7 +18,7 @@
 
 /**
  * @brief CNB 公网 SSH 入口域名
- * @details 平台为每个开发环境注入的固定入口（docs/MCP-CNB云环境访问Windows本地MCP方案.md
+ * @details 平台为每个开发环境注入的固定入口（docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md
  *          一、3.4 节实测）：公网可达、仅 22 端口、none 认证——环境标识字符串本身
  *          即唯一凭证，无需密钥或密码。
  */

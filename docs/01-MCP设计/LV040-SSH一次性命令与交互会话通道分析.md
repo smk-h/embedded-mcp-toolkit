@@ -50,24 +50,24 @@ SSH-2 的核心规范由四份 RFC 组成，自下而上分层：
 
 ### 1. 协议分层
 
-![SSH 协议分层：两种用法都落在 session 通道上](./MCP-SSH一次性命令与交互会话通道分析/img/protocol-stack.svg)
+![SSH 协议分层：两种用法都落在 session 通道上](LV040-SSH一次性命令与交互会话通道分析/img/protocol-stack.svg)
 
 传输层与认证层建立的是一条安全隧道；连接协议（RFC 4254）在这条隧道上复用通道。`session` 通道的职责是「远程执行一个程序」——这个程序可以是 shell、应用程序或系统命令。本文讨论的两种用法，就是在同一类通道上选择不同的启动请求；如果连「执行什么程序」都要自定义协议（文件传输），那就用 `subsystem`。
 
 ### 2. 一条连接多个通道：复用与流控
 
-![一条 TCP 连接上的通道复用](./MCP-SSH一次性命令与交互会话通道分析/img/channel-multiplex.svg)
+![一条 TCP 连接上的通道复用](LV040-SSH一次性命令与交互会话通道分析/img/channel-multiplex.svg)
 
 通道机制的几个要点：
 
 - 通道在打开时由双方各自分配编号（如 0、1、2），后续所有消息携带「收件人通道号」，各通道的数据在同一条加密隧道内交错传输、互不阻塞
 - 每个通道每个方向有独立的滑动窗口（RFC 4254 §5.2，OpenSSH 默认初始 2 MB），接收方消费数据后用 `WINDOW_ADJUST`（93）补充「信用」，防止单个通道的洪泛输出饿死其他通道
-- 同一条已认证连接可以同时承载 session（交互 shell）+ session（sftp 子系统）+ direct-tcpip（端口转发）——本仓库 [src/sdk/transports/ssh.ts](../src/sdk/transports/ssh.ts) 正是这么用的：shell 通道与懒加载的 SFTP 子系统并存
+- 同一条已认证连接可以同时承载 session（交互 shell）+ session（sftp 子系统）+ direct-tcpip（端口转发）——本仓库 [src/sdk/transports/ssh.ts](../../src/sdk/transports/ssh.ts) 正是这么用的：shell 通道与懒加载的 SFTP 子系统并存
 - OpenSSH 的 ControlMaster 连接复用也基于此：后续每次 `ssh host cmd` 不再重新握手认证，只在已有连接上开一条新的 session 通道
 
 ### 3. session 通道的三种启动方式
 
-![session 通道的三种启动方式](./MCP-SSH一次性命令与交互会话通道分析/img/session-requests.svg)
+![session 通道的三种启动方式](LV040-SSH一次性命令与交互会话通道分析/img/session-requests.svg)
 
 同一条 session 通道的生命周期内，启动方式一般只选一种；`pty-req` / `env` 请求可以先行，且不仅限于 shell——`ssh -t host "cmd"` 就是「PTY + exec」的组合，让一次性命令也能获得终端语义。
 
@@ -84,7 +84,7 @@ SSH-2 的核心规范由四份 RFC 组成，自下而上分层：
 
 ### 2. 协议时序
 
-![exec 一次性命令的完整生命周期](./MCP-SSH一次性命令与交互会话通道分析/img/exec-sequence.svg)
+![exec 一次性命令的完整生命周期](LV040-SSH一次性命令与交互会话通道分析/img/exec-sequence.svg)
 
 从时序可以直观看到：传输建立（KEX + 认证）是每条新连接的固定开销，占了流程的大头；通道部分本身很轻。这正是 ControlMaster 连接复用能显著加速 `ssh host cmd` 的原因——跳过第一阶段，只重做第二、三阶段。
 
@@ -109,11 +109,11 @@ SSH-2 的核心规范由四份 RFC 组成，自下而上分层：
 
 ### 2. 协议时序
 
-![交互会话（pty-req + shell）建立与数据流](./MCP-SSH一次性命令与交互会话通道分析/img/interactive-sequence.svg)
+![交互会话（pty-req + shell）建立与数据流](LV040-SSH一次性命令与交互会话通道分析/img/interactive-sequence.svg)
 
 ### 3. PTY 与数据通路
 
-![数据通路对比：无 PTY 与有 PTY](./MCP-SSH一次性命令与交互会话通道分析/img/pty-datapath.svg)
+![数据通路对比：无 PTY 与有 PTY](LV040-SSH一次性命令与交互会话通道分析/img/pty-datapath.svg)
 
 同一条 session 通道，「数据纯净度」完全不同：exec 无 PTY 的输出可以直接按行解析；shell 有 PTY 的输出必须先净化（回显剥离、提示符检测、转义序列过滤）才能程序化消费。终端模拟器（xterm、Windows Terminal、VSCode 内置终端）本质上就是一个「渲染 ANSI 转义序列的字节流消费器」，而程序化调用方没有这个渲染层，看到的都是原始绘制指令。
 
@@ -170,13 +170,13 @@ SSH-2 的核心规范由四份 RFC 组成，自下而上分层：
 
 ### 3. 选型决策流程
 
-![远程执行方式选型决策](./MCP-SSH一次性命令与交互会话通道分析/img/decision-flow.svg)
+![远程执行方式选型决策](LV040-SSH一次性命令与交互会话通道分析/img/decision-flow.svg)
 
 ## 六、 与本工具箱实现的对照
 
 ### 1. 本仓库 SSH 通道的实现现状
 
-本仓库 [src/sdk/transports/ssh.ts](../src/sdk/transports/ssh.ts#L119) 的 SSH 传输层：
+本仓库 [src/sdk/transports/ssh.ts](../../src/sdk/transports/ssh.ts#L119) 的 SSH 传输层：
 
 - `acquire()` 调用 `client.shell({ term: "xterm", cols: 80, rows: 24 })`——ssh2 库在传入 `term` 时先发 `pty-req` 再发 `shell`，即**交互会话模型**，分配 80×24 的 xterm 伪终端（因此远端 Ctrl+C 会被行规程转成 SIGINT）
 - 文件传输走 `subsystem` 请求：`#ensureSftp()` 懒加载调用 `client.sftp()`（服务端映射为 sftp-server 子系统进程），与 shell 通道共用同一条 SSH 连接、各占独立通道、互不干扰
@@ -184,7 +184,7 @@ SSH-2 的核心规范由四份 RFC 组成，自下而上分层：
 
 ### 2. 为什么选交互会话 + marker 而非裸 exec
 
-首要原因是通道统一：串口物理层根本没有「请求 / 通道」的概念，ADB 的 `adb shell` 本质也是一条 PTY 字节流，只有「交互会话」这一个模型能把 serial / ssh / adb 三个通道统一进同一套 `runExec` 编排框架（机制分析见 [MCP交互式会话命令分析.md](./MCP交互式会话命令分析.md)）。
+首要原因是通道统一：串口物理层根本没有「请求 / 通道」的概念，ADB 的 `adb shell` 本质也是一条 PTY 字节流，只有「交互会话」这一个模型能把 serial / ssh / adb 三个通道统一进同一套 `runExec` 编排框架（机制分析见 [交互式会话命令分析.md](LV015-交互式会话命令分析.md)）。
 
 其次是状态复用：嵌入式调试流程是「登录 → cd 到目录 → 进入 U-Boot → 执行一系列命令」的跨命令长流程，exec 的无状态模型每条命令都要重建状态，而交互会话天然保持现场。
 

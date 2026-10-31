@@ -27,11 +27,11 @@
  *   8. .claude/skills/setup-file-utils-remote/SKILL.md
  *      共 4 处：校验表 1 处 + Claude/zcode/opencode 三种客户端示例各 1 处
  *   9. docs/Linux远程连接Windows MCP配置指南.md
- *  10. docs/MCP-CNB云环境访问Windows本地MCP方案.md
- *  11. docs/MCP-Cloudflare命名隧道固定域名方案.md
+ *  10. docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md
+ *  11. docs/02-部署与远程/LV025-Cloudflare命名隧道固定域名方案.md
  *  12. docs/项目简介.md
  *
- * 【刻意不在清单内】docs/MCP-公网反向隧道跨机部署方案.md 用的是 30 秒，
+ * 【刻意不在清单内】docs/02-部署与远程/LV015-公网反向隧道跨机部署方案.md 用的是 30 秒，
  * 那是另一条链路（Windows 出站反向隧道 + 脚本式重连，按 90 秒判死链），
  * 与本文件的场景无关，不要顺手改。
  *

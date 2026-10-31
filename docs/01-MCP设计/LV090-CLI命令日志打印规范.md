@@ -126,7 +126,7 @@ async function doXxx(): Promise<void> {
 
 ## 五、 来源与一致性
 
-本规范提炼自 [`src/cli/commands/sshd-config.ts`](../src/cli/commands/sshd-config.ts) 的实际用法（`doInstallSsh` / `doCheckStatus` / `doShowConnectionInfo` / `doGenerateTemplate` 等函数）。新增 CLI 命令时应遵循同一套规则，并在代码评审时对照本规范检查。
+本规范提炼自 [`src/cli/commands/sshd-config.ts`](../../src/cli/commands/sshd-config/index.ts) 的实际用法（`doInstallSsh` / `doCheckStatus` / `doShowConnectionInfo` / `doGenerateTemplate` 等函数）。新增 CLI 命令时应遵循同一套规则，并在代码评审时对照本规范检查。
 
 - 依赖：`@clack/prompts@^1.7.0`（ESM，项目已配置 `"type": "module"`）
 - 导入方式：

@@ -32,7 +32,7 @@ interface KeyProviderYaml {
  *
  * 用于 serial_enter_uboot 工具的提示符识别与事后验证，全部字段可选。
  * 字符串字段直接写 JavaScript 正则源码，由 UbootDetector 用 new RegExp(source, flags) 构造。
- * 详见 docs/regex-guide.md。
+ * 详见 docs/01-MCP设计/LV070-regex-guide.md。
  */
 export interface UbootYaml {
   autobootPrompts?: string[]; // autoboot 提示字符串数组，用户条目排在默认规则之前（字面重复时保留用户条目）；中断键按命中行文本优先选（Ctrl+u/Ctrl+c/SPACE 字样 → \x15/\x03/空格），行内无提示再按条目字样回退（Ctrl+c → \x03、Ctrl+u → \x15、SPACE → 空格、其余 → 换行）

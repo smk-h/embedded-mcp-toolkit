@@ -15,7 +15,7 @@
 
 MCP 本体始终运行在 **Windows 本地**（由 `remote-start-mcp.bat` 拉起 `node` 进程），Linux 编译服务器上的 Claude Code / ZCode / CodeBuddy 通过 `ssh` 免密**反向登录**到 Windows，把 MCP 作为远程工具来调用。整体环境如下图所示：
 
-![Linux 远程连接 Windows MCP 环境架构图](./Linux远程连接Windows%20MCP配置指南/img/architecture.svg)
+![Linux 远程连接 Windows MCP 环境架构图](LV005-Linux远程连接Windows%20MCP配置指南/img/architecture.svg)
 
 一次完整的 MCP 环境配置通常分两步（对应架构图中两条链路：① 搭桥 + ② 写入桥接配置）：
 

@@ -9,7 +9,7 @@
  *
  * 在 Windows 上启动和管理 cloudflared Quick Tunnel，把"暴露本机 sshd
  * 给公网侧 AI 客户端"的操作固化为单命令（方案背景见
- * docs/MCP-CNB云环境访问Windows本地MCP方案.md 三、四、五章）。
+ * docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md 三、四、五章）。
  *
  * 两种入口形态：
  *   - embedded-mcp-toolkit cloudflared           交互式菜单

@@ -1,6 +1,6 @@
 <!-- more -->
 
-> 本文回答 [MCP-CNB云环境访问Windows本地MCP方案](./MCP-CNB云环境访问Windows本地MCP方案.md) 五、1 节留下的运维缺口：**Quick Tunnel 每次重启都换域名**，而远端 `~/.ssh/config` 里写死了域名。解法是把"匿名临时隧道"升级为"**命名隧道（Named Tunnel）**"，绑定一个自有、且 NS 托管在 Cloudflare 的域名，让地址固定不变。本文以真实域名 `sumumm.top` 为例，给出从迁移 NS 到 Windows、CNB 两侧配置落地的完整过程。
+> 本文回答 [CNB云环境访问Windows本地MCP方案](LV020-CNB云环境访问Windows本地MCP方案.md) 五、1 节留下的运维缺口：**Quick Tunnel 每次重启都换域名**，而远端 `~/.ssh/config` 里写死了域名。解法是把"匿名临时隧道"升级为"**命名隧道（Named Tunnel）**"，绑定一个自有、且 NS 托管在 Cloudflare 的域名，让地址固定不变。本文以真实域名 `sumumm.top` 为例，给出从迁移 NS 到 Windows、CNB 两侧配置落地的完整过程。
 >
 > 核心问题是三件事：**这个域名还能不能继续托管网页？隧道该用哪个名字？为什么非要把 DNS 从腾讯云搬到 Cloudflare？**
 
@@ -60,7 +60,7 @@ NS 已从 DNSPod 迁至 Cloudflare，域名列表状态为 **✓ 活动**，解�
 
 | 文档 | 隧道形态 | 域名 | 与本文的关系 |
 | --- | --- | --- | --- |
-| [MCP-CNB云环境访问Windows本地MCP方案](./MCP-CNB云环境访问Windows本地MCP方案.md) | Quick Tunnel | 随机、每次重启变 | 本文是其次节"域名漂移"应对方案的完整落地 |
+| [CNB云环境访问Windows本地MCP方案](LV020-CNB云环境访问Windows本地MCP方案.md) | Quick Tunnel | 随机、每次重启变 | 本文是其次节"域名漂移"应对方案的完整落地 |
 | 本文 | Named Tunnel | `home.sumumm.top`、固定 | 复用前者的全部配置，只替换域名来源 |
 
 两者的**拓扑、SSH 会话性质、`SSH_CONNECTION` 场景判定完全一致**，差别只在隧道注册到哪里、域名从哪来。因此前者的 Windows sshd 准备与 CNB 侧配置思路可直接沿用。
@@ -291,7 +291,7 @@ Cloudflare 会自动扫描根域名并从 DNSPod 拉取现网记录，导入到�
 
 （1）【**Cloudflare 控制台**】→ 顶部域名列表 → `sumumm.top` 的「状态」列显示 **✓ 活动**。若显示「待更改域名服务器 / Pending Nameserver Update」，说明 NS 尚未生效，回到 3.1 检查。
 
-![image-20260915200637195](./MCP-Cloudflare命名隧道固定域名方案/img/image-20260915200637195.png)
+![image-20260915200637195](LV025-Cloudflare命名隧道固定域名方案/img/image-20260915200637195.png)
 
 （2）【**Cloudflare 控制台**】→ 站点 →【**DNS**】→【**记录**】→ 与 二、4.3 的记录清单一致：共 2 条，均为「仅 DNS」。
 
@@ -358,7 +358,7 @@ scoop install cloudflared
 node bin\embedded-mcp-toolkit-cli.js cloudflared install
 ```
 
-便携版会被放到 `.embedded/bin/cloudflared.exe`，探测优先级高于系统安装路径（见 [`tunnel-detect.ts`](../src/cli/commands/cloudflared/tunnel-detect.ts#L39-L66)）。
+便携版会被放到 `.embedded/bin/cloudflared.exe`，探测优先级高于系统安装路径（见 [`tunnel-detect.ts`](../../src/cli/commands/cloudflared/tunnel-detect.ts#L39-L66)）。
 
 #### 1.2 授权并建立命名隧道
 
@@ -372,7 +372,7 @@ cloudflared tunnel create home
 
 `tunnel login` 会在 `%USERPROFILE%\.cloudflared\` 下拉取 `cert.pem`；`tunnel create` 在同目录生成 `<隧道 UUID>.json` 凭据文件，同时输出 UUID，下一步要用。创建成功的话，网页上【控制台】&rarr;【联网】&rarr;【Tunnels】会出现home这个Tunnels：
 
-![image-20260915201059519](./MCP-Cloudflare命名隧道固定域名方案/img/image-20260915201059519.png)
+![image-20260915201059519](LV025-Cloudflare命名隧道固定域名方案/img/image-20260915201059519.png)
 
 【**注意**】`login` 的浏览器授权步骤无法通过命令行代做，必须在有图形界面的 Windows 上手工完成一次。
 
@@ -393,7 +393,7 @@ ingress:
   - service: http_status:404
 ```
 
-【**重要**】`service` 必须写**显式 IPv4** `ssh://127.0.0.1:22`，禁止写 `localhost`。Windows 上 `cloudflared` 会把 `localhost` 解析为 IPv6 回环 `::1`，导致 sshd 注入的 `SSH_CONNECTION` 中 `server-ip` 变为 `::1`，[`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94) 的 IPv4 端点解析失败，`host_info` 输出 `Endpoint: (unavailable)`。该结论来自 CNB 方案文档实测，项目内已固化为常量 [`DEFAULT_TUNNEL_URL`](../src/cli/commands/cloudflared/constants.ts#L70)。
+【**重要**】`service` 必须写**显式 IPv4** `ssh://127.0.0.1:22`，禁止写 `localhost`。Windows 上 `cloudflared` 会把 `localhost` 解析为 IPv6 回环 `::1`，导致 sshd 注入的 `SSH_CONNECTION` 中 `server-ip` 变为 `::1`，[`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts#L82-L94) 的 IPv4 端点解析失败，`host_info` 输出 `Endpoint: (unavailable)`。该结论来自 CNB 方案文档实测，项目内已固化为常量 [`DEFAULT_TUNNEL_URL`](../../src/cli/commands/cloudflared/constants.ts#L70)。
 
 配置写完后校验一次语法：
 
@@ -498,9 +498,9 @@ C:\Cloudflared\bin\cloudflared.exe --config=C:\Windows\System32\config\systempro
 
 与 Quick Tunnel 的唯一差别是**域名固定**，因此配置写一次即可长期有效。需要留意的是"客户端连哪个地址"：
 
-（1）`host_info` 输出的端点取自 sshd 看到的 `SSH_CONNECTION` 的 `server-ip`；经隧道从本机回环进入时该值恒为 `127.0.0.1`（[`host-endpoint.ts`](../src/sdk/host/host-endpoint.ts#L82-L94)），所以 AI 后续执行的 `ssh` / `scp` 会去连 `127.0.0.1`，config 里**必须有一段能匹配 `127.0.0.1`**。
+（1）`host_info` 输出的端点取自 sshd 看到的 `SSH_CONNECTION` 的 `server-ip`；经隧道从本机回环进入时该值恒为 `127.0.0.1`（[`host-endpoint.ts`](../../src/sdk/host/host-endpoint.ts#L82-L94)），所以 AI 后续执行的 `ssh` / `scp` 会去连 `127.0.0.1`，config 里**必须有一段能匹配 `127.0.0.1`**。
 
-（2）`cnb` 命令的 push-key 步骤写入的正是 `Host 127.0.0.1` 一段，前后以 `# >>> embedded-mcp-toolkit cnb tunnel >>>` 与 `# <<< embedded-mcp-toolkit cnb tunnel <<<` 为标记（见 [`constants.ts`](../src/cli/commands/cnb/constants.ts#L105-L108)）。它的域名来源**已支持模式感知**：`cnb --tunnel named` 取固定主机名（隧道未运行时以 named 模式拉起，含启动前硬校验），因此写入容器的是**固定域名段，可安全重复执行**；只有 `--tunnel quick`（缺省）时才会写成随机域名。
+（2）`cnb` 命令的 push-key 步骤写入的正是 `Host 127.0.0.1` 一段，前后以 `# >>> embedded-mcp-toolkit cnb tunnel >>>` 与 `# <<< embedded-mcp-toolkit cnb tunnel <<<` 为标记（见 [`constants.ts`](../../src/cli/commands/cnb/constants.ts#L105-L108)）。它的域名来源**已支持模式感知**：`cnb --tunnel named` 取固定主机名（隧道未运行时以 named 模式拉起，含启动前硬校验），因此写入容器的是**固定域名段，可安全重复执行**；只有 `--tunnel quick`（缺省）时才会写成随机域名。
 
 推荐做法：在标记段落内把 `--hostname` 写死为固定域名，并把 `home.sumumm.top` 作为同一段的别名，兼顾自动写入与手工登录：
 
@@ -520,11 +520,11 @@ Host 127.0.0.1 home.sumumm.top
 
 【**收益**】这段配置里的域名此后不再随隧道重启而变化，`ProxyCommand` 写死一次即可长期有效 —— 这正是相比 Quick Tunnel 的核心收益。
 
-【**注意**】私钥文件名随来源而变：`cnb` 命令推送的是 `id_mcp_cnb_server`（见 [`constants.ts`](../src/cli/commands/cnb/constants.ts#L38)），而 `sshd-config` 菜单用的是 `id_mcp_server`，两者不可混填。
+【**注意**】私钥文件名随来源而变：`cnb` 命令推送的是 `id_mcp_cnb_server`（见 [`constants.ts`](../../src/cli/commands/cnb/constants.ts#L38)），而 `sshd-config` 菜单用的是 `id_mcp_server`，两者不可混填。
 
 #### 2.3 MCP 客户端配置
 
-`~/.codebuddy/mcp.json`（用户级、**文件名不带点**）中的桥接定义与 [CNB 方案文档](./MCP-CNB云环境访问Windows本地MCP方案.md) 三、4 节完全相同，只是端点从随机域名换成固定域名：
+`~/.codebuddy/mcp.json`（用户级、**文件名不带点**）中的桥接定义与 [CNB 方案文档](LV020-CNB云环境访问Windows本地MCP方案.md) 三、4 节完全相同，只是端点从随机域名换成固定域名：
 
 ```json
 {

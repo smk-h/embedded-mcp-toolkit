@@ -287,7 +287,7 @@ program
 /**
  * @brief cloudflared Quick Tunnel 管理命令
  * @details 把"暴露本机 sshd 给公网侧 AI 客户端"固化为单命令（方案背景见
- *          docs/MCP-CNB云环境访问Windows本地MCP方案.md 三、四、五章）。
+ *          docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md 三、四、五章）。
  *          无参数进交互式菜单；子命令直达：
  *            start   后台启动隧道(spawn detached 常驻)并从日志提取域名
  *            stop    杀进程树并清理状态文件
@@ -390,7 +390,7 @@ program
 /**
  * @brief CNB 云环境免密通道配置命令
  * @details 把"CNB 容器 ssh 到 Windows 本地 MCP"的部署流程固化为单命令
- *          （方案背景见 docs/MCP-CNB云环境访问Windows本地MCP方案.md）：
+ *          （方案背景见 docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md）：
  *          交互输入 CNB 环境标识 → 确保 Cloudflare Quick Tunnel → 本地生成
  *          id_mcp_cnb_server 密钥对并写入本机 authorized_keys → 免密登录容器、
  *          推送私钥并写入隧道 ssh config → 生成 CodeBuddy MCP 配置写入容器用户级

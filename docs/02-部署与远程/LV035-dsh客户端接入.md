@@ -83,7 +83,7 @@ node bin\embedded-mcp-toolkit-cli.js   REM ② stdio 方式拉起 MCP 服务器
 | 接入方 | 配置文件 | 启动命令 | 备注 |
 |--------|---------|---------|------|
 | Claude Code（本地） | 项目根 `.mcp.json` | `node ./bin/embedded-mcp-toolkit-cli.js` | env 写在 JSON 里 |
-| Linux 编译服务器（远程） | 远端 AI 工具的桥接配置 | `ssh ... remote-start-mcp.bat` | 见 [Linux远程连接Windows MCP配置指南](./Linux远程连接Windows%20MCP配置指南.md) |
+| Linux 编译服务器（远程） | 远端 AI 工具的桥接配置 | `ssh ... remote-start-mcp.bat` | 见 [Linux远程连接Windows MCP配置指南](LV005-Linux远程连接Windows%20MCP配置指南.md) |
 | **DSH（本篇）** | `~\.dsh\profiles\web\cordis.patch.yml` | `cmd.exe /d /c remote-start-mcp.bat` | env 由 bat 注入 |
 
 ### 4. 启动与验证

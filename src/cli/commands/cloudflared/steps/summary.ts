@@ -27,7 +27,7 @@ import { type TunnelState } from "../types.js";
  * @details 展示内容：
  *          (a) 进程 PID、目标 URL、启动时间、日志路径；
  *          (b) Quick Tunnel 域名（未分配时提示稍后重查——新域名 DNS 传播
- *              约需 1 分钟，实测见 docs/MCP-CNB云环境访问Windows本地MCP方案.md）；
+ *              约需 1 分钟，实测见 docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md）；
  *          (c) CNB/远端侧可直接复制的 ssh 连接命令（含 ProxyCommand 与
  *              免密密钥路径——密钥名取 cnb 命令推送进容器的 REMOTE_KEY_NAME，
  *              与 sshd-config 流程的 id_mcp_server 是两套密钥；端点用户名

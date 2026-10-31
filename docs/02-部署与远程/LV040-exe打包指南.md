@@ -8,19 +8,19 @@
 
 ## 二、 方案原理
 
-整体采用 Bun `bun build --compile`，打包脚本位于 [scripts/build-exe.mjs](../scripts/build-exe.mjs)。
+整体采用 Bun `bun build --compile`，打包脚本位于 [scripts/build-exe.mjs](../../scripts/build-exe.mjs)。
 
 ### 1. JS 全量内联与版本注入
 
 - `out/cli/index.js`（tsc 产物）连同全部 JS 依赖（含 serialport 的 JS 部分）与 Bun 运行时打进单个 exe，运行时不依赖磁盘上的 node_modules；
-- 打包时通过 `--define:globalThis.__PACKAGE_JSON__=...` 把包信息以字面量注入（见 [src/sdk/shared/package-info.ts](../src/sdk/shared/package-info.ts)），exe 内 `--version`、MCP 握手版本号均不依赖磁盘文件。
+- 打包时通过 `--define:globalThis.__PACKAGE_JSON__=...` 把包信息以字面量注入（见 [src/sdk/shared/package-info.ts](../../src/sdk/shared/package-info.ts)），exe 内 `--version`、MCP 握手版本号均不依赖磁盘文件。
 
 ### 2. 串口原生绑定外置
 
 `@serialport/bindings-cpp` 的 `.node`（C++ 编译产物）无法进入 Bun 的快照文件系统（$bunfs），单独放在 exe 旁的 `prebuilds/<平台>-<架构>/` 目录：
 
 - node-gyp-build 加载时会兜底探测 `process.execPath` 同目录的 `prebuilds/`（nearby 机制），无需任何环境变量即可从真实磁盘加载；
-- 引导与报错指引见 [src/sdk/shared/native-bootstrap.ts](../src/sdk/shared/native-bootstrap.ts)——缺少绑定时串口命令会给出中文修复提示。
+- 引导与报错指引见 [src/sdk/shared/native-bootstrap.ts](../../src/sdk/shared/native-bootstrap.ts)——缺少绑定时串口命令会给出中文修复提示。
 
 #### 2.1 Bun 兼容性：exe 使用 @dimava 分支绑定（仅影响 Windows exe）
 
@@ -117,10 +117,10 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 ### 2. 内嵌模板机制
 
-- 单文件 exe 使用内嵌模板（[src/cli/commands/init-templates.ts](../src/cli/commands/init-templates.ts)），由 [scripts/gen-init-templates.mjs](../scripts/gen-init-templates.mjs) 从仓库模板自动生成（`npm run gen:init-templates`），与仓库文件保持单一事实来源；
+- 单文件 exe 使用内嵌模板（[src/cli/commands/init-templates.ts](../../src/cli/commands/init-templates.ts)），由 [scripts/gen-init-templates.mjs](../../scripts/gen-init-templates.mjs) 从仓库模板自动生成（`npm run gen:init-templates`），与仓库文件保持单一事实来源；
 - 内嵌清单刻意收窄：exe 模式下 `.claude/` 目录仅写出 `settings.local.json`，CLAUDE.md、skills/、*.tmp 启动脚本不内嵌（避免把仓库个人工作流文件扩散到目标目录），npm 模式的磁盘模板不受影响；
 - 内嵌的 `.opencode/opencode.json` 模板在生成时已剔除 `instructions` 字段（其指向的 `.claude/CLAUDE.md` 在 exe 模式下不再生成），npm 模式保留该字段；
-- init 运行时优先使用磁盘模板（npm / 源码模式），仅磁盘模板缺失（exe 场景）时才走内嵌写出，两套流程共用同一份 patch 逻辑（[src/cli/commands/init.ts](../src/cli/commands/init.ts)）。
+- init 运行时优先使用磁盘模板（npm / 源码模式），仅磁盘模板缺失（exe 场景）时才走内嵌写出，两套流程共用同一份 patch 逻辑（[src/cli/commands/init.ts](../../src/cli/commands/init.ts)）。
 
 ### 3. 配置与日志
 
@@ -149,7 +149,7 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 ##### 1.2.1 第一步：锁定差异在串口读取回调
 
-用同一份 raw JSON-RPC 测试脚本分别启动 node 与 exe，确认只有 exe 异常。随后在 [src/sdk/transports/serial.ts](../src/sdk/transports/serial.ts) 加 DEBUG_SERIAL 插桩，分别打印写入与读取事件：
+用同一份 raw JSON-RPC 测试脚本分别启动 node 与 exe，确认只有 exe 异常。随后在 [src/sdk/transports/serial.ts](../../src/sdk/transports/serial.ts) 加 DEBUG_SERIAL 插桩，分别打印写入与读取事件：
 
 - 写入事件（`[DBG write]`）：每次发送命令都触发；
 - 读取事件（`[DBG data]`）：exe 下**一次都不触发**。
@@ -174,7 +174,7 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 ##### 1.2.4 第四步：overrides 方案踩坑
 
-最初用 [package.json](../package.json) 的 `overrides` 把 `@serialport/bindings-cpp` 全局替换为 dimava 分支，重建 exe 后验证**通过**。但该方案有严重副作用：
+最初用 [package.json](../../package.json) 的 `overrides` 把 `@serialport/bindings-cpp` 全局替换为 dimava 分支，重建 exe 后验证**通过**。但该方案有严重副作用：
 
 - 顶层 `@serialport/bindings-cpp` 变为 dimava，官方**全平台** prebuilds（android-arm、linux-x64、darwin 等）全部丢失；
 - node 模式在 Linux/macOS 上会因找不到绑定而串口不可用，npm 离线包同样回归；
@@ -182,9 +182,9 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 ##### 1.2.5 第五步：devDependency 方案为何仍失败
 
-改为正确拆法：官方 `@serialport/bindings-cpp@13.0.0` 保持顶层（全平台 prebuilds，node 用），`@dimava/serialport-bindings-cpp@13.0.2` 作为 devDependency（仅构建期用），[scripts/build-exe.mjs](../scripts/build-exe.mjs) 的 `BINDINGS_SRC` 指向 dimava。重建 exe 后验证**仍然失败**（data 事件依旧不触发），连续 3 次复现。
+改为正确拆法：官方 `@serialport/bindings-cpp@13.0.0` 保持顶层（全平台 prebuilds，node 用），`@dimava/serialport-bindings-cpp@13.0.2` 作为 devDependency（仅构建期用），[scripts/build-exe.mjs](../../scripts/build-exe.mjs) 的 `BINDINGS_SRC` 指向 dimava。重建 exe 后验证**仍然失败**（data 事件依旧不触发），连续 3 次复现。
 
-此时在 [src/sdk/shared/native-bootstrap.ts](../src/sdk/shared/native-bootstrap.ts) 与 [src/sdk/transports/serial.ts](../src/sdk/transports/serial.ts) 加插桩观察绑定解析路径：
+此时在 [src/sdk/shared/native-bootstrap.ts](../../src/sdk/shared/native-bootstrap.ts) 与 [src/sdk/transports/serial.ts](../../src/sdk/transports/serial.ts) 加插桩观察绑定解析路径：
 
 - `hasNodeModulesBindings()` 返回 `false`：exe 内 `require.resolve('@serialport/bindings-cpp')` 在 `$bunfs` 虚拟路径下解析失败（报 `Cannot find module ... from 'B:\~BUN\root\...'`）；
 - `hasNearbyPrebuilds()` 返回 `true`：`exe-out/prebuilds/win32-x64/` 存在。
@@ -217,7 +217,7 @@ npm run pack:exe:win    # 强制 Windows x64 目标
 
 ##### 1.3.2 最终方案：构建期覆盖 win32-x64 预编译
 
-[scripts/build-exe.mjs](../scripts/build-exe.mjs) 新增 `patchWinPrebuildBindings()`，在打包最后一步把 dimava 分支的 `.node` 覆盖到官方 win32-x64 预编译位置：
+[scripts/build-exe.mjs](../../scripts/build-exe.mjs) 新增 `patchWinPrebuildBindings()`，在打包最后一步把 dimava 分支的 `.node` 覆盖到官方 win32-x64 预编译位置：
 
 ```js
 // scripts/build-exe.mjs（简化示意，完整实现见该函数）

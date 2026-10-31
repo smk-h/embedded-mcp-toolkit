@@ -2,7 +2,7 @@
 
 ## 一、 文档说明
 
-本文档是 [`sshd-config` 命令](../src/cli/commands/sshd-config/index.ts)（Windows OpenSSH 免密登录环境配置）的**手动操作手册**。当该命令在部分 Windows 系统上无法正常使用时，参照本文档手工完成等效配置。
+本文档是 [`sshd-config` 命令](../../src/cli/commands/sshd-config/index.ts)（Windows OpenSSH 免密登录环境配置）的**手动操作手册**。当该命令在部分 Windows 系统上无法正常使用时，参照本文档手工完成等效配置。
 
 ### 1. 背景与适用场景
 
@@ -13,7 +13,7 @@
 | `sshd-config` | Windows 当 SSH 服务器，让 Linux 免密登录 Windows | 需要管理员权限，自动 UAC 提权 |
 | `remote-mcp-config` | Windows 当 SSH 客户端，登录 Linux 写 MCP 桥接配置 | 普通权限，无平台限制 |
 
-`sshd-config` 内部通过 PowerShell `Start-Process -Verb RunAs` 弹出 UAC 确认并新开管理员窗口重跑命令（实现见 [`src/cli/shared/platform.ts`](../src/cli/shared/platform.ts)）。部分 Windows 环境下（组策略限制 UAC 提权、安全软件拦截、终端环境差异等），**提权后的新窗口会一闪而过**，命令无法继续，且此类问题无法在工具侧全部兼容。
+`sshd-config` 内部通过 PowerShell `Start-Process -Verb RunAs` 弹出 UAC 确认并新开管理员窗口重跑命令（实现见 [`src/cli/shared/platform.ts`](../../src/cli/shared/platform.ts)）。部分 Windows 环境下（组策略限制 UAC 提权、安全软件拦截、终端环境差异等），**提权后的新窗口会一闪而过**，命令无法继续，且此类问题无法在工具侧全部兼容。
 
 遇到闪退时，本手册提供两条出路：
 
@@ -454,11 +454,11 @@ ssh-keygen -lf ~/.ssh/id_mcp_server.pub
 
 ## 五、 相关文档
 
-（1）[`Linux远程连接Windows MCP配置指南`](./Linux远程连接Windows%20MCP配置指南.md)：两个对偶命令的完整自动流程与整体架构。
+（1）[`Linux远程连接Windows MCP配置指南`](LV005-Linux远程连接Windows%20MCP配置指南.md)：两个对偶命令的完整自动流程与整体架构。
 
-（2）[`SSH免密登录故障排查`](./SSH免密登录故障排查.md)：免密登录问题进阶排查。
+（2）[`SSH免密登录故障排查`](LV030-SSH免密登录故障排查.md)：免密登录问题进阶排查。
 
-（3）[`MCP-CNB云环境访问Windows本地MCP方案`](./MCP-CNB云环境访问Windows本地MCP方案.md)：CNB 云环境场景下的公网隧道方案。
+（3）[`CNB云环境访问Windows本地MCP方案`](LV020-CNB云环境访问Windows本地MCP方案.md)：CNB 云环境场景下的公网隧道方案。
 
 ---
 

@@ -1,6 +1,6 @@
 ## 一、 概述
 
-串口通道的 U-Boot 支持由三部分构成：设备配置里的 `serial.uboot` 检测规则、[`src/sdk/tools/serial/sessions.ts`](../src/sdk/tools/serial/sessions.ts) 中按会话维护的「U-Boot 标记」，以及 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 提供的两个 MCP 工具（`serial_enter_uboot` / `serial_uboot_state`）。标记本身只是一个 `Set<string>` 里的 `session_id`，但它决定了 `serial_exec` 的 marker 包装风格与 2 级回落检测器选型，是整个 U-Boot 命令执行可靠性的中枢。
+串口通道的 U-Boot 支持由三部分构成：设备配置里的 `serial.uboot` 检测规则、[`src/sdk/tools/serial/sessions.ts`](../../src/sdk/tools/serial/sessions.ts) 中按会话维护的「U-Boot 标记」，以及 [`src/sdk/tools/serial/uboot.ts`](../../src/sdk/tools/serial/uboot.ts) 提供的两个 MCP 工具（`serial_enter_uboot` / `serial_uboot_state`）。标记本身只是一个 `Set<string>` 里的 `session_id`，但它决定了 `serial_exec` 的 marker 包装风格与 2 级回落检测器选型，是整个 U-Boot 命令执行可靠性的中枢。
 
 本文分析以下问题：
 
@@ -8,7 +8,7 @@
 - 标记在何时被设置、查询、同步、清理，各自的判断逻辑
 - 为什么刻意不用「提示符排除法」清理标记（误清事故复盘）
 
-![标记生命周期总览](./MCP-U-Boot标记机制分析/img/mark-set-clear-lifecycle.excalidraw.svg)
+![标记生命周期总览](LV060-U-Boot标记机制分析/img/mark-set-clear-lifecycle.excalidraw.svg)
 
 机制自 2026-08-27 误清事故起经多轮演进。正文只描述当前行为，行为沿革集中收录在下表，日期与 git 提交一一对应，正文不再重复标注：
 
@@ -25,7 +25,7 @@
 
 ### 1. 配置字段
 
-`UbootYaml` 接口在 [`src/sdk/shared/config.ts`](../src/sdk/shared/config.ts#L37) 中声明，全部字段可选：
+`UbootYaml` 接口在 [`src/sdk/shared/config.ts`](../../src/sdk/shared/config.ts#L37) 中声明，全部字段可选：
 
 ```typescript
 // src/sdk/shared/config.ts
@@ -37,12 +37,12 @@ export interface UbootYaml {
 ```
 
 - 字段值直接写 JavaScript 正则源码字符串，由 `new RegExp(source, flags)` 构造，不做任何预处理，所见即所得
-- YAML 双引号字符串中反斜杠必须双写（`"\\s+"`），单引号字符串可免双写，详见 [regex-guide.md](regex-guide.md)
-- `getUbootConfig()` 在 [`src/sdk/shared/config.ts`](../src/sdk/shared/config.ts#L334) 中按设备名读取 `serial.uboot` 子段，未配置时返回空对象 `{}`，由检测器回退默认值
+- YAML 双引号字符串中反斜杠必须双写（`"\\s+"`），单引号字符串可免双写，详见 [U-Boot正则配置指南](LV070-U-Boot正则配置指南.md)
+- `getUbootConfig()` 在 [`src/sdk/shared/config.ts`](../../src/sdk/shared/config.ts#L334) 中按设备名读取 `serial.uboot` 子段，未配置时返回空对象 `{}`，由检测器回退默认值
 
 ### 2. 默认值与合并规则
 
-内置默认值 `UbootDefaults` 定义在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L143)：
+内置默认值 `UbootDefaults` 定义在 [`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L143)：
 
 - `autobootPrompts`（按优先级）：`Hit Ctrl+u to stop autoboot`（发 `\x15`）→ `Hit/Press Ctrl+c … stop/interrupt/abort autoboot`（发 `\x03`）→ `Hit/Press any key|a key|key …`（发换行）→ `Hit/Press SPACE …`（发空格）。覆盖 Hit/Press × any key/SPACE/Ctrl 类按键 × stop/interrupt/abort 动词的主流组合
 - `prompt`：`(?:=>|U-Boot>)\s*$`，无 flags（`=>` 和 `U-Boot>` 固定大小写）
@@ -55,17 +55,17 @@ export interface UbootYaml {
 - `prompt`：仅当用户值与默认值**字面不同**时才联合——剥离两者尾部 `\s*$` 后拼成 `(?:(?:A)|(?:B))\s*$`；用户照抄默认值时跳过合并，避免 `(?:A|A)` 冗余
 - `verifyEnvKeys`：默认 ∪ 用户，去重后全部小写化，匹配时走 `key=` 字面量包含判断
 
-![配置合并规则](./MCP-U-Boot标记机制分析/img/config-merge.excalidraw.svg)
+![配置合并规则](LV060-U-Boot标记机制分析/img/config-merge.excalidraw.svg)
 
 【**容错原则**】配置含非法正则时 `new UbootDetector()` 在构造期抛错，调用方捕获后快速返回配置错误，不进入轮询；`serial_exec` / `serial_read` 内的检查则降级为跳过，不阻断主流程。
 
 ## 三、 UbootDetector 四件套检测
 
-`UbootDetector` 类在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L176) 中定义，只做匹配、不操作串口，时序编排由工具 handler 负责。四个 match 方法对应进入 U-Boot 的四种判据。
+`UbootDetector` 类在 [`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L176) 中定义，只做匹配、不操作串口，时序编排由工具 handler 负责。四个 match 方法对应进入 U-Boot 的四种判据。
 
 ### 1. matchAutoboot()
 
-识别 autoboot 倒计时提示并返回应发送的中断键，该函数在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L287) 文件中定义：
+识别 autoboot 倒计时提示并返回应发送的中断键，该函数在 [`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L287) 文件中定义：
 
 【**函数作用**】
 
@@ -83,7 +83,7 @@ export interface UbootYaml {
 
 ### 2. matchPrompt()
 
-识别 U-Boot 命令提示符，该函数在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L301) 文件中定义：
+识别 U-Boot 命令提示符，该函数在 [`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L301) 文件中定义：
 
 【**函数作用**】
 
@@ -99,7 +99,7 @@ export interface UbootYaml {
 
 ### 3. matchVerifyKey()
 
-验证 `printenv` 输出中的环境变量键，该函数在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L314) 文件中定义：
+验证 `printenv` 输出中的环境变量键，该函数在 [`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L314) 文件中定义：
 
 【**函数作用**】
 
@@ -115,7 +115,7 @@ export interface UbootYaml {
 
 ### 4. matchKernelBoot()
 
-识别内核启动特征，该函数在 [`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L328) 文件中定义：
+识别内核启动特征，该函数在 [`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L328) 文件中定义：
 
 【**函数作用**】
 
@@ -131,7 +131,7 @@ export interface UbootYaml {
 
 ## 四、 标记的设置：serial_enter_uboot 预检 + 两层检测
 
-`serialEnterUbootHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 中实现：发重启命令前先做一次零副作用的被动预检（`restart=true` 时已在 U-Boot 会改发 `reset`，走"重启再进 U-Boot"完整周期），之后是快轮询起步的轮询循环（前 5 秒 150ms、之后 500ms——`reset` 路径没有 Linux 关机日志当缓冲，autoboot 窗口只有 bootdelay 的 1~3 秒），内分三个阶段，总超时兜底。
+`serialEnterUbootHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../../src/sdk/tools/serial/uboot.ts) 中实现：发重启命令前先做一次零副作用的被动预检（`restart=true` 时已在 U-Boot 会改发 `reset`，走"重启再进 U-Boot"完整周期），之后是快轮询起步的轮询循环（前 5 秒 150ms、之后 500ms——`reset` 路径没有 Linux 关机日志当缓冲，autoboot 窗口只有 bootdelay 的 1~3 秒），内分三个阶段，总超时兜底。
 
 ### 1. 预检 + 三阶段流程
 
@@ -151,7 +151,7 @@ export interface UbootYaml {
 
 ### 2. 时序图
 
-![serial_enter_uboot 两层检测时序](./MCP-U-Boot标记机制分析/img/enter-uboot-sequence.svg)
+![serial_enter_uboot 两层检测时序](LV060-U-Boot标记机制分析/img/enter-uboot-sequence.svg)
 
 ### 3. 设计要点
 
@@ -163,7 +163,7 @@ export interface UbootYaml {
 
 ## 五、 标记的查询与同步：serial_uboot_state
 
-`serialUbootStateHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 中实现，提供四个动作。
+`serialUbootStateHandler()` 在 [`src/sdk/tools/serial/uboot.ts`](../../src/sdk/tools/serial/uboot.ts) 中实现，提供四个动作。
 
 ### 1. 四个动作
 
@@ -175,7 +175,7 @@ export interface UbootYaml {
 
 ### 2. classifyUbootEnv() 分类逻辑与主动探测
 
-`classifyUbootEnv()` 在 [`src/sdk/tools/serial/uboot.ts`](../src/sdk/tools/serial/uboot.ts) 中定义，只保留**高置信锚点与探测护栏**，判定顺序即优先级：
+`classifyUbootEnv()` 在 [`src/sdk/tools/serial/uboot.ts`](../../src/sdk/tools/serial/uboot.ts) 中定义，只保留**高置信锚点与探测护栏**，判定顺序即优先级：
 
 （1）`matchPrompt()` 命中（尾部锚定 `=>`/`U-Boot>`/设备配置）→ `uboot`
 
@@ -197,7 +197,7 @@ export interface UbootYaml {
 
 3/4 级过渡态判据同时是**探测护栏**：autoboot 倒计时期间探测命令的回车会打断引导进入 U-Boot（状态改变事故），booting 期间探测无消费者纯浪费，故必须先于探测判定。
 
-![detect 分类判定流程](./MCP-U-Boot标记机制分析/img/detect-classify-flow.excalidraw.svg)
+![detect 分类判定流程](LV060-U-Boot标记机制分析/img/detect-classify-flow.excalidraw.svg)
 
 ### 3. 标记同步规则
 
@@ -209,11 +209,11 @@ export interface UbootYaml {
 
 ## 六、 标记的消费：serial_exec 的 marker 包装
 
-标记的消费点在 [`src/sdk/tools/serial/shell.ts`](../src/sdk/tools/serial/shell.ts) 的 `serial_exec` handler，入口先采样 `wasUboot = isUbootSession()`，据此做两个分支决策。
+标记的消费点在 [`src/sdk/tools/serial/shell.ts`](../../src/sdk/tools/serial/shell.ts) 的 `serial_exec` handler，入口先采样 `wasUboot = isUbootSession()`，据此做两个分支决策。
 
 ### 1. marker 包装风格
 
-在 [`src/sdk/exec/exec-runner.ts`](../src/sdk/exec/exec-runner.ts#L303) 中按 `markerStyle` 二选一：
+在 [`src/sdk/exec/exec-runner.ts`](../../src/sdk/exec/exec-runner.ts#L303) 中按 `markerStyle` 二选一：
 
 ```typescript
 // src/sdk/exec/exec-runner.ts
@@ -228,13 +228,13 @@ const fullCommand: string =
 
 ### 2. 2 级回落检测器收窄
 
-U-Boot 态会话的 2 级回落检测器收窄为「仅 U-Boot 提示符集」——由 `createUbootPromptDetector()`（[`src/sdk/exec/prompt-detector.ts`](../src/sdk/exec/prompt-detector.ts#L403)）构造，而非通用默认正则。原因：U-Boot 下 TFTP/升级类命令用连续 `#` 刷进度条，通用正则「行尾 `#`」分支会把进度帧误判为 Linux root 提示符导致提前返回（实测 alg 升级 42s 的命令 406ms 即被截胡）。U-Boot 会话 plain 包装必有 marker，真结束由 1 级 marker 确定性判定，无需通用提示符参与。
+U-Boot 态会话的 2 级回落检测器收窄为「仅 U-Boot 提示符集」——由 `createUbootPromptDetector()`（[`src/sdk/exec/prompt-detector.ts`](../../src/sdk/exec/prompt-detector.ts#L403)）构造，而非通用默认正则。原因：U-Boot 下 TFTP/升级类命令用连续 `#` 刷进度条，通用正则「行尾 `#`」分支会把进度帧误判为 Linux root 提示符导致提前返回（实测 alg 升级 42s 的命令 406ms 即被截胡）。U-Boot 会话 plain 包装必有 marker，真结束由 1 级 marker 确定性判定，无需通用提示符参与。
 
-![serial_exec 标记消费决策](./MCP-U-Boot标记机制分析/img/exec-marker-decision.excalidraw.svg)
+![serial_exec 标记消费决策](LV060-U-Boot标记机制分析/img/exec-marker-decision.excalidraw.svg)
 
 ## 七、 标记的清理
 
-标记的存取由 [`src/sdk/tools/serial/sessions.ts`](../src/sdk/tools/serial/sessions.ts) 中三个函数完成：`markUbootSession()`（L43）、`isUbootSession()`（L49）、`clearUbootSession()`（L54）。清理路径有五条。
+标记的存取由 [`src/sdk/tools/serial/sessions.ts`](../../src/sdk/tools/serial/sessions.ts) 中三个函数完成：`markUbootSession()`（L43）、`isUbootSession()`（L49）、`clearUbootSession()`（L54）。清理路径有五条。
 
 ### 1. serial_enter_uboot 失败出口
 
@@ -260,7 +260,7 @@ U-Boot 态会话执行命令后，对「本次输出 + 前置冲刷残留（`flu
 
 ### 5. 会话销毁
 
-`serial_close`（[`src/sdk/tools/serial/shell.ts`](../src/sdk/tools/serial/shell.ts#L219)）在关闭会话后清标记；MCP Server 进程退出时 `disposeAllSerialSessions()`（[`src/sdk/tools/serial/sessions.ts`](../src/sdk/tools/serial/sessions.ts#L65)）对整个 `ubootSessions` Set 做 `clear()`，无泄漏。
+`serial_close`（[`src/sdk/tools/serial/shell.ts`](../../src/sdk/tools/serial/shell.ts#L219)）在关闭会话后清标记；MCP Server 进程退出时 `disposeAllSerialSessions()`（[`src/sdk/tools/serial/sessions.ts`](../../src/sdk/tools/serial/sessions.ts#L65)）对整个 `ubootSessions` Set 做 `clear()`，无泄漏。
 
 ## 八、 设计要点总结
 

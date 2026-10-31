@@ -71,7 +71,7 @@ export type DirectAction = (typeof DIRECT_ACTIONS)[number];
  * @details 必须写显式 IPv4 127.0.0.1，禁止 localhost——Windows 上 cloudflared
  *          把 localhost 解析为 IPv6 回环 ::1，导致 sshd 侧 SSH_CONNECTION 的
  *          server-ip 为 ::1，host-endpoint 的 IPv4 端点解析失败（实测结论，
- *          见 docs/MCP-CNB云环境访问Windows本地MCP方案.md 六、3）。
+ *          见 docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md 六、3）。
  */
 export const DEFAULT_TUNNEL_URL = "ssh://127.0.0.1:22";
 

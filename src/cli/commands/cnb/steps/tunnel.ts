@@ -8,7 +8,7 @@
  * Description: 步骤 0: 确保 Cloudflare Quick Tunnel 已就绪并取得域名
  *
  * CNB 容器内要 ssh 到 Windows，必须先有一条由 Windows 侧 cloudflared 反向
- * 注册到 Cloudflare 边缘的通路（方案见 docs/MCP-CNB云环境访问Windows本地MCP方案.md
+ * 注册到 Cloudflare 边缘的通路（方案见 docs/02-部署与远程/LV020-CNB云环境访问Windows本地MCP方案.md
  * 第三章）。域名重启即换，故每次流程都重新确认：隧道在跑、健康（域名可解析）
  * 就直接复用其域名，否则调用 cloudflared 命令的 start 步骤拉起；进程存活但已被
  * Cloudflare 回收的僵尸隧道（dead）先停掉再拉新，域名暂未解析生效（pending）则

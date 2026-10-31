@@ -154,7 +154,7 @@ export type UbootInterruptKey = "\n" | "\x15" | "\x03" | " ";
  *   - Ctrl+u 优先（发 \x15），其余按 Ctrl+c（\x03）/ SPACE（空格）/ 换行
  *
  * 正则字符串里反斜杠双写（\\s、\\+）是 TypeScript 源码字面量的转义要求，
- * 与用户在 YAML 配置里的写法一致（详见 docs/regex-guide.md）。
+ * 与用户在 YAML 配置里的写法一致（详见 docs/01-MCP设计/LV070-regex-guide.md）。
  */
 const UbootDefaults = {
   autobootPrompts: [

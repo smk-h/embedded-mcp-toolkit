@@ -15,7 +15,7 @@
 
 （1）RS-232 时代：负逻辑，+3V～+15V 表示 0（SPACE），-3V～-15V 表示 1（MARK），"有效（asserted）"指该控制信号进入激活状态。
 
-（2）USB 转串口时代：CH340、CP210x、FT232 等芯片把 `DTR`/`RTS` 变成 TTL 电平输出脚，极性因芯片而异（如 CH340 的 `DTR#`/`RTS#` 为低有效输出）。本文统一按**逻辑状态**讨论：`on` = 有效（asserted），`off` = 无效（de-asserted），与 [`test/scripts/serial/mcu_serial_term.mjs`](../test/scripts/serial/mcu_serial_term.mjs) 的 `--dtr/--rts` 参数语义一致。
+（2）USB 转串口时代：CH340、CP210x、FT232 等芯片把 `DTR`/`RTS` 变成 TTL 电平输出脚，极性因芯片而异（如 CH340 的 `DTR#`/`RTS#` 为低有效输出）。本文统一按**逻辑状态**讨论：`on` = 有效（asserted），`off` = 无效（de-asserted），与 [`test/scripts/serial/mcu_serial_term.mjs`](../../test/scripts/serial/mcu_serial_term.mjs) 的 `--dtr/--rts` 参数语义一致。
 
 ### 3. 在嵌入式场景中的两类用途
 
@@ -92,7 +92,7 @@ ISP（In-System Programming，在系统编程）模式的主体是 ST 出厂固�
 
 ### 1. 一键下载电路的信号通路
 
-以 ATK 战舰 V3 类板卡为例（电路描述源自 [`test/scripts/serial/mcu_serial_term.mjs`](../test/scripts/serial/mcu_serial_term.mjs) 头注释），CH340 的两根控制线经三极管门电路译码后驱动 MCU：
+以 ATK 战舰 V3 类板卡为例（电路描述源自 [`test/scripts/serial/mcu_serial_term.mjs`](../../test/scripts/serial/mcu_serial_term.mjs) 头注释），CH340 的两根控制线经三极管门电路译码后驱动 MCU：
 
 ```text
 CH340.DTR ──┐
@@ -185,7 +185,7 @@ node test/scripts/serial/mcu_serial_term.mjs -p COM4 --dtr off --rts off -s $'\x
 0x08 0x00 0x00 0x00 0x08  -> 0x79  地址受理, 芯片跳转 0x08000000
 ```
 
-对应 [`test/scripts/serial/mcu_isp_go.mjs`](../test/scripts/serial/mcu_isp_go.mjs)，内置三种握手顺序轮询重试。对状态干净的板子有效；但本板实测跨端口会话后 bootloader 状态易被污染（见 2.2 的陷阱），**在本板上请以软件复位时序为准**。
+对应 [`test/scripts/serial/mcu_isp_go.mjs`](../../test/scripts/serial/mcu_isp_go.mjs)，内置三种握手顺序轮询重试。对状态干净的板子有效；但本板实测跨端口会话后 bootloader 状态易被污染（见 2.2 的陷阱），**在本板上请以软件复位时序为准**。
 
 #### 3.2 软件复位时序（实测可靠，推荐）
 
@@ -229,10 +229,10 @@ await set({ rts: false });            // 释放 RESET: 释放沿 BOOT0=0, 从 Fl
 
 | 脚本 | 用途 | 典型用法 |
 |---|---|---|
-| [`mcu_serial_term.mjs`](../test/scripts/serial/mcu_serial_term.mjs) | 串口终端 + 四组合线序诊断 + 单发命令 + 0x7F 探测 | `node test/scripts/serial/mcu_serial_term.mjs -p COM4 --diagnose` |
-| [`mcu_isp_enter.mjs`](../test/scripts/serial/mcu_isp_enter.mjs) | 主动进 ISP（主备两种时序，逐步探测验证） | `node test/scripts/serial/mcu_isp_enter.mjs COM4` |
-| [`mcu_isp_go.mjs`](../test/scripts/serial/mcu_isp_go.mjs) | AN3155 Go 命令跳应用（多轮握手重试） | `node test/scripts/serial/mcu_isp_go.mjs COM4` |
-| [`mcu_reset_app.mjs`](../test/scripts/serial/mcu_reset_app.mjs) | DTR/RTS 复位时序起应用（救砖首选，最可靠） | `node test/scripts/serial/mcu_reset_app.mjs COM4` |
+| [`mcu_serial_term.mjs`](../../test/scripts/serial/mcu_serial_term.mjs) | 串口终端 + 四组合线序诊断 + 单发命令 + 0x7F 探测 | `node test/scripts/serial/mcu_serial_term.mjs -p COM4 --diagnose` |
+| [`mcu_isp_enter.mjs`](../../test/scripts/serial/mcu_isp_enter.mjs) | 主动进 ISP（主备两种时序，逐步探测验证） | `node test/scripts/serial/mcu_isp_enter.mjs COM4` |
+| [`mcu_isp_go.mjs`](../../test/scripts/serial/mcu_isp_go.mjs) | AN3155 Go 命令跳应用（多轮握手重试） | `node test/scripts/serial/mcu_isp_go.mjs COM4` |
+| [`mcu_reset_app.mjs`](../../test/scripts/serial/mcu_reset_app.mjs) | DTR/RTS 复位时序起应用（救砖首选，最可靠） | `node test/scripts/serial/mcu_reset_app.mjs COM4` |
 
 推荐工作流：先 `--diagnose` 确定可用线序 → 用该线序通信；一旦静默，先 `0x7F` 探测判态 → 在 ISP 则直接 `mcu_reset_app` 拉回应用。
 
