@@ -40,6 +40,36 @@ export interface UbootYaml {
   verifyEnvKeys?: string[]; // 提示符未命中时发 printenv 验证的环境变量键名数组（纯字面量，不走正则转换）
 }
 
+/**
+ * @brief 单片机裸固件模式配置（serial.mcu 子段）
+ *
+ * 面向无 shell/无回显/无提示符的单片机固件（如 STM32 应用 + 心跳打印）。
+ * 子段存在且 enabled: true 即启用；Linux 板卡设备不写该子段即可。
+ * dtr/rts 控制打开端口后的线序电平，规避一键下载电路（CH340 DTR/RTS →
+ * BOOT0/nRST）在 open 瞬间的复位/进 ISP 竞态。
+ */
+export interface SerialMcuYaml {
+  enabled?: boolean; // 是否启用单片机模式，缺省 false（子段存在但 false 亦视为关闭）
+  dtr?: "on" | "off" | "keep"; // open 后 DTR 电平；keep=不动驱动默认状态（默认 keep）
+  rts?: "on" | "off" | "keep"; // open 后 RTS 电平；keep=不动驱动默认状态（默认 keep）
+  resetOnOpen?: boolean; // open 后执行 DTR/RTS 软件复位时序拉起应用（BOOT0=0 复位释放），默认 false
+  quietMs?: number; // 静默判定窗口（毫秒），须小于固件心跳周期，默认 400
+  responsePattern?: string; // 响应完成正则（任意位置命中即判定完成），可选；留空仅用静默判定
+}
+
+/**
+ * @brief 单片机模式的运行时规范化配置（getMcuConfig 返回值）
+ *
+ * 与 SerialMcuYaml 的区别：字段均已补默认值、正则已编译、enabled 已判定。
+ */
+export interface McuRuntimeConfig {
+  dtr: "on" | "off" | "keep"; // open 后 DTR 电平
+  rts: "on" | "off" | "keep"; // open 后 RTS 电平
+  resetOnOpen: boolean; // open 后是否执行软件复位时序
+  quietMs: number; // 静默判定窗口（毫秒）
+  responseRegex: RegExp | null; // 编译后的响应完成正则；未配置时为 null
+}
+
 interface DeviceConfig {
   promptPattern?: string; // exec 提示符检测正则，覆盖默认正则；留空用 PromptDetector.DEFAULT_PATTERN
   residentCommands?: readonly string[]; // 常驻命令扩展名单（首 token 精确匹配），三通道共享，与内置白名单并集；留空仅用内置白名单
@@ -68,6 +98,7 @@ interface DeviceConfig {
     loginPassword?: string; // 串口登录密码
     keyProvider?: KeyProviderYaml; // 串口侧密钥提供配置
     uboot?: UbootYaml; // U-Boot 进入检测配置（可选，留空用默认值）
+    mcu?: SerialMcuYaml; // 单片机裸固件模式配置（可选，子段存在且 enabled: true 即启用）
   };
 }
 
@@ -236,8 +267,10 @@ export function getSSHConfig(name?: string): SSHShellConfig {
  * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
  */
 export function getSerialConfig(name?: string): SerialShellConfig {
-  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const deviceName = name ?? resolveDeviceName();
+  const device = getDeviceConfig(deviceName);
   const yaml = device.serial ?? {};
+  const mcu = getMcuConfig(deviceName);
   return {
     port: process.env.SERIAL_PORT ?? yaml.port ?? "none",
     baudRate: parseInt(
@@ -250,6 +283,10 @@ export function getSerialConfig(name?: string): SerialShellConfig {
     lineEnding: yaml.lineEnding,
     loginUsername: yaml.loginUsername,
     loginPassword: yaml.loginPassword,
+    // 单片机模式线路控制（非 MCU 设备为 undefined, 传输层完全跳过）
+    mcuDtr: mcu?.dtr,
+    mcuRts: mcu?.rts,
+    mcuResetOnOpen: mcu?.resetOnOpen,
   };
 }
 
@@ -337,6 +374,55 @@ export function getExecTimeoutConfig(name?: string): ExecTimeoutConfig {
 export function getUbootConfig(name?: string): UbootYaml {
   const device = getDeviceConfig(name ?? resolveDeviceName());
   return device.serial?.uboot ?? {};
+}
+
+/** 单片机模式静默判定窗口默认值（毫秒），须小于固件心跳周期 */
+const DEFAULT_MCU_QUIET_MS = 400;
+
+/**
+ * @brief 获取设备的单片机裸固件模式配置（serial.mcu 子段）
+ *
+ * 单一判定入口：serial_exec 路由守卫、serial_mcu_exec 反向守卫、
+ * serial_shell_login 守卫、serial_open 线路控制均调用本函数。
+ *
+ * 仅当子段存在且 enabled: true 时返回规范化配置（dtr/rts/resetOnOpen/
+ * quietMs 已补默认值，responsePattern 已编译校验）；否则返回 undefined。
+ * 校验失败（quietMs 非正数、正则非法）直接抛错，让配置问题在调用期显式暴露。
+ *
+ * @param name 设备名（可选，默认使用 resolveDeviceName() 解析）
+ * @returns 规范化配置；非单片机设备返回 undefined
+ */
+export function getMcuConfig(name?: string): McuRuntimeConfig | undefined {
+  const device = getDeviceConfig(name ?? resolveDeviceName());
+  const yaml = device.serial?.mcu;
+  if (!yaml || yaml.enabled !== true) {
+    return undefined;
+  }
+
+  if (yaml.quietMs !== undefined && (!Number.isFinite(yaml.quietMs) || yaml.quietMs <= 0)) {
+    throw new Error(`[config] serial.mcu.quietMs 必须为正数, 收到: ${yaml.quietMs}`);
+  }
+
+  let responseRegex: RegExp | null = null;
+  if (yaml.responsePattern) {
+    try {
+      responseRegex = new RegExp(yaml.responsePattern);
+    } catch (err) {
+      throw new Error(
+        `[config] serial.mcu.responsePattern 非法正则: ${yaml.responsePattern} — ${
+          err instanceof Error ? err.message : err
+        }`
+      );
+    }
+  }
+
+  return {
+    dtr: yaml.dtr ?? "keep",
+    rts: yaml.rts ?? "keep",
+    resetOnOpen: yaml.resetOnOpen ?? false,
+    quietMs: yaml.quietMs ?? DEFAULT_MCU_QUIET_MS,
+    responseRegex,
+  };
 }
 
 /**

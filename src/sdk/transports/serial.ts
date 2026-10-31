@@ -30,6 +30,13 @@ const TCP_PREFIX = "tcp://";
 /** @brief TCP 连接建立超时（毫秒），防止防火墙黑洞地址导致 open 永久挂起 */
 const TCP_CONNECT_TIMEOUT_MS = 5000;
 
+/** @brief 单片机模式 resetOnOpen 复位时序中按住 RESET 的时长（毫秒） */
+const MCU_RESET_HOLD_MS = 200;
+
+/** @brief 简单延时（毫秒） */
+const sleep = (ms: number): Promise<void> =>
+  new Promise((r) => setTimeout(r, ms));
+
 /**
  * @brief 串口 Shell 连接配置
  *
@@ -57,6 +64,12 @@ export interface SerialShellConfig {
   loginPassword?: string;
   /** 设备别名（可选，用于会话注册和列表展示） */
   deviceName?: string;
+  /** 单片机模式：open 后 DTR 电平（serial.mcu 配置经 getSerialConfig 透传；undefined = 非 MCU 设备，不碰线序） */
+  mcuDtr?: "on" | "off" | "keep";
+  /** 单片机模式：open 后 RTS 电平（undefined = 不碰线序） */
+  mcuRts?: "on" | "off" | "keep";
+  /** 单片机模式：open 后执行 DTR/RTS 软件复位时序拉起应用（undefined/false = 不复位） */
+  mcuResetOnOpen?: boolean;
 }
 
 /**
@@ -333,6 +346,9 @@ export class SerialShell extends BaseShell {
       });
     });
 
+    // 单片机模式 open 后线路控制（DTR/RTS 线序 + 可选软件复位）
+    await this.#applyMcuLineControl(serialPort);
+
     this.#channel = serialPort;
     // 监听串口数据接收事件：双写策略
     //   - #rawReceiver 非空时，原始 Buffer 喂给二进制旁路（ZMODEM 等协议消费）
@@ -343,6 +359,51 @@ export class SerialShell extends BaseShell {
     serialPort.on("close", () => this.#onChannelClosed());
     // 错误事件：串口通信出错时触发，清空句柄
     serialPort.on("error", () => this.#onChannelClosed());
+  }
+
+  /**
+   * @brief 单片机模式的 open 后线路控制（DTR/RTS 线序 + 可选软件复位）
+   *
+   * 仅当配置携带 serial.mcu 线路参数时执行（非 MCU 设备三项均 undefined，
+   * 完全跳过，行为与从前逐比特一致）。TCP 通道无线序概念，不适用。
+   *
+   * 背景：ATK 一键下载类板卡的 CH340 DTR/RTS 经三极管控制 BOOT0/nRST，
+   * 打开端口瞬间驱动的断言电平存在"按复位/进 ISP"竞态。open 后立即显式
+   * 置 off/off 可规避；resetOnOpen 再补一拍软件复位（BOOT0=0 时释放 RESET，
+   * 实测可靠的 mcu_reset_app.mjs 序列），保证芯片从 Flash 启动应用。
+   *
+   * @param serialPort 已 open 的物理串口实例
+   * @throws port.set 失败（驱动不支持等）时向上抛出，open 流程失败
+   */
+  async #applyMcuLineControl(serialPort: SerialPort): Promise<void> {
+    const { mcuDtr, mcuRts, mcuResetOnOpen } = this.#config;
+    if (mcuDtr === undefined && mcuRts === undefined && mcuResetOnOpen !== true) {
+      return;
+    }
+
+    const setLines = (opts: { dtr?: boolean; rts?: boolean }): Promise<void> =>
+      new Promise((resolve, reject) => {
+        serialPort.set(opts, (err) => (err ? reject(err) : resolve()));
+      });
+
+    if (mcuResetOnOpen === true) {
+      // 复位时序: BOOT0 放低(DTR=off) + 按住 RESET(RTS=on) → 释放(RESET 释放沿 BOOT0=0)
+      await setLines({ dtr: false, rts: true });
+      await sleep(MCU_RESET_HOLD_MS);
+      await setLines({ rts: false });
+    }
+
+    // 显式配置的线序电平（keep = 不动）
+    const opts: { dtr?: boolean; rts?: boolean } = {};
+    if (mcuDtr !== undefined && mcuDtr !== "keep") {
+      opts.dtr = mcuDtr === "on";
+    }
+    if (mcuRts !== undefined && mcuRts !== "keep") {
+      opts.rts = mcuRts === "on";
+    }
+    if (Object.keys(opts).length > 0) {
+      await setLines(opts);
+    }
   }
 
   /**

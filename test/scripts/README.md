@@ -14,7 +14,7 @@
   </thead>
   <tbody>
     <tr>
-      <td rowspan="8">serial</td>
+      <td rowspan="9">serial</td>
       <td><a href="serial/basic-demo.mjs">basic-demo.mjs</a></td>
       <td>串口打开 / 发送 / 读取 / 关闭的基本用法演示</td>
     </tr>
@@ -45,6 +45,10 @@
     <tr>
       <td><a href="serial/uboot-state-detect.mjs">uboot-state-detect.mjs</a></td>
       <td>shell 状态检测逻辑测试（uboot / ready / locked / unlocking / error 等状态识别）</td>
+    </tr>
+    <tr>
+      <td><a href="serial/mcu-exec-test.mjs">mcu-exec-test.mjs</a></td>
+      <td>runMcuExec 离线验证（pattern / 静默 / 超时三分支、心跳干扰、前置冲刷、不发 Ctrl+C 契约，无需真实设备）</td>
     </tr>
     <tr>
       <td rowspan="2">ssh</td>

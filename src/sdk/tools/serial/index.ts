@@ -43,6 +43,7 @@ import {
   serialDownloadConfig,
   serialDownloadHandler,
 } from "./transfer.js";
+import { serialMcuExecConfig, serialMcuExecHandler } from "./mcu.js";
 
 // ── 工具列表 ────────────────────────────────────────────────
 
@@ -78,4 +79,5 @@ export const sdkSerialTools: AnySdkToolDef[] = [
   ),
   sdkDefineTool("serial_upload", serialUploadConfig, serialUploadHandler),
   sdkDefineTool("serial_download", serialDownloadConfig, serialDownloadHandler),
+  sdkDefineTool("serial_mcu_exec", serialMcuExecConfig, serialMcuExecHandler),
 ];

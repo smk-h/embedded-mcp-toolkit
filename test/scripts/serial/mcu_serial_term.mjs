@@ -12,12 +12,12 @@
  *     四种组合，实测出哪种线序下板子能正常说话。
  *
  *   用法：
- *     node test/scripts/serial/serial_term.mjs --list
- *     node test/scripts/serial/serial_term.mjs -p COM4
- *     node test/scripts/serial/serial_term.mjs -p COM4 --dtr off --rts off # STM32这个可正常建立连接
- *     node test/scripts/serial/serial_term.mjs -p COM4 --diagnose
- *     node test/scripts/serial/serial_term.mjs -p COM4 --dtr off --rts off -s go -w 2
- *     node test/scripts/serial/serial_term.mjs -p COM4 -H -t -l recv.bin
+ *     node test/scripts/serial/mcu_serial_term.mjs --list
+ *     node test/scripts/serial/mcu_serial_term.mjs -p COM4
+ *     node test/scripts/serial/mcu_serial_term.mjs -p COM4 --dtr off --rts off # STM32这个可正常建立连接
+ *     node test/scripts/serial/mcu_serial_term.mjs -p COM4 --diagnose
+ *     node test/scripts/serial/mcu_serial_term.mjs -p COM4 --dtr off --rts off -s go -w 2
+ *     node test/scripts/serial/mcu_serial_term.mjs -p COM4 -H -t -l recv.bin
  *
  *   运行后按 Ctrl+C 可优雅退出并关闭串口。
  * ======================================================
@@ -446,7 +446,7 @@ function runStream(port, output, interactive, eol) {
 function printHelp() {
   console.log(`串口收发与 DTR/RTS 线序诊断工具
 
-用法: node test/scripts/serial/serial_term.mjs [选项]
+用法: node test/scripts/serial/mcu_serial_term.mjs [选项]
 
 选项:
   --list                列出可用串口后退出
@@ -471,10 +471,10 @@ function printHelp() {
   -h, --help            显示本帮助
 
 示例:
-  node test/scripts/serial/serial_term.mjs --list
-  node test/scripts/serial/serial_term.mjs -p COM4 --dtr off --rts off
-  node test/scripts/serial/serial_term.mjs -p COM4 --diagnose
-  node test/scripts/serial/serial_term.mjs -p COM4 --dtr off --rts off -s go -w 2`);
+  node test/scripts/serial/mcu_serial_term.mjs --list
+  node test/scripts/serial/mcu_serial_term.mjs -p COM4 --dtr off --rts off
+  node test/scripts/serial/mcu_serial_term.mjs -p COM4 --diagnose
+  node test/scripts/serial/mcu_serial_term.mjs -p COM4 --dtr off --rts off -s go -w 2`);
 }
 
 async function main() {

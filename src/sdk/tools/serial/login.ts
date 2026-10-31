@@ -14,7 +14,11 @@
 
 import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../shared/logger.js";
-import { getSerialConfig, getKeyProviderConfig } from "../../shared/config.js";
+import {
+  getMcuConfig,
+  getSerialConfig,
+  getKeyProviderConfig,
+} from "../../shared/config.js";
 import {
   SerialShell,
   type SerialShellConfig,
@@ -97,6 +101,25 @@ export async function serialShellLoginHandler(args: {
     `[serial_shell_login] device=${args.device ?? "(default)"} timeout=${args.timeout ?? 1500} key=${args.key ? "***" : "(none)"}`
   );
   const deviceName = args.device ?? process.env.DEVICE ?? "default";
+
+  // 单片机模式守卫：裸固件无 PSH/账号体系，登录探测流程（发换行、等
+  // 提示符、跑状态机）对它毫无意义且会污染会话——第一行即拦截，不开
+  // 端口、不碰任何状态，教学式指路正确的两步流程。
+  // 现有设备均未配置 serial.mcu，本守卫对它们是不可达代码。
+  try {
+    if (getMcuConfig(deviceName)) {
+      const msg = `设备 '${deviceName}' 为单片机模式（serial.mcu 已启用），无 PSH 登录流程。请直接用 serial_open 打开串口，然后用 serial_mcu_exec 发命令，无需登录。`;
+      logger.info(`[serial_shell_login] ${msg}`);
+      return msg;
+    }
+  } catch (err) {
+    const msg = `设备 '${deviceName}' 的 serial.mcu 配置错误: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+    logger.warn(`[serial_shell_login] ${msg}`);
+    return msg;
+  }
+
   const baseConfig: SerialShellConfig = getSerialConfig(args.device);
 
   if (baseConfig.port === "none") {

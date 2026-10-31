@@ -17,6 +17,7 @@ import type { SdkToolConfig } from "../../types.js";
 import { logger } from "../../shared/logger.js";
 import {
   getExecTimeoutConfig,
+  getMcuConfig,
   getPromptPattern,
   getSerialConfig,
   getUbootConfig,
@@ -128,6 +129,10 @@ export async function serialOpenHandler(args: {
       "none" | "even" | "odd" | undefined,
     lineEnding: baseConfig.lineEnding,
     deviceName,
+    // 单片机模式线路控制（非 MCU 设备为 undefined，传输层跳过）
+    mcuDtr: baseConfig.mcuDtr,
+    mcuRts: baseConfig.mcuRts,
+    mcuResetOnOpen: baseConfig.mcuResetOnOpen,
   };
 
   if (config.port === "none") {
@@ -163,7 +168,26 @@ export async function serialOpenHandler(args: {
   portToSession.set(config.port, sessionId);
   logger.info(`[serial_open] session opened: ${sessionId} port=${config.port}`);
 
-  return `Session ${sessionId} opened on ${shell.getConnectionInfo()}.\n${banner || "(no banner)"}`;
+  let result = `Session ${sessionId} opened on ${shell.getConnectionInfo()}.\n${
+    banner || "(no banner)"
+  }`;
+
+  // 单片机模式：回显线路控制配置，让 AI 明确当前会话的线序保障。
+  // 非法 mcu 配置在上方 getSerialConfig 内已先行抛出，此处必然已通过校验。
+  const mcuConfig = getMcuConfig(deviceName);
+  if (mcuConfig) {
+    if (config.port.startsWith("tcp://")) {
+      result += "\n[MCU 模式已启用, TCP 通道不适用 DTR/RTS 线序控制]";
+    } else {
+      const parts = [`DTR/RTS 线序: ${mcuConfig.dtr}/${mcuConfig.rts}`];
+      if (mcuConfig.resetOnOpen) {
+        parts.push("resetOnOpen 复位时序已执行（应用已重新拉起）");
+      }
+      result += `\n[MCU 模式已启用, ${parts.join(", ")}]`;
+    }
+  }
+
+  return result;
 }
 
 // ── serial_close ─────────────────────────────────────────────
@@ -314,6 +338,12 @@ export const serialReadConfig: SdkToolConfig = {
         description:
           "Buffer clear flag: 1 (default) = clear buffer after reading, 0 = keep buffer",
       },
+      waitMs: {
+        type: "number",
+        description:
+          "Wait this many milliseconds (0-30000, default 0) before reading. " +
+          "Useful for no-echo MCU devices: send via serial_write, then read with waitMs to give the device time to respond.",
+      },
     },
     required: ["session_id"],
   },
@@ -325,16 +355,20 @@ export const serialReadConfig: SdkToolConfig = {
  * 从会话的内部缓冲区读取输出数据。
  * clear=1 时读取后清空缓冲区，下次 read() 返回新数据；
  * clear=0 时保留缓冲区内容，可重复读取。
+ * waitMs > 0 时先等待再读取（缓冲区在等待期间由 data 事件持续积累），
+ * 供无回显设备的"写后延时读"轮询场景使用。
  *
- * @param args  工具参数，包含 session_id 和可选的 clear
+ * @param args  工具参数，包含 session_id 和可选的 clear、waitMs
  * @return MCP 响应，包含读取到的输出内容
  */
 export async function serialReadHandler(args: {
   session_id: string;
   clear?: number;
+  waitMs?: number;
 }) {
+  const waitMsVal = Math.min(Math.max(args.waitMs ?? 0, 0), 30000);
   logger.info(
-    `[serial_read] session_id=${args.session_id} clear=${args.clear ?? 1}`
+    `[serial_read] session_id=${args.session_id} clear=${args.clear ?? 1} waitMs=${waitMsVal}`
   );
   const shell = serialStore.get(args.session_id);
   if (!shell) {
@@ -342,6 +376,9 @@ export async function serialReadHandler(args: {
   }
 
   return serialStore.withLock(args.session_id, async () => {
+    if (waitMsVal > 0) {
+      await new Promise((r) => setTimeout(r, waitMsVal));
+    }
     const output = shell.read(args.clear ?? 1);
     // U-Boot 标记会话：读到的内容含内核启动特征时同步清标记。
     // 覆盖手动 read 读到 reset/bootm 后内核日志的场景——证据若被
@@ -386,7 +423,9 @@ export const serialExecConfig: SdkToolConfig = {
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id — the serial console is a single " +
     "channel; concurrent calls will interleave output and corrupt results. " +
     "Always wait for the previous command to finish before sending the next one. " +
-    "If you need parallel execution, open multiple sessions via serial_open.",
+    "If you need parallel execution, open multiple sessions via serial_open. " +
+    "Devices with 'serial.mcu: { enabled: true }' are NOT supported here — use serial_mcu_exec for those " +
+    "(bare firmware has no echo/prompt; marker wrapping and prompt detection do not apply).",
   inputSchema: {
     type: "object",
     properties: {
@@ -449,6 +488,28 @@ export async function serialExecHandler(args: {
   const shell = serialStore.get(args.session_id);
   if (!shell) {
     return `Session ${args.session_id} not found.`;
+  }
+
+  // 单片机模式守卫：MCU 设备禁止走 shell 语义的 serial_exec。
+  // marker 包装会把 `; echo "MARKER:$?"` 当数据原样发给固件（可能误触发
+  // 动作），回显剥离会吞掉无回显设备的真实首行输出，提示符检测也永远
+  // 无法命中——统一拒绝并指路 serial_mcu_exec。
+  // 判定用会话自身的设备名（shell.getDeviceName()），而非活跃设备：
+  // 两者可能不一致（如 DEVICE=board-a 但操作 stm32-app 的会话）。
+  // 现有设备均未配置 serial.mcu，本守卫对它们是不可达代码。
+  const execDeviceName = shell.getDeviceName();
+  try {
+    if (getMcuConfig(execDeviceName)) {
+      const msg = `设备 '${execDeviceName}' 为单片机模式（serial.mcu 已启用），请使用 serial_mcu_exec 发命令，不要用 serial_exec。`;
+      logger.info(`[serial_exec] ${msg}`);
+      return msg;
+    }
+  } catch (err) {
+    const msg = `设备 '${execDeviceName}' 的 serial.mcu 配置错误: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+    logger.warn(`[serial_exec] ${msg}`);
+    return msg;
   }
 
   const deviceName = resolveDeviceName();
