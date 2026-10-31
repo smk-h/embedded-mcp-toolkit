@@ -136,3 +136,15 @@ devices:
         verifyEnvKeys: # 提示符未命中时发 printenv 验证的环境变量键（纯字面量）
           - "baudrate"
           - "bootdelay"
+      # mcu 子段（单片机裸固件模式，面向无 shell/无回显/无提示符的固件）。
+      # 子段存在且 enabled: true 即启用；Linux 板卡设备不写该子段即可。
+      # 启用后命令用 serial_mcu_exec 发送（完成判定靠 responsePattern/静默
+      # 窗口，超时不发 Ctrl+C），serial_exec 与 serial_shell_login 被守卫拒绝。
+      # 详细说明见 devices/board-example.yaml 的 mcu 段注释。
+      # mcu:
+      #   enabled: true
+      #   dtr: off              # open 后 DTR 电平: on | off | keep(不动, 默认)
+      #   rts: off
+      #   resetOnOpen: true     # open 后 DTR/RTS 软件复位时序拉起应用
+      #   quietMs: 400          # 静默判定窗口（毫秒），须小于固件心跳周期
+      #   responsePattern: ""   # 可选: 响应完成正则（任意位置命中即判完成）

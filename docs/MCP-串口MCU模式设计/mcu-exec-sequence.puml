@@ -1,0 +1,57 @@
+@startuml serial_mcu_exec 执行时序
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam SequenceGroupBackgroundColor #F7F9FC
+skinparam SequenceGroupBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title serial_mcu_exec 一次调用的执行时序（实测 wifi info: 609ms 返回）
+
+participant "AI\n调用方" as AI
+participant "MCP\nserial_mcu_exec" as M
+participant "执行器\nrunMcuExec" as E
+participant "输出缓冲\nOutputBuffer" as B
+participant "固件\n(STM32 app)" as F
+
+== 守卫与前置 ==
+
+AI -> M : serial_mcu_exec(session_id, command, timeoutMs)
+M -> M : 守卫: getMcuConfig(会话设备名)\n未启用 serial.mcu 则拒绝
+M -> E : runMcuExec(...)
+
+E -> B : drain() 前置冲刷
+note right : 丢弃发送前的残留心跳\n保证 output 不含旧数据
+
+E -> F : write(command + "\\r\\n") 裸发送
+note over E, F : 无 marker 包装 · 不剥回显\n行尾由 serial.lineEnding 决定
+
+== 轮询循环（每 200ms 一轮, 先到者判定）==
+
+loop 直到三出口之一
+  E -> B : drain()
+  B --> E : 新到输出
+  F --> B : 应答行 / 心跳行\n(flash-app count = N)
+  E -> E : pattern 命中?\n距最后字节静默 ≥ quietMs(400ms)?\n耗满 timeoutMs?
+end
+
+E --> M : { output, flushed,\ncompletedBy = quiet, elapsedMs = 609 }
+M --> AI : 应答输出（含心跳行）\n+ [MCU: 静默 400ms 判定完成, 耗时 609ms]
+
+note over E, F
+  实测: timeoutMs 传 3000, 实际 609ms 返回
+  timeoutMs 是兜底保险丝, 不是固定等待
+  出口优先级: pattern > quiet > timeout
+end note
+
+@enduml

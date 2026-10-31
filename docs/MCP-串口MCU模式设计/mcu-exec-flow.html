@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>runMcuExec 三出口判定</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', 'Noto Sans SC', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif SC', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; min-width: 0; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 1000px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flowchart · Diagram Design</p>
+    <h1>runMcuExec 三出口判定</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 920" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mcu-exec-flow-title mcu-exec-flow-desc">
+        <title id="mcu-exec-flow-title">runMcuExec 三出口判定</title>
+        <desc id="mcu-exec-flow-desc">单片机裸固件执行器的完成判定流程：前置冲刷、裸发送后进入 200ms 轮询，按响应特征命中、静默满 quietMs、超时三个出口中先到者返回，超时出口不发 Ctrl+C。</desc>
+        <defs>
+          <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+          </pattern>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+        <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+        <!-- ── 箭头（先画, 垫在节点下方）── -->
+        <line x1="430" y1="96"  x2="430" y2="128" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="430" y1="188" x2="430" y2="220" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="430" y1="280" x2="430" y2="312" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="430" y1="372" x2="430" y2="396" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- D1 命中 → pattern 出口 -->
+        <line x1="530" y1="448" x2="726" y2="448" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- D1 否 → D2 -->
+        <line x1="430" y1="496" x2="430" y2="532" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- D2 静默满 → quiet 出口（accent 主路径） -->
+        <line x1="530" y1="584" x2="726" y2="584" stroke="#bf4520" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <!-- D2 否 → D3 -->
+        <line x1="430" y1="632" x2="430" y2="668" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- D3 到点 → timeout 出口 -->
+        <line x1="530" y1="720" x2="726" y2="720" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- D3 否 → 回轮询（正交回路: 下→左→上→右, 圆角肘弯 r=8） -->
+        <path d="M 430 768 L 430 800 Q 430 808 422 808 L 208 808 Q 200 808 200 800 L 200 352 Q 200 344 208 344 L 316 344"
+              fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+
+        <!-- ── 箭头标签（mask 盖线, 文字 ≥12px）── -->
+        <rect x="602" y="438" width="56" height="20" rx="2" fill="#f5f5f5"/>
+        <text x="630" y="453" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">命中</text>
+
+        <rect x="414" y="502" width="32" height="20" rx="2" fill="#f5f5f5"/>
+        <text x="430" y="517" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">否</text>
+
+        <rect x="594" y="574" width="68" height="20" rx="2" fill="#f5f5f5"/>
+        <text x="628" y="589" fill="#bf4520" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">静默满</text>
+
+        <rect x="414" y="638" width="32" height="20" rx="2" fill="#f5f5f5"/>
+        <text x="430" y="653" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">否</text>
+
+        <rect x="602" y="710" width="56" height="20" rx="2" fill="#f5f5f5"/>
+        <text x="630" y="725" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">到点</text>
+
+        <rect x="212" y="548" width="124" height="22" rx="2" fill="#f5f5f5"/>
+        <text x="274" y="564" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">否 · 继续轮询</text>
+
+        <!-- ── 节点 ── -->
+        <!-- 起点椭圆 -->
+        <rect x="330" y="40" width="200" height="56" rx="20" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="430" y="64" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">收到 serial_mcu_exec</text>
+        <text x="430" y="84" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">command + timeoutMs</text>
+
+        <!-- 步骤: 前置冲刷 -->
+        <rect x="320" y="132" width="220" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="430" y="156" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">前置冲刷 drain()</text>
+        <text x="430" y="176" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">丢弃残留心跳</text>
+
+        <!-- 步骤: 裸发送 -->
+        <rect x="320" y="224" width="220" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="430" y="248" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">裸发送 command</text>
+        <text x="430" y="268" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">无 marker · 不剥回显</text>
+
+        <!-- 步骤: 轮询 -->
+        <rect x="320" y="316" width="220" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="430" y="340" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">200ms 轮询 drain()</text>
+        <text x="430" y="360" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">累积输出 accumulated</text>
+
+        <!-- 菱形 1: pattern 命中? -->
+        <polygon points="430,400 530,448 430,496 330,448" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="430" y="444" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">responsePattern</text>
+        <text x="430" y="462" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">命中累积输出?</text>
+
+        <!-- 出口椭圆: pattern -->
+        <rect x="730" y="420" width="200" height="56" rx="20" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="830" y="444" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">返回 pattern</text>
+        <text x="830" y="464" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">响应特征命中</text>
+
+        <!-- 菱形 2: 静默满? -->
+        <polygon points="430,536 530,584 430,632 330,584" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="430" y="580" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">距最后字节静默</text>
+        <text x="430" y="598" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">≥ quietMs?</text>
+
+        <!-- 出口椭圆: quiet（accent 焦点, 默认路径） -->
+        <rect x="730" y="556" width="200" height="56" rx="20" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <text x="830" y="580" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">返回 quiet</text>
+        <text x="830" y="600" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">默认路径 · 提前返回</text>
+
+        <!-- 菱形 3: 耗满 timeoutMs? -->
+        <polygon points="430,672 530,720 430,768 330,720" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="430" y="724" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">耗满 timeoutMs?</text>
+
+        <!-- 出口椭圆: timeout -->
+        <rect x="730" y="692" width="200" height="56" rx="20" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="830" y="716" fill="#2d3142" font-size="13" font-weight="600" font-family="'Geist', 'Noto Sans SC', sans-serif" text-anchor="middle">返回 timeout</text>
+        <text x="830" y="736" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">兜底 · 不发 Ctrl+C</text>
+
+        <!-- ── 图例（底部横条）── -->
+        <line x1="40" y1="852" x2="960" y2="852" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="872" fill="#4f5d75" font-size="12" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND · 三出口先到者判定</text>
+
+        <rect x="40" y="886" width="24" height="14" rx="7" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="72" y="898" fill="#4f5d75" font-size="12" font-family="'Geist', 'Noto Sans SC', sans-serif">起点 / 出口</text>
+
+        <rect x="180" y="886" width="24" height="14" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="212" y="898" fill="#4f5d75" font-size="12" font-family="'Geist', 'Noto Sans SC', sans-serif">步骤</text>
+
+        <polygon points="328,893 340,886 352,893 340,900" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="364" y="898" fill="#4f5d75" font-size="12" font-family="'Geist', 'Noto Sans SC', sans-serif">出口判定</text>
+
+        <line x1="472" y1="893" x2="500" y2="893" stroke="#bf4520" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <text x="508" y="898" fill="#4f5d75" font-size="12" font-family="'Geist', 'Noto Sans SC', sans-serif">默认主路径（quiet）</text>
+
+        <line x1="672" y1="893" x2="700" y2="893" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <text x="708" y="898" fill="#4f5d75" font-size="12" font-family="'Geist', 'Noto Sans SC', sans-serif">轮询回路</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

@@ -134,9 +134,57 @@ npm run build # 编译，编译后就可以在当前目录下启动claude使用�
 | `serial_send_ctrl` | 向串口会话发送控制字符（Ctrl+C/U/D/Z，不追加换行） | `串口发 Ctrl+C` / `中断串口命令` |
 | `serial_upload` | 经 ZMODEM 上传二进制文件到设备（复用串口会话，不释放端口；设备需有 lrzsz） | `串口上传固件` / `把 update.bin 传到设备` |
 | `serial_download` | 经 ZMODEM 从设备下载二进制文件（复用串口会话，不释放端口；设备需有 lrzsz；`local_path` 可选，缺省落到 `.embedded/tmp` 下、文件名取远端 basename，摘要回显实际落盘路径） | `串口拉取日志` / `下载 /tmp/dmesg.log` |
+| `serial_mcu_exec` | 向单片机裸固件会话发送命令并等待响应（无回显/无提示符设备专用，仅限配置了 `serial.mcu` 的设备；完成判定靠 responsePattern 或静默窗口，超时不发 Ctrl+C） | `在 stm32-app 上执行 wifi info` / `让单片机跑一下 xxx` |
 
 > [!WARNING]
 > **串口持续输出的设备慎用 ZMODEM 下载**：ZMODEM 是带内协议，设备持续打印（内核日志、常驻诊断输出等）会与协议帧物理交织。同等洪水强度下，下载方向（设备 `sz` → MCP）受污染双重命中（设备侧发送被打断 + MCP 接收侧污染）、恢复链路更脆、且受 `MAX_CRC_RETRIES=10` 重试上限约束，很容易传输失败；上传方向（MCP → 设备 `rz`）靠本地缓存可无限重传，相对能扛（仅吞吐滑坡）。若设备有持续打印，建议优先用上传；确需下载时，先停掉可控输出源（`dmesg -D`、kill 常驻打印任务）再传。完整分析见 [docs/MCP串口ZMODEM文件传输.md](./docs/MCP串口ZMODEM文件传输.md#四-串口持续输出对传输的影响)。
+
+##### 4.2.1 单片机（MCU）模式：serial_mcu_exec
+
+面向**无 shell、无回显、无提示符**的单片机裸固件（如 STM32 应用 + 周期心跳打印）。在设备配置的 `serial` 段下添加 `mcu` 子段即启用，Linux 板卡设备不写该子段即可（守卫对它们不可达，行为不变）：
+
+```yaml
+# 分文件布局: devices/stm32-app.yaml（文件名即设备名）；单文件布局写在 devices.<设备名>.serial 下，写法相同
+serial:
+  port: "COM4"
+  baudRate: 115200
+  lineEnding: "\r\n"     # 沿用已有字段, 单片机常用 \r\n
+  mcu:
+    enabled: true
+    dtr: off              # open 后 DTR 电平: on | off | keep(不动, 默认)
+    rts: off              # open 后 RTS 电平: 同上
+    resetOnOpen: true     # open 后执行 DTR/RTS 软件复位时序拉起应用
+    quietMs: 400          # 静默判定窗口（毫秒），须小于固件心跳周期
+    responsePattern: ""   # 可选: 响应完成正则（任意位置命中即判完成），留空仅用静默判定
+```
+
+**使用流程对比**：
+
+| 环节 | Linux 板卡 | MCU 设备 |
+|------|-----------|---------|
+| 打开串口 | `serial_open` | `serial_open`（open 后按配置置 DTR/RTS 电平，规避一键下载电路的复位/进 ISP 竞态） |
+| 就绪准备 | `serial_shell_login` 一键登录 | 无登录环节；`resetOnOpen: true` 时 open 内自动复位拉起应用（MCU 版"一键就绪"） |
+| 执行命令 | `serial_exec`（marker/提示符判定） | `serial_mcu_exec`（responsePattern/静默判定） |
+
+**路由守卫（双向硬门 + 自纠错）**：
+
+- MCU 设备调 `serial_exec` → 被拒绝并指路 `serial_mcu_exec`（marker 包装会把 `; echo "MARKER:$?"` 当数据发给固件，回显剥离会吞掉真实首行输出）
+- 非 MCU 设备调 `serial_mcu_exec` → 被拒绝并指路 `serial_exec`
+- MCU 设备调 `serial_shell_login` → 返回教学提示（无 PSH 登录流程，直接 open 后发命令即可）
+
+**完成判定（三选一，先到者）**：
+
+| 方式 | 条件 | 语义 |
+|------|------|------|
+| `pattern` | `responsePattern` 在累积输出中命中 | 确定性，固件有应答结尾特征时推荐 |
+| `quiet` | 距最后一字节静默 ≥ `quietMs` | 通用路径；**`quietMs` 必须小于心跳周期**，否则静默永不满足只能靠超时 |
+| `timeout` | `timeoutMs` 兜底 | 异常语义；**永不发 Ctrl+C**（0x03 可能误触发固件动作） |
+
+结果末尾追加标注（`[MCU: 静默 400ms 判定完成, 耗时 612ms]` 等），输出中混入的心跳行（`flash-app count = N`）需自行辨识。`serial_read` 新增 `waitMs` 参数（0-30000，默认 0），供无回显设备"写后延时读"的手动轮询场景。
+
+**复位后的启动时序提醒**：`resetOnOpen` 复位后，固件可能有自身的引导流程（如 IAP 引导：慢初始化 → 等待 app.img 帧 → `go flash` 跳应用），期间发命令会撞上启动竞态（实测应用刚启动时首条命令被吃掉前两个字符：`wifi info` → echo `fi info`）。正确姿势：先 `serial_read(waitMs)` 等到就绪标志（如 `APP: ready`、跳转完成日志）再发首条命令。
+
+> 周边诊断工具见 [`test/scripts/serial/`](./test/scripts/serial/) 的 mcu 家族（线序诊断 `mcu_serial_term.mjs`、主动进 ISP `mcu_isp_enter.mjs`、ISP Go 救砖 `mcu_isp_go.mjs`、软件复位 `mcu_reset_app.mjs`），原理与踩坑分析见 [docs/DTR-RTS线序与STM32-ISP模式.md](./docs/DTR-RTS线序与STM32-ISP模式.md)。
 
 #### 4.3 ADB 工具
 

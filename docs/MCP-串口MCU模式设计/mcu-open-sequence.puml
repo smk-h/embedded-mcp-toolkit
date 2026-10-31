@@ -1,0 +1,55 @@
+@startuml serial_open 线路控制与引导切换
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI"
+skinparam ArrowColor #5A5A5A
+skinparam ArrowFontColor #333333
+skinparam ArrowFontSize 12
+skinparam SequenceParticipantBorderColor #7A93BE
+skinparam SequenceParticipantBackgroundColor #DCE9FB
+skinparam SequenceParticipantFontColor #1F2933
+skinparam SequenceLifeLineBorderColor #7A93BE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #E0B400
+skinparam NoteFontColor #5C4A00
+
+title serial_open 线路控制与 IAP→应用引导切换
+
+participant "AI\n调用方" as AI
+participant "MCP\nserial_open" as M
+participant "传输层\nSerialShell" as T
+participant "CH340\n(DTR/RTS)" as C
+participant "固件\nIAP / APP" as F
+
+== open 阶段（线路防护 + 一键就绪）==
+
+AI -> M : serial_open(stm32)
+M -> T : new SerialShell(config).open()
+T -> C : open(COM4)
+note over C : 驱动瞬间断言 DTR/RTS\n一键下载电路竞态窗口\n(BOOT0/nRST 可能被拉动)
+T -> C : set({ dtr: off, rts: off }) 显式线序防护
+T -> C : set({ dtr: off, rts: on })\n按住 RESET 200ms (resetOnOpen)
+T -> C : set({ rts: off }) 释放
+note over C, F : 复位释放沿 BOOT0=0\n芯片从主 Flash 干净启动
+C -> F : 复位 → IAP 引导启动
+F --> T : IAP banner (NOINIT/PARAM/UPD...)
+T --> M : banner
+M --> AI : Session serial_N + [MCU 模式已启用,\nDTR/RTS 线序: off/off, resetOnOpen 已执行]
+
+== 引导切换（发应用命令的前置）==
+
+AI -> M : serial_mcu_exec("go flash")
+M -> F : "go flash\\r\\n"
+F -> F : IAP 慢初始化(SRAM 测试/lwIP)\n→ 跳转 0x08020000
+F --> M : IAP: jump to APP / APP: ready
+M --> AI : 输出 + [MCU: 静默 400ms 判定完成]
+
+note over AI, F
+  此后应用命令(wifi info / at / sram)直接发
+  启动竞态提醒: 应用刚启动时发命令会吃字节
+  (实测 wifi info → echo "fi info")
+  应先 serial_read(waitMs) 等到 APP: ready
+end note
+
+@enduml
