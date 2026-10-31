@@ -20,7 +20,13 @@
  * ======================================================
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import { dirname } from "path";
 
 import {
@@ -31,7 +37,10 @@ import {
   type TargetFile,
 } from "../remote-mcp-config/types.js";
 import { applyDesired } from "../remote-mcp-config/file-ops.js";
-import { getContainerAtPath, getValueAtPath } from "../remote-mcp-config/json-mutate.js";
+import {
+  getContainerAtPath,
+  getValueAtPath,
+} from "../remote-mcp-config/json-mutate.js";
 
 // ============================================================
 // 现状判定（与 remote-mcp-config/file-ops.ts readTargetStatus 镜像）

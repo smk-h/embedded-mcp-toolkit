@@ -37,10 +37,12 @@ import { runMcuExec } from "../../exec/mcu-exec-runner.js";
  */
 export const serialMcuExecConfig: SdkToolConfig = {
   description:
-    "Send a raw command to an MCU (bare-firmware) serial session and wait for the response. " +
-    "ONLY for devices with 'serial.mcu: { enabled: true }' in their device config — these devices have " +
-    "NO shell echo and NO prompt; completion is decided by the configured responsePattern match or a quiet " +
-    "window (quietMs), and NO interrupt (Ctrl+C) is ever sent on timeout. " +
+    "Execute a command on an MCU (bare-firmware) serial session and wait for the response — " +
+    "the preferred command-execution tool for sessions opened from devices with " +
+    "'serial.mcu: { enabled: true }' in their device config. These devices have " +
+    "NO shell echo and NO prompt, so this tool sends the command and polls the output until " +
+    "the configured responsePattern matches or the line stays quiet for quietMs — " +
+    "NO interrupt (Ctrl+C) is ever sent on timeout. " +
     "The returned output may contain the firmware's periodic heartbeat lines — identify the actual response " +
     "within them. " +
     "IMPORTANT: Do NOT issue concurrent commands to the same session_id; always wait for this call to finish " +

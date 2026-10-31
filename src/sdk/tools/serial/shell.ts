@@ -172,18 +172,21 @@ export async function serialOpenHandler(args: {
     banner || "(no banner)"
   }`;
 
-  // 单片机模式：回显线路控制配置，让 AI 明确当前会话的线序保障。
+  // 单片机模式：返回指令式路由（AI 每轮重读工具结果，这里是最高的工具选择杠杆），
+  // 明确告诉 AI 本会话的命令执行入口是 serial_mcu_exec。
   // 非法 mcu 配置在上方 getSerialConfig 内已先行抛出，此处必然已通过校验。
   const mcuConfig = getMcuConfig(deviceName);
   if (mcuConfig) {
+    const route =
+      "本会话为单片机模式（serial.mcu）。执行命令请用 serial_mcu_exec（自动等待并判定完成），serial_write 仅用于原始字节流";
     if (config.port.startsWith("tcp://")) {
-      result += "\n[MCU 模式已启用, TCP 通道不适用 DTR/RTS 线序控制]";
+      result += `\n[${route}; TCP 通道不适用 DTR/RTS 线序控制]`;
     } else {
       const parts = [`DTR/RTS 线序: ${mcuConfig.dtr}/${mcuConfig.rts}`];
       if (mcuConfig.resetOnOpen) {
         parts.push("resetOnOpen 复位时序已执行（应用已重新拉起）");
       }
-      result += `\n[MCU 模式已启用, ${parts.join(", ")}]`;
+      result += `\n[${route}; ${parts.join(", ")}]`;
     }
   }
 
@@ -261,7 +264,9 @@ export const serialWriteConfig: SdkToolConfig = {
   description:
     "Send a command to a serial shell session. " +
     "Do NOT call this concurrently with serial_exec/serial_read on the same session_id — " +
-    "concurrent access to the same serial console corrupts the output buffer.",
+    "concurrent access to the same serial console corrupts the output buffer. " +
+    "For sessions opened from devices with serial.mcu enabled, prefer serial_mcu_exec — " +
+    "write only sends bytes and does not wait for or detect command completion.",
   inputSchema: {
     type: "object",
     properties: {
@@ -325,7 +330,9 @@ export const serialReadConfig: SdkToolConfig = {
   description:
     "Read output from a serial shell session. " +
     "Do NOT call this concurrently with serial_exec/serial_write on the same session_id — " +
-    "concurrent access to the same serial console corrupts the output buffer.",
+    "concurrent access to the same serial console corrupts the output buffer. " +
+    "For MCU (serial.mcu) sessions use waitMs to give the device time to respond, " +
+    "or prefer serial_mcu_exec which waits and detects completion automatically.",
   inputSchema: {
     type: "object",
     properties: {

@@ -377,7 +377,11 @@ export class SerialShell extends BaseShell {
    */
   async #applyMcuLineControl(serialPort: SerialPort): Promise<void> {
     const { mcuDtr, mcuRts, mcuResetOnOpen } = this.#config;
-    if (mcuDtr === undefined && mcuRts === undefined && mcuResetOnOpen !== true) {
+    if (
+      mcuDtr === undefined &&
+      mcuRts === undefined &&
+      mcuResetOnOpen !== true
+    ) {
       return;
     }
 

@@ -399,8 +399,13 @@ export function getMcuConfig(name?: string): McuRuntimeConfig | undefined {
     return undefined;
   }
 
-  if (yaml.quietMs !== undefined && (!Number.isFinite(yaml.quietMs) || yaml.quietMs <= 0)) {
-    throw new Error(`[config] serial.mcu.quietMs 必须为正数, 收到: ${yaml.quietMs}`);
+  if (
+    yaml.quietMs !== undefined &&
+    (!Number.isFinite(yaml.quietMs) || yaml.quietMs <= 0)
+  ) {
+    throw new Error(
+      `[config] serial.mcu.quietMs 必须为正数, 收到: ${yaml.quietMs}`
+    );
   }
 
   let responseRegex: RegExp | null = null;
