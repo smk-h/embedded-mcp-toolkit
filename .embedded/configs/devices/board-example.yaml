@@ -120,13 +120,12 @@ serial:
   #   - serial_open 会按 dtr/rts 配置在 open 后设置线序电平（规避 ATK 一键
   #     下载类板卡的 CH340 DTR/RTS → BOOT0/nRST 打开竞态）
   #   - serial_exec / serial_shell_login 对该设备被守卫拒绝（指路正确工具）
-  #   - 命令用 serial_mcu_exec 发送：完成判定靠 responsePattern 命中或
-  #     静默窗口 quietMs（心跳落在窗口内会计时重置，故 quietMs 必须小于
-  #     心跳周期）；超时永不发 Ctrl+C（0x03 可能误触发固件动作）
+  #   - 命令用 serial_mcu_exec 发送：完成判定靠 responsePattern 命中；
+  #     未配置 pattern 时等满 timeoutMs（长命令由 AI 传更大超时）；
+  #     超时永不发 Ctrl+C（0x03 可能误触发固件动作）
   # mcu:
   #   enabled: true
   #   dtr: off              # open 后 DTR 电平: on | off | keep(不动, 默认)
   #   rts: off              # open 后 RTS 电平: on | off | keep(不动, 默认)
   #   resetOnOpen: true     # open 后执行 DTR/RTS 软件复位时序拉起应用（BOOT0=0 释放 RESET）
-  #   quietMs: 400          # 静默判定窗口（毫秒），须小于固件心跳周期
-  #   responsePattern: ""   # 可选: 响应完成正则（任意位置命中即判完成），留空仅用静默判定
+  #   responsePattern: ""   # 可选: 响应完成正则（任意位置命中即提前返回）, 推荐为常用命令配置

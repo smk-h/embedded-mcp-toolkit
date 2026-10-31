@@ -10,5 +10,4 @@ serial:
     dtr: off
     rts: off
     resetOnOpen: true
-    quietMs: 400
     responsePattern: ""

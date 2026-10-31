@@ -16,7 +16,7 @@ skinparam NoteBackgroundColor #FFFBE6
 skinparam NoteBorderColor #E0B400
 skinparam NoteFontColor #5C4A00
 
-title serial_mcu_exec 一次调用的执行时序（实测 wifi info: 609ms 返回）
+title serial_mcu_exec 一次调用的执行时序（未配 pattern 时等满 timeoutMs）
 
 participant "AI\n调用方" as AI
 participant "MCP\nserial_mcu_exec" as M
@@ -42,7 +42,7 @@ loop 直到三出口之一
   E -> B : drain()
   B --> E : 新到输出
   F --> B : 应答行 / 心跳行\n(flash-app count = N)
-  E -> E : pattern 命中?\n距最后字节静默 ≥ quietMs(400ms)?\n耗满 timeoutMs?
+  E -> E : pattern 命中? → 立即返回\n未配 pattern → 等满 timeoutMs
 end
 
 E --> M : { output, flushed,\ncompletedBy = quiet, elapsedMs = 609 }

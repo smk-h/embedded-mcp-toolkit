@@ -28,7 +28,8 @@ import { runMcuExec } from "../../exec/mcu-exec-runner.js";
  * @brief serial_mcu_exec 工具配置
  *
  * 向单片机裸固件会话发送命令并等待响应。完成判定不依赖回显/提示符：
- * responsePattern 命中或静默窗口（quietMs）期满，超时永不发 Ctrl+C。
+ * responsePattern 命中即返回；未配置 pattern 时等满 timeoutMs，
+ * 超时永不发 Ctrl+C。
  *
  * @param session_id  由 serial_open 返回的会话 ID
  * @param command     要发送的命令字符串（裸命令，原样下发）
@@ -41,7 +42,8 @@ export const serialMcuExecConfig: SdkToolConfig = {
     "the preferred command-execution tool for sessions opened from devices with " +
     "'serial.mcu: { enabled: true }' in their device config. These devices have " +
     "NO shell echo and NO prompt, so this tool sends the command and polls the output until " +
-    "the configured responsePattern matches or the line stays quiet for quietMs — " +
+    "the configured responsePattern matches — or, when no responsePattern is configured, " +
+    "until timeoutMs elapses (pass a larger timeoutMs for long-running commands). " +
     "NO interrupt (Ctrl+C) is ever sent on timeout. " +
     "The returned output may contain the firmware's periodic heartbeat lines — identify the actual response " +
     "within them. " +
@@ -66,8 +68,9 @@ export const serialMcuExecConfig: SdkToolConfig = {
       timeoutMs: {
         type: "number",
         description:
-          "Execution cap in ms — MANDATORY on every call: estimate the expected response time and pass it; " +
-          "typical MCU command responses 1000-3000ms; firmware reboot/reset up to 10000ms. " +
+          "Wait cap in ms — MANDATORY on every call: when no responsePattern is configured the call " +
+          "waits exactly this long before returning, so estimate the command's full runtime and pass it " +
+          "(quick queries 1000-3000ms; long tasks pass more; firmware reboot/reset up to 10000ms). " +
           "If omitted, defaults to 10000ms. On timeout NO interrupt is ever sent (0x03 could trigger " +
           "unintended firmware actions) — the completion kind is annotated in the returned output.",
       },
@@ -81,7 +84,7 @@ export const serialMcuExecConfig: SdkToolConfig = {
  *
  * 流程：
  *   1. 反向守卫：设备未配置 serial.mcu 时拒绝（shell 语义与裸固件不兼容）
- *   2. 会话锁内调用 runMcuExec：前置冲刷 → 裸发送 → 轮询（pattern/quiet/timeout）
+ *   2. 会话锁内调用 runMcuExec：前置冲刷 → 裸发送 → 轮询（pattern/timeout）
  *   3. 按 completedBy 追加中文标注（风格对齐 serial_exec 的超时标注）
  *
  * @param args  工具参数，包含 session_id、command 和可选的 clear、timeoutMs
@@ -103,7 +106,7 @@ export async function serialMcuExecHandler(args: {
     return `Session ${args.session_id} not found.`;
   }
 
-  // 反向守卫：非 MCU 设备不得走 MCU 语义（裸发送/静默判定与 shell 会话不兼容，
+  // 反向守卫：非 MCU 设备不得走 MCU 语义（裸发送/按超时等待与 shell 会话不兼容，
   // 且易被误用于绕过 serial_exec 的 marker/提示符体系）
   const deviceName = shell.getDeviceName();
   let mcuConfig;
@@ -128,7 +131,6 @@ export async function serialMcuExecHandler(args: {
       command: args.command,
       clear: clearVal,
       timeoutMs: timeoutMsVal,
-      quietMs: mcuConfig.quietMs,
       responseRegex: mcuConfig.responseRegex,
       logPrefix: "[serial_mcu_exec]",
     });
@@ -138,14 +140,17 @@ export async function serialMcuExecHandler(args: {
       output =
         (output ? output + "\n" : "") +
         `[MCU: 响应模式命中, 耗时 ${result.elapsedMs}ms]`;
-    } else if (result.completedBy === "quiet") {
+    } else if (mcuConfig.responseRegex === null) {
+      // 未配 responsePattern: 等满 timeoutMs 是预期行为, 不是异常;
+      // 但输出可能不含命令结果（命令仍在跑或无输出）, 提示 AI 可用 serial_read 续读
       output =
         (output ? output + "\n" : "") +
-        `[MCU: 静默 ${mcuConfig.quietMs}ms 判定完成, 耗时 ${result.elapsedMs}ms]`;
+        `[MCU: 已等待 ${result.elapsedMs}ms（未配置 responsePattern, 按超时返回属预期）, 未发送中断; ` +
+        "如需命令后续输出可用 serial_read(waitMs) 续读]";
     } else {
       output =
         (output ? output + "\n" : "") +
-        `[MCU兜底超时: 已收集 ${result.elapsedMs}ms 输出, 未发送中断（命令可能仍在运行）]`;
+        `[MCU兜底超时: pattern 未命中, 已收集 ${result.elapsedMs}ms 输出, 未发送中断（命令可能仍在运行）]`;
     }
 
     // 漏传 timeoutMs 的反向引导：工具描述已强制要求预估传参，仍未传时在结果
