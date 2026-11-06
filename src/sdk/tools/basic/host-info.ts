@@ -35,8 +35,9 @@ import { listLogSegments } from "../../shared/log-rotation.js";
 export const hostInfoConfig: SdkToolConfig = {
   description:
     `Query the MCP host endpoint (username@ip) of ${pkg.name} for constructing cross-machine file transfers (scp) when this MCP (${pkg.name}) runs on Windows and the AI client runs on Linux. ` +
-    `Also returns the ${pkg.name} log directory (shared by business logs and per-session raw-data logs), this run's business log base file (segment 0), the newest business log segment on disk and how many segments exist, for locating/reading/cleaning up logs. ` +
-    "Logs are size-capped and split into segments: the base name (YYYY-MM-DD_HHMMSS.log) is segment 0, and overflow continues in the same directory as YYYY-MM-DD_HHMMSS_001.log, _002.log, ... — a higher _NNN suffix is always newer. " +
+    `Also returns the ${pkg.name} log directories (business logs and per-session raw-data logs), today's business log directory, this run's business log base file (segment 0), the newest business log segment on disk and how many segments exist, for locating/reading/cleaning up logs. ` +
+    "Both log kinds are grouped by day: business logs live in {LOG_DIR}/{YYYY-MM-DD}/YYYY-MM-DD_HHMMSS.log (one per run), session raw-data logs live in {SAVE2FILE_PATH}/{device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log. " +
+    "Logs are size-capped and split into segments: the base name is segment 0, and overflow continues in the same directory as <base>_001.log, _002.log, ... — a higher _NNN suffix is always newer. " +
     "Read every segment of a prefix in ascending order for the full history; read the highest-numbered segment for the latest output and walk down to older ones if you need more. " +
     "Returns 'local started' with no endpoint for local launches.",
   inputSchema: {
@@ -49,9 +50,9 @@ export const hostInfoConfig: SdkToolConfig = {
 
 /**
  * @brief 将日志/传输目录解析结果格式化为多行文本
- * @details 输出 cwd、日志总目录（业务日志与会话原始日志共用，业务日志平铺、
- *          会话日志按设备分子目录；仅当两条通道配置分路时才把会话日志目录单独
- *          列出）、当前运行实际写入的业务日志文件路径，以及传输暂存目录
+ * @details 输出 cwd、日志根目录（业务日志与会话原始日志通常共用；仅当两条通道
+ *          配置分路时才把会话日志目录单独列出）、当天的业务日志日期子目录、
+ *          当前运行实际写入的业务日志文件路径，以及传输暂存目录
  *          （.embedded/tmp）。供 AI 客户端拿到绝对路径后用 power_shell（Windows
  *          本机）或 scp（跨机）自行清理/读取日志、定位传输文件。两种部署方式
  *          （本地 / Linux→Windows 桥接）下 MCP 工具都运行在 MCP 所在主机，
@@ -60,9 +61,10 @@ export const hostInfoConfig: SdkToolConfig = {
  * @returns 文本行数组
  */
 function formatLogDirectories(lp: LogPaths): string[] {
-  // 目录展示：部署配置里 LOG_DIR 与 SAVE2FILE_PATH 通常同指一个目录，此时合并为
-  // 一行 log dir，避免同一路径重复占两行；分路配置时才把会话日志目录单独列出
-  const sameDir = lp.business.dir === lp.rawData.dir;
+  // 目录展示：部署配置里 LOG_DIR 与 SAVE2FILE_PATH 通常同指一个根目录，此时合并为
+  // 一行 log root；业务日志按天落在其下的日期子目录，单独列一行明确"今天写到哪"；
+  // 分路配置时才把会话日志目录另起一行
+  const sameRoot = lp.business.root === lp.rawData.dir;
   const businessState = lp.business.enabled ? "enabled" : "disabled";
   const rawDataState = lp.rawData.enabled ? "enabled" : "disabled";
   // 字段行统一 label 宽度（取最长的 business log segments:），保证值列对齐
@@ -75,11 +77,14 @@ function formatLogDirectories(lp: LogPaths): string[] {
     `Log directories (${pkg.name} MCP server):`,
     row("server cwd:", lp.cwd),
     row(
-      "log dir:",
-      `${lp.business.dir}  (business: ${businessState}, session: ${rawDataState})`
+      sameRoot ? "log root:" : "business log root:",
+      sameRoot
+        ? `${lp.business.root}  (business: ${businessState}, session: ${rawDataState})`
+        : `${lp.business.root}  (business: ${businessState})`
     ),
+    row("business log dir:", `${lp.business.dir}  (today, per-day subdir)`),
   ];
-  if (!sameDir) {
+  if (!sameRoot) {
     lines.push(
       row("session log dir:", `${lp.rawData.dir}  (session: ${rawDataState})`)
     );
@@ -110,7 +115,7 @@ function formatLogDirectories(lp: LogPaths): string[] {
     ),
     "",
     "Notes:",
-    "  - log dir is the shared home of two kinds of logs: business logs (LOG_SAVE) sit flat as one YYYY-MM-DD_HHMMSS.log per run ('business log file' above is segment 0 of the current run, 'business log latest' is the newest segment on disk), and session raw-data logs (SAVE2FILE_PATH) sit in per-device subdirs ({device}/{session}_YYYY-MM-DD_HHMMSS.log).",
+    "  - both log kinds are grouped by day: business logs (LOG_SAVE) sit in {LOG_DIR}/{YYYY-MM-DD}/ as one YYYY-MM-DD_HHMMSS.log per run ('business log file' above is segment 0 of the current run, 'business log latest' is the newest segment on disk), and session raw-data logs (SAVE2FILE_PATH) sit in {device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log.",
     "  - both log kinds are size-capped (LOG_MAX_SIZE_MB) and split into segments: base name = segment 0, overflow = _001/_002/... in the same dir, higher _NNN = newer. Read all segments of a prefix (ascending) for the complete history, or start from the highest-numbered one for the latest and walk down if needed.",
     "  - 'disabled' means that channel is not currently writing to disk; the dir above is where it WOULD save if enabled.",
     `  - To clean up logs, run power_shell on the ${pkg.name} MCP host against these dirs (e.g. Get-ChildItem '...' -Recurse | Remove-Item), or scp from your Linux shell in mode 2.`

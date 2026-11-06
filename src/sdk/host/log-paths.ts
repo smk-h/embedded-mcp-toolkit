@@ -9,14 +9,18 @@
  *
  *   基于 MCP 进程工作目录（process.cwd）与 LOG_SAVE / LOG_DIR / SAVE2FILE_PATH
  *   环境变量，解析出业务日志与原始数据日志的保存根目录（绝对路径），并标注
- *   每条通道是否启用。供 host_info 工具暴露"日志保存目录"使用，帮助 AI 客户端
- *   拿到绝对路径后用 power_shell / scp 自行完成日志清理，避免相对路径依赖 cwd
- *   在跨机部署下难以定位的问题。
+ *   每条通道是否启用。两类日志均按天分目录：
+ *     - 业务日志：{LOG_DIR}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSS}.log
+ *     - 会话日志：{SAVE2FILE_PATH}/{device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log
+ *   供 host_info 工具暴露"日志保存目录"使用，帮助 AI 客户端拿到绝对路径后
+ *   用 power_shell / scp 自行完成日志清理，避免相对路径依赖 cwd 在跨机部署下
+ *   难以定位的问题。
  * ======================================================
  */
 
-import { resolve } from "path";
+import { join, resolve } from "path";
 import { logger } from "../shared/logger.js";
+import { dateDirName } from "../utils/timestamp.js";
 
 // ── 类型定义 ────────────────────────────────────────────────
 
@@ -33,13 +37,16 @@ export interface LogChannel {
 
 /**
  * @brief 业务日志通道的解析结果
- * @details 在 LogChannel 基础上补充两个文件路径（未启用时均为 null）：
+ * @details 在 LogChannel 基础上补充根目录与两个文件路径（未启用时均为 null）：
+ *          - root：LOG_DIR 根目录，业务日志与 power_shell_exec 日志的公共父目录
+ *          - dir：当天日期子目录（{root}/{YYYY-MM-DD}），业务日志实际落盘位置
  *          - base：本次运行的首段（基准）文件，如 2026-10-30_155702.log，
  *            用作磁盘上该次运行全部分段的前缀（扫描目录时用）
  *          - file：logger 单例当前正在写入的分段，写满 LOG_MAX_SIZE_MB 后
  *            会变成同目录的 2026-10-30_155702_001.log 等
  */
 export interface BusinessLogChannel extends LogChannel {
+  root: string; // 业务日志根目录（LOG_DIR，绝对路径）
   base: string | null; // 首段（基准）日志文件绝对路径；未启用时为 null
   file: string | null; // 当前正在写入的分段文件绝对路径；未启用时为 null
 }
@@ -84,11 +91,14 @@ function isRawDataEnabled(value: string | undefined): boolean {
  * @brief 解析日志保存目录（含绝对路径与启用状态）
  * @details 解析规则：
  *          1. cwd = process.cwd()，即 MCP 进程工作目录（相对路径解析基准）
- *          2. 业务日志：dir = resolve(LOG_DIR ?? "./log")；enabled = LOG_SAVE 为真值；
- *             base / file 取自 logger 单例的 basePath / filePath（首次访问会触发
- *             延迟初始化并创建文件，与 host_info 实际调用时机一致——处理函数已先
- *             写了一条入口日志）；base 为首段，file 为滚动后的当前段
- *          3. 原始数据日志：dir = resolve(SAVE2FILE_PATH)（未置位时以空目录占位）；
+ *          2. 业务日志：root = resolve(LOG_DIR ?? "./log")，
+ *             dir = {root}/{YYYY-MM-DD}（当天日期子目录，业务日志实际落盘位置）；
+ *             enabled = LOG_SAVE 为真值；base / file 取自 logger 单例的
+ *             basePath / filePath（首次访问会触发延迟初始化并创建文件，与
+ *             host_info 实际调用时机一致——处理函数已先写了一条入口日志）；
+ *             base 为首段，file 为滚动后的当前段
+ *          3. 原始数据日志：dir = resolve(SAVE2FILE_PATH)（未置位时以 cwd 占位）；
+ *             实际文件按 {device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log 分层；
  *             enabled = SAVE2FILE_PATH 非空且非 "none"
  *          两条通道独立启用，互不影响。
  * @returns 结构化日志目录信息；除业务日志 file 字段外不依赖文件系统状态
@@ -96,8 +106,10 @@ function isRawDataEnabled(value: string | undefined): boolean {
 export function resolveLogPaths(): LogPaths {
   const cwd = process.cwd();
 
-  // 业务日志通道：LOG_DIR 默认 "./log"（与 logger.ts 口径一致），resolve 成绝对路径
-  const businessDir = resolve(process.env.LOG_DIR ?? "./log");
+  // 业务日志通道：LOG_DIR 默认 "./log"（与 logger.ts 口径一致）
+  const businessRoot = resolve(process.env.LOG_DIR ?? "./log");
+  // 当天日期子目录：logger 落盘时的目录规则，供 host_info 展示"今天写到哪"
+  const businessDir = join(businessRoot, dateDirName());
 
   // logger 内部 join 时不 resolve，LOG_DIR 为相对路径时拿到的是相对形式；
   // 本模块职责是给绝对路径，这里统一收敛（LOG_SAVE 未启用时两者均为 null）
@@ -114,6 +126,7 @@ export function resolveLogPaths(): LogPaths {
     cwd,
     business: {
       enabled: isLogSaveEnabled(process.env.LOG_SAVE),
+      root: businessRoot,
       dir: businessDir,
       base: businessBase,
       file: businessFile,

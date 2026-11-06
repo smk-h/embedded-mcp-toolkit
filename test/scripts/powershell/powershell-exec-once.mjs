@@ -78,17 +78,21 @@ function check(name, cond, detail = "") {
   check("native exe path: no U+FFFD replacement", !r.includes("\uFFFD"), `got "${r.slice(0, 200)}"`);
 }
 
-// ── 5. 落盘日志（LOG_SAVE 启用时命令与结果写入 {LOG_DIR}/local/<timestamp>.log） ──
+// ── 5. 落盘日志（LOG_SAVE 启用时命令与结果写入 {LOG_DIR}/local/<YYYY-MM-DD>/<timestamp>.log） ──
 {
   const saveDir = mkdtempSync(join(tmpdir(), "ps-exec-log-"));
   process.env.LOG_SAVE = "1";
   process.env.LOG_DIR = saveDir;
   try {
     const r = await powerShellExecHandler({ command: "Write-Output 'logged line'" });
-    const localDir = join(saveDir, "local");
+    // 目录规则：{LOG_DIR}/local/{YYYY-MM-DD}/YYYY-MM-DD_HHMMSS.log（北京时间）
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+    }).format(new Date());
+    const localDir = join(saveDir, "local", today);
     const files = readdirSync(localDir);
     check(
-      "log path: local/<timestamp>.log created",
+      "log path: local/<YYYY-MM-DD>/<timestamp>.log created",
       files.some((f) => /^\d{4}-\d{2}-\d{2}_\d{6}\.log$/.test(f)),
       `files=${files.join(",")}`
     );

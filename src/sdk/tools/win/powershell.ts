@@ -12,8 +12,8 @@
  *   无会话状态、可并发、超时强杀整棵进程树——交互式会话模式下
  *   「管道 stdin 发不了 Ctrl+C、命令停不下来只能杀会话」的死结
  *   在此路径上根本不存在。命令与完整结果按调用块落盘（LOG_SAVE 启用，
- *   目录 {LOG_DIR}/local、生命周期与业务日志一致），每行带与业务日志
- *   同款 `[YYYY-MM-DD HH:mm:ss]` 时间戳前缀，供客户端事后翻查。
+ *   目录 {LOG_DIR}/local/{YYYY-MM-DD}、生命周期与业务日志一致），每行带
+ *   与业务日志同款 `[YYYY-MM-DD HH:mm:ss]` 时间戳前缀，供客户端事后翻查。
  *   编码：chcp 检测控制台代码页，命令前缀强制 OutputEncoding 为代码页
  *   对应编码（GBK 系统下 936→GBK），Node 端按同代码页解码，内置 cmdlet
  *   与外部原生 exe（ipconfig 等）输出统一，中文无乱码（延续 commit b66466d）。
@@ -31,6 +31,7 @@ import { join } from "path";
 import { spawn, execSync, type ChildProcess } from "child_process";
 import {
   beijingFields,
+  dateDirName,
   fileTimestamp,
   logTimestamp,
 } from "../../utils/timestamp.js";
@@ -134,8 +135,9 @@ let psExecSeq = 0;
  *
  * 生命周期与业务日志（logger.ts）完全一致：
  *   - 启用条件：LOG_SAVE 为 "1"/"true"（同口径）
- *   - 目录：{LOG_DIR ?? "./log"}/local（LOG_DIR 配 ./.embedded/log 时
- *     即 .embedded/log/local，与退役前的 PowerShell 会话日志同目录）
+ *   - 目录：{LOG_DIR ?? "./log"}/local/{YYYY-MM-DD}（LOG_DIR 配
+ *     ./.embedded/log 时即 .embedded/log/local/2026-11-06，与业务日志同一天
+ *     的目录分组，只是多一层 local 区分通道）
  *   - 文件名：{fileTimestamp()}.log（如 2026-08-28_074731.log）
  *   - 首次调用时懒创建（避免依赖模块加载时的环境变量时序），
  *     进程存活期间追加同一文件；单文件写满 LOG_MAX_SIZE_MB
@@ -164,7 +166,8 @@ function ensureExecLogFile(): void {
   if (save !== "1" && save !== "true") return;
 
   try {
-    const dir = join(process.env.LOG_DIR ?? "./log", "local");
+    // 通道目录 local 下再按天分目录，与业务日志/会话日志的日期分组对齐
+    const dir = join(process.env.LOG_DIR ?? "./log", "local", dateDirName());
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
@@ -315,7 +318,7 @@ export const powerShellExecConfig: SdkToolConfig = {
     "State (cd / variables / imported modules) does NOT persist between calls — " +
     "compose it into the command itself (e.g. 'cd C:\\work; npm test'). " +
     "When LOG_SAVE is enabled, every call (command + full result) is appended to " +
-    "{LOG_DIR}/local/<timestamp>.log — same lifecycle as the business log " +
+    "{LOG_DIR}/local/{YYYY-MM-DD}/<timestamp>.log — same lifecycle as the business log " +
     "(created on first call), split into _001/_002/... segments once it exceeds " +
     "LOG_MAX_SIZE_MB (higher suffix = newer), every line prefixed with " +
     "the same [YYYY-MM-DD HH:mm:ss] timestamp as the business log — for offline review.",

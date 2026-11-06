@@ -9,7 +9,8 @@
  *
  * 通过 MCP 环境变量 LOG_SAVE / LOG_DIR 控制日志文件写入。
  * - LOG_SAVE 为真值时启用文件保存
- * - LOG_DIR 指定日志目录，默认 "./log"
+ * - LOG_DIR 指定日志根目录，默认 "./log"；每次进程首次写入时自动取当天
+ *   日期做一级子目录：{LOG_DIR}/{YYYY-MM-DD}/，跨天/跨进程的日志天然分开
  * - 日志文件名格式: YYYY-MM-DD_HHMMSS.log（北京时间）
  * - 单文件超过 LOG_MAX_SIZE_MB（默认 10MB）自动滚动到 _001、_002… 分段
  *   （长驻进程不再产出上百兆的单个业务日志文件，见 log-rotation.ts）
@@ -22,6 +23,7 @@ import { mkdirSync, appendFileSync, existsSync, statSync } from "fs";
 import { join } from "path";
 import {
   beijingFields,
+  dateDirName,
   fileTimestamp,
   logTimestamp,
 } from "../utils/timestamp.js";
@@ -57,7 +59,9 @@ class Logger {
     const save = process.env.LOG_SAVE;
     if (save !== "1" && save !== "true") return;
 
-    const dir = process.env.LOG_DIR ?? "./log";
+    // 按天分目录：{LOG_DIR}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSS}.log
+    // 日期目录由首次写入时定格的当天日期决定，文件名仍带日期便于拷出后辨识
+    const dir = join(process.env.LOG_DIR ?? "./log", dateDirName());
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }

@@ -6,7 +6,9 @@
  *     1. serial_shell_login 建立会话后，session_info 返回的 Log 行包含
  *        实际日志文件路径（启用场景，SAVE2FILE_PATH 已配置）
  *     2. 该路径与磁盘上实际存在的文件一致（fs.existsSync 校验）
- *     3. 路径中的 sessionId 前缀与当前会话 ID 一致（如 serial_1_xxx.log 对应 serial_1）
+ *     3. 路径结构为 {device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log，
+ *        文件名中的 session 与当前会话 ID 一致、日期与日期目录一致
+ *        （如 2026-11-06_143025123-serial_1.log 对应 serial_1）
  *     4. peekNextId 顺序调整后不重复创建日志文件（该 sessionId 目录下仅一个 .log）
  *
  *   设备名通过 serverEnv 注入 MCP server 子进程（DEVICE 字段）。
@@ -118,24 +120,43 @@ async function main() {
         fail("日志文件应存在", `路径 ${absLogPath} 在磁盘上不存在`);
       }
 
-      // 5. 校验路径中的 sessionId 前缀与当前会话一致
-      console.log(`\n── 用例 3：路径中的 sessionId 前缀与会话一致 ──`);
-      // 文件名形如 serial_1_2026-07-29_185730.log，取 base 后按 _ 切分取首段
-      const baseName = logPath.split(/[\\/]/).pop();
-      const fileSessionPrefix = baseName.split("_")[0]; // "serial"
-      const fileSessionNum = baseName.split("_")[1]; // "1"
+      // 5. 校验路径结构与 sessionId 前缀与当前会话一致
+      console.log(`\n── 用例 3：路径结构与会话 ID 一致 ──`);
+      // 路径形如 {device}/{YYYY-MM-DD}/2026-11-06_143025123-serial_1.log
+      const parts = logPath.split(/[\\/]/);
+      const baseName = parts.pop();
+      const dateDir = parts[parts.length - 1];
+      const nameMatch =
+        /^(\d{4}-\d{2}-\d{2})_(\d{9})-([a-z]+)_(\d+)\.log$/.exec(baseName ?? "");
       const expectedPrefix = sessionId.split("_")[0]; // "serial"
       const expectedNum = sessionId.split("_")[1]; // "1"
 
-      if (
-        fileSessionPrefix === expectedPrefix &&
-        fileSessionNum === expectedNum
+      if (!nameMatch) {
+        fail(
+          "日志文件名应形如 YYYY-MM-DD_HHMMSSsss-{session}.log",
+          `实际=${baseName}`
+        );
+      } else if (!/^\d{4}-\d{2}-\d{2}$/.test(dateDir ?? "")) {
+        fail(
+          "会话日志应落在 YYYY-MM-DD 日期子目录",
+          `日期目录=${dateDir}`
+        );
+      } else if (nameMatch[1] !== dateDir) {
+        fail(
+          "文件名日期应与所在日期目录一致",
+          `文件名日期=${nameMatch[1]}, 目录=${dateDir}`
+        );
+      } else if (
+        nameMatch[3] === expectedPrefix &&
+        nameMatch[4] === expectedNum
       ) {
-        pass(`路径前缀 ${fileSessionPrefix}_${fileSessionNum} 与会话 ${sessionId} 一致`);
+        pass(
+          `路径 ${dateDir}/${baseName} 与会话 ${sessionId} 一致，日期可从文件名辨识`
+        );
       } else {
         fail(
-          "路径前缀应与会话一致",
-          `文件前缀=${fileSessionPrefix}_${fileSessionNum}, 会话=${sessionId}`
+          "路径中的会话应与会话 ID 一致",
+          `文件名=${baseName}, 会话=${sessionId}`
         );
       }
 
@@ -144,7 +165,7 @@ async function main() {
       const logDir = resolve(absLogPath, "..");
       const samePrefixFiles = existsSync(logDir)
         ? readdirSync(logDir).filter((f) =>
-            f.startsWith(`${sessionId}_`) && f.endsWith(".log")
+            f.includes(`-${sessionId}`) && f.endsWith(".log")
           )
         : [];
       // 说明：若之前有历史运行残留，可能存在多个同前缀文件；

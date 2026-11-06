@@ -120,7 +120,7 @@ dsh web                                    （bin.js 解析 --profile web）
             └─ StdioClientTransport spawn：cmd.exe /d /c remote-start-mcp.bat（cwd=项目根）
                  └─ bat：cd /d 项目根 + set 5 个 env
                       └─ node bin\embedded-mcp-toolkit-cli.js   ← MCP 服务器子进程
-                           ├─ 首次写日志 → .embedded/log/2026-09-09_HHMMSS.log
+                           ├─ 首次写日志 → .embedded/log/2026-09-09/2026-09-09_HHMMSS.log
                            ├─ 响应 tools/list → 工具以 mcp__embedded-board__* 注册
                            └─ 进入常驻，等待各会话的 tools/call
 ```
@@ -170,7 +170,8 @@ logger.info(`┌─ #${seq} BEGIN [${name}] args=${raw}`);
 `src/sdk/shared/logger.ts`：
 
 ```ts
-this.logFile = join(dir, `${fileTimestamp()}.log`);  // YYYY-MM-DD_HHMMSS.log（北京时间）
+// dir = join(LOG_DIR, YYYY-MM-DD)（当天日期子目录，北京时间）
+this.logFile = join(dir, `${fileTimestamp()}.log`);  // YYYY-MM-DD_HHMMSS.log
 ```
 
 文件在进程首次写日志时惰性创建，之后只追加。跨会话追加、文件里仅一个 `Mcp Server log ...` 头、间隙期零日志，都印证"同一进程持续存活"。
@@ -208,7 +209,7 @@ async function apply(ctx, config) {
 ### 4. 推论与实践意义
 
 - **跨会话复用**：会话 A 打开的串口/SSH/ADB 会话，会话 B 直接可用（`session_info` 可查，不必重新登录）——前提是没人显式 `close`。
-- **排障视角统一**：一份业务日志按 `#N` 配对即可精确还原任意会话的每一次调用边界；配合 `.embedded/log/<设备>/serial_1_*.log`（原始字节级会话日志）可做二次核对。
+- **排障视角统一**：一份业务日志按 `#N` 配对即可精确还原任意会话的每一次调用边界；配合 `.embedded/log/<设备>/<日期>/serial_1-*.log`（原始字节级会话日志）可做二次核对。
 - **找"最新日志"**：日志文件名是进程启动时刻，不是当前时刻；按修改时间排序取最新即可。
 
 ### 5. 边界与失效场景（重要）

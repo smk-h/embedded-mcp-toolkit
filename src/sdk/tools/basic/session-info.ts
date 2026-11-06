@@ -35,6 +35,7 @@ export const sessionInfoConfig: SdkToolConfig = {
     "Query active session metadata. Pass session_id for one session, device for all sessions of a device, or neither for all active sessions. " +
     "Each session returns: session id, connection type (serial/ssh/adb), device name, connection info (e.g. COM3@115200), creation time, " +
     "and the raw session log file path (serial/ssh/adb traffic recorded continuously by the server, including full boot logs after reset/reboot). " +
+    "Session logs are grouped per device and per day: {SAVE2FILE_PATH}/{device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log, so a restarted server reusing the same session id never collides with older files and copied log files stay chronologically sortable. " +
     "Large logs are split into segments on disk: the reported Log path is segment 0, and overflow continues in the same directory as " +
     "`<name>_001.log`, `<name>_002.log`, ... — a higher `_NNN` suffix is always newer. The Log latest line points at the newest segment present. " +
     "For the full history read every segment of that prefix in ascending order; for recent activity only, read the latest segment first " +
@@ -62,6 +63,8 @@ export const sessionInfoConfig: SdkToolConfig = {
  * @details 会话日志按大小滚动后会散成 base.log + base_001.log…（序号越大越新），
  *          这里除了首段路径，还扫描磁盘给出「共几段」与「最新段路径」，
  *          供客户端按需取最新一段或拼出完整历史。
+ *          路径本身是注册表里的绝对全路径（{device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log），
+ *          已按设备与日期分层，本函数只在该文件所在目录内扫分段，无需感知目录规则。
  *
  * @param s 会话元数据
  * @returns 格式化后的文本行数组

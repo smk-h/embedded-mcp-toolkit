@@ -19,7 +19,8 @@ import {
 import { dirname, resolve } from "path";
 import {
   beijingFields,
-  fileTimestamp,
+  dateDirName,
+  fileTimestampMs,
   logTimestamp,
 } from "../utils/timestamp.js";
 import { sanitizeLine } from "../utils/terminal-sanitizer.js";
@@ -32,6 +33,10 @@ import { formatPartSuffix, LogRotator } from "./log-rotation.js";
  * 将接收到的原始数据按行写入日志文件，每行附时间戳。
  * 行缓冲区确保跨 chunk 到达的数据合并为完整行后再输出，
  * 同一行只有一个时间戳（该行实际到达完成的时刻）。
+ *
+ * 落盘位置：{SAVE2FILE_PATH}/{deviceName}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{sessionId}.log
+ * （设备名缺失时去掉一层 deviceName），按天分目录便于历史会话归档；
+ * 文件名时间优先（与业务日志同前缀），单个文件被拷走后仍能看出属于哪一天。
  *
  * 单文件超过 LOG_MAX_SIZE_MB（默认 10MB）时自动滚动到下一分段：
  * 首段沿用原文件名，之后依次是 _001、_002…（见 log-rotation.ts），
@@ -81,12 +86,15 @@ export class FileLogger {
    * @brief 根据环境变量 SAVE2FILE_PATH 自动启用日志
    *
    * 若 SAVE2FILE_PATH 值为 "none" 或空则跳过；否则按以下规则创建日志文件：
-   *   - deviceName 可用：{SAVE2FILE_PATH}/{deviceName}/{sessionId}_{YYYY-MM-DD_HHMMSS}.log
-   *   - deviceName 缺失：{SAVE2FILE_PATH}/{sessionId}_{YYYY-MM-DD_HHMMSS}.log（降级到根目录）
+   *   - deviceName 可用：{SAVE2FILE_PATH}/{deviceName}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{sessionId}.log
+   *   - deviceName 缺失：{SAVE2FILE_PATH}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{sessionId}.log（降级到根目录）
    *
-   * 设备子目录由 enable() 内部 mkdirSync 递归创建，无需此处额外建目录。
+   * 按天分目录 + 文件名带日期解决"进程重启后 session 编号从 1 重新开始"导致的
+   * 同名混淆：目录负责归拢与按天清理，文件名负责拷贝出去后仍可辨识日期；
+   * 毫秒后缀保证同一秒内多次建会话也不撞名。
+   * 设备/日期子目录由 enable() 内部 mkdirSync 递归创建，无需此处额外建目录。
    *
-   * @param sessionId 会话 ID（如 serial_1）
+   * @param sessionId 会话 ID（如 serial_1，本身已含通道前缀）
    * @param deviceName 设备名（如 board-lubancat）；可选，缺失时降级写入根目录
    * @returns 首段日志文件完整路径（写满后自动滚动到 _001、_002…）；文件日志未启用时返回 undefined
    */
@@ -94,11 +102,14 @@ export class FileLogger {
     const savePath = process.env.SAVE2FILE_PATH;
     if (!savePath || savePath === "none") return undefined;
     const absDir = resolve(savePath);
-    const fileName = `${sessionId}_${fileTimestamp()}.log`;
+    const day = dateDirName();
+    // 时间优先：与业务日志/local 日志同前缀，混排时天然成时间线；
+    // sessionId 已是 "通道_序号" 形态，不再重复拼通道类型
+    const fileName = `${fileTimestampMs()}-${sessionId}.log`;
     // deviceName 真值检查：空串/undefined 均视为缺失，降级到根目录，保证日志不丢
     const logPath = deviceName
-      ? resolve(absDir, deviceName, fileName)
-      : resolve(absDir, fileName);
+      ? resolve(absDir, deviceName, day, fileName)
+      : resolve(absDir, day, fileName);
     this.enable(logPath);
     logger.info(`[file-logger] file logging enabled: ${logPath}`);
     return logPath;

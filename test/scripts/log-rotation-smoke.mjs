@@ -13,7 +13,7 @@
 
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { join, basename } from "path";
+import { join, basename, dirname } from "path";
 
 // 环境变量必须在首次日志写入前设定（logger 懒初始化，模块导入不触发）
 const scratch = mkdtempSync(join(tmpdir(), "log-rotation-smoke-"));
@@ -48,13 +48,20 @@ function assert(cond, name, detail) {
   }
 }
 
-/** 读取目录下全部 .log 文件（按文件名排序，首段在前） */
+/** 递归读取目录下全部 .log 文件（业务日志按天分目录，需下钻日期子目录） */
 function listLogs(dir) {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".log"))
-    .sort()
-    .map((f) => ({ name: f, path: join(dir, f), size: readFileSync(join(dir, f)).length }));
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listLogs(full));
+    } else if (entry.name.endsWith(".log")) {
+      files.push({ name: entry.name, path: full, size: readFileSync(full).length });
+    }
+  }
+  // 按路径码点排序：同一目录下等价于文件名字典序，首段（.log）排在 _001 之前
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /** 收集所有分段文件的行（去 BOM，跳过续接头部） */
@@ -190,6 +197,17 @@ async function main() {
 
   const bizFiles = listLogs(bizDir);
   assert(bizFiles.length > 1, "业务日志已滚动出多个分段", `files=${bizFiles.length}`);
+  // 目录规则：{LOG_DIR}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSS[_NNN]}.log
+  assert(
+    /^\d{4}-\d{2}-\d{2}$/.test(basename(dirname(bizFiles[0].path))),
+    "业务日志落在 YYYY-MM-DD 日期子目录",
+    dirname(bizFiles[0].path)
+  );
+  assert(
+    bizFiles.every((f) => basename(dirname(f.path)) === basename(dirname(bizFiles[0].path))),
+    "同一次运行的业务日志分段同处一个日期目录",
+    bizFiles.map((f) => dirname(f.path)).join(", ")
+  );
   assert(
     bizFiles.every((f) => f.size <= maxBytes + 200),
     "业务日志各分段大小不超过上限 + 单行余量",
@@ -280,7 +298,40 @@ async function main() {
     disabledText
   );
 
-  // ── 6. host_info 数据源：业务日志首段 / 当前段 / 分段扫描 ──
+  // ── 6. 会话日志目录/文件名规则（enableFromEnv） ──
+  const rawRoot = join(scratch, "raw");
+  process.env.SAVE2FILE_PATH = rawRoot;
+  const origStderrWrite3 = process.stderr.write.bind(process.stderr);
+  process.stderr.write = () => true;
+  const flWithDevice = new FileLogger();
+  const envLogPath = flWithDevice.enableFromEnv("serial_1", "board-smoke");
+  flWithDevice.disable();
+  const flNoDevice = new FileLogger();
+  const envLogPathNoDevice = flNoDevice.enableFromEnv("ssh_2");
+  flNoDevice.disable();
+  process.stderr.write = origStderrWrite3;
+  delete process.env.SAVE2FILE_PATH;
+
+  const toRel = (p) => (p ? p.slice(rawRoot.length + 1).replace(/\\/g, "/") : "");
+  const withDevice = toRel(envLogPath);
+  const noDevice = toRel(envLogPathNoDevice);
+  assert(
+    /^board-smoke\/\d{4}-\d{2}-\d{2}\/\d{4}-\d{2}-\d{2}_\d{9}-serial_1\.log$/.test(withDevice),
+    "会话日志 = {device}/{YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log",
+    withDevice
+  );
+  // 目录日期与文件名日期必须同源（跨零点建会话时不允许错位到两天）
+  const [, dirDay, fileDay] = withDevice.match(
+    /^board-smoke\/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})_\d{9}-serial_1\.log$/
+  ) ?? [];
+  assert(dirDay !== undefined && dirDay === fileDay, "目录日期 = 文件名日期", withDevice);
+  assert(
+    /^\d{4}-\d{2}-\d{2}\/\d{4}-\d{2}-\d{2}_\d{9}-ssh_2\.log$/.test(noDevice),
+    "缺设备名时降级为 {YYYY-MM-DD}/{YYYY-MM-DD_HHMMSSsss}-{session}.log",
+    noDevice
+  );
+
+  // ── 7. host_info 数据源：业务日志首段 / 当前段 / 分段扫描 ──
   const { resolveLogPaths } = await import("../../out/sdk/host/log-paths.js");
   const lp = resolveLogPaths();
   assert(lp.business.enabled, "LOG_SAVE 启用时 business.enabled 为 true");
