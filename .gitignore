@@ -37,6 +37,7 @@ exe-out
 .embedded/configs/devices/*.yaml
 !.embedded/configs/devices/board-example.yaml
 !.embedded/configs/devices/board-virt.yaml
+!.embedded/configs/devices/fake-serial.yaml
 !.embedded/configs/devices/stm32.yaml
 
 # ---- SSH 依赖与本地密钥 ----

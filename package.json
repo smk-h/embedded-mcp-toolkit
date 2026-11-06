@@ -18,6 +18,7 @@
     "start": "node out/cli/index.js",
     "qemu:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-qemu-virt.ps1",
     "qemu:kill": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-qemu.ps1",
+    "fake:serial": "node test/scripts/serial/fake-device.mjs",
     "inspector": "npm run inspector:win",
     "inspector:win": "powershell -ExecutionPolicy Bypass -File scripts/run-inspector.ps1",
     "git-sync-force": "node scripts/sync-force.mjs",

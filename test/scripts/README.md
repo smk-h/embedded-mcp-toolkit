@@ -14,9 +14,13 @@
   </thead>
   <tbody>
     <tr>
-      <td rowspan="9">serial</td>
+      <td rowspan="10">serial</td>
       <td><a href="serial/basic-demo.mjs">basic-demo.mjs</a></td>
       <td>串口打开 / 发送 / 读取 / 关闭的基本用法演示</td>
+    </tr>
+    <tr>
+      <td><a href="serial/fake-device.mjs">fake-device.mjs</a></td>
+      <td>TCP 模拟串口设备（无硬件测试用）：监听端口扮演 Linux 板卡，支持 shell / getty 登录两种形态，配套设备配置 <code>devices/fake-serial.yaml</code></td>
     </tr>
     <tr>
       <td><a href="serial/terminal.mjs">terminal.mjs</a></td>
