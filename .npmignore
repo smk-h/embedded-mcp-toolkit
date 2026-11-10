@@ -14,6 +14,7 @@
 .cnb
 .roo
 .zcode
+.workbuddy
 
 # ---- 源码与开发目录（源码不发布，仅发布编译产物）----
 src
@@ -22,6 +23,10 @@ docs
 plan
 scripts
 node_modules
+
+# ---- 本地开发资产（PPT 制作素材、QEMU 虚拟板卡内核/initramfs，仅本地使用）----
+ppt
+qemu
 
 # ---- 工程配置文件（仅本地开发使用）----
 .cnb.yml
@@ -32,6 +37,7 @@ node_modules
 eslint.config.ts
 tsconfig.json
 .npmignore
+CODEBUDDY.md
 
 # ---- 构建产物与日志 ----
 log/
@@ -42,8 +48,9 @@ log/
 # ---- exe 单文件打包产物（仅本地/CI 生成，不随 npm 包发布）----
 exe-out
 
-# ---- SSH 依赖与本地密钥（不随包发布）----
-.embedded/ssh
+# ---- .embedded 运行时产物（仅保留 configs 模板目录，其余全部排除）----
+.embedded/*
+!.embedded/configs
 
 # ---- Claude Code 敏感文件（含 token / 本地密钥；.tmp 模板仍会发布）----
 .claude/start-claude.bat
